@@ -15,12 +15,17 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+node_modules/
+stage_ui/dist/
+*.tsbuildinfo
 
 # Generated demo data (heavy local artifacts)
 00_data_generator/output/
 00_data_generator/data/
 *.parquet
 *.cfonb
+*.cfonb.gz
+*.ebcdic
 *.dat
 *.mp4
 

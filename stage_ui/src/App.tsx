@@ -1,0 +1,420 @@
+import React, { useState } from 'react';
+import {
+  PanelLeft,
+  ArrowLeft,
+  ArrowRight,
+  Search,
+  Plus,
+  Clock,
+  Briefcase,
+  Folder,
+  Settings,
+  RotateCcw,
+  Zap,
+  PanelRight,
+  MoreVertical,
+  FileText,
+  ExternalLink,
+  ListFilter,
+  FolderPlus,
+} from 'lucide-react';
+import { ActiveNav, DemoId, PromptTurn } from './types';
+import { DEMO_SCENARIOS } from './data/scenarios';
+import { CustomizationsView } from './components/CustomizationsView';
+import { ChatStage, ExecutedTurn } from './components/ChatStage';
+import {
+  InspectorDrawer,
+  InspectorModalState,
+  OverviewPanel,
+} from './components/OverviewPanel';
+
+export const App: React.FC = () => {
+  const [activeDemo, setActiveDemo] = useState<DemoId>('demo1');
+  const [activeNav, setActiveNav] = useState<ActiveNav>('chat');
+  const [dakInstalled, setDakInstalled] = useState<boolean>(false);
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
+  const [overviewOpen, setOverviewOpen] = useState<boolean>(true);
+  const [fastMode, setFastMode] = useState<boolean>(false);
+  const [speakerMenuOpen, setSpeakerMenuOpen] = useState<boolean>(false);
+  const [inspectorModal, setInspectorModal] = useState<InspectorModalState>(null);
+
+  const [historyByDemo, setHistoryByDemo] = useState<Record<DemoId, ExecutedTurn[]>>({
+    demo1: [],
+    demo2: [],
+    demo3: [],
+  });
+  const [isStreaming, setIsStreaming] = useState<boolean>(false);
+
+  const currentScenario = DEMO_SCENARIOS[activeDemo];
+  const currentTurns = historyByDemo[activeDemo];
+
+  const handleSendTurn = (turn: PromptTurn, customText?: string) => {
+    if (isStreaming) return;
+    setIsStreaming(true);
+
+    if (!dakInstalled) {
+      setDakInstalled(true);
+    }
+
+    const initialEntry: ExecutedTurn = {
+      turn,
+      userPromptText: customText || turn.prompt,
+      status: 'streaming',
+      visibleTraceCount: 1,
+    };
+
+    setHistoryByDemo((prev) => ({
+      ...prev,
+      [activeDemo]: [...prev[activeDemo].filter((t) => t.turn.id !== turn.id), initialEntry],
+    }));
+
+    const speedFactor = fastMode ? 0.32 : 1;
+    let cumulativeMs = 0;
+
+    turn.traces.forEach((tr, idx) => {
+      if (idx === 0) return;
+      cumulativeMs += tr.durationMs * speedFactor;
+      setTimeout(() => {
+        setHistoryByDemo((prev) => ({
+          ...prev,
+          [activeDemo]: prev[activeDemo].map((item) =>
+            item.turn.id === turn.id ? { ...item, visibleTraceCount: idx + 1 } : item
+          ),
+        }));
+      }, cumulativeMs);
+    });
+
+    const totalMs =
+      cumulativeMs + (turn.traces[turn.traces.length - 1]?.durationMs || 700) * speedFactor;
+
+    setTimeout(() => {
+      setHistoryByDemo((prev) => ({
+        ...prev,
+        [activeDemo]: prev[activeDemo].map((item) =>
+          item.turn.id === turn.id
+            ? { ...item, status: 'done', visibleTraceCount: turn.traces.length }
+            : item
+        ),
+      }));
+      setIsStreaming(false);
+    }, totalMs);
+  };
+
+  const handleResetDemo = () => {
+    if (isStreaming) return;
+    setHistoryByDemo((prev) => ({ ...prev, [activeDemo]: [] }));
+    setSpeakerMenuOpen(false);
+  };
+
+  const handleNewConversation = () => {
+    setActiveNav('chat');
+    if (!isStreaming) {
+      setHistoryByDemo((prev) => ({ ...prev, [activeDemo]: [] }));
+    }
+  };
+
+  // Aggregate right-panel Overview data for current demo
+  const completedTurns = currentTurns.filter((t) => t.status === 'done');
+  const allFiles = completedTurns.flatMap((t) => t.turn.filesChanged);
+  const allLogs = completedTurns.flatMap((t) => t.turn.terminalLogs);
+  const allSubagents = currentTurns.flatMap((t) => t.turn.subagents);
+  const allBgTasks = completedTurns.flatMap((t) => t.turn.backgroundTasks);
+  const allArtifacts = completedTurns
+    .map((t) => t.turn.artifact)
+    .filter((a): a is NonNullable<typeof a> => Boolean(a));
+
+  return (
+    <div className="h-screen w-screen flex flex-col bg-[#F8F9FA] text-[#111318] select-none">
+      {/* Top Window Chrome Bar matching Antigravity desktop header */}
+      <header className="h-11 px-4 flex items-center justify-between shrink-0">
+        {/* Left window controls + Breadcrumb */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 mr-2">
+            <span className="w-3 h-3 rounded-full bg-[#FF5F57]" />
+            <span className="w-3 h-3 rounded-full bg-[#FEBC2E]" />
+            <span className="w-3 h-3 rounded-full bg-[#28C840]" />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="p-1.5 rounded-lg hover:bg-[#ECEEF2] text-[#5F6368] cursor-pointer"
+            title="Toggle Sidebar"
+          >
+            <PanelLeft className="w-4 h-4" />
+          </button>
+
+          <div className="flex items-center gap-1.5 text-[#9AA0A6]">
+            <ArrowLeft className="w-4 h-4" />
+            <ArrowRight className="w-4 h-4" />
+          </div>
+
+          <Search className="w-4 h-4 text-[#5F6368] ml-1" />
+
+          {/* Breadcrumb when active conversation */}
+          {activeNav === 'chat' && currentTurns.length > 0 && (
+            <div className="ml-4 flex items-center gap-2 text-[13.5px]">
+              <span className="text-[#5F6368]">{currentScenario.projectFolder}</span>
+              <span className="text-[#9AA0A6]">/</span>
+              <span className="font-medium text-[#202124]">{currentScenario.shortName}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Right Controls matching Antigravity: ⋮ + Open IDE + Artifacts/Overview toggles */}
+        <div className="flex items-center gap-2 relative">
+          {/* Three-dots speaker menu (holds Demo speed / Reset / GCP link discreetly) */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setSpeakerMenuOpen(!speakerMenuOpen)}
+              className="p-1.5 rounded-full hover:bg-[#ECEEF2] text-[#5F6368] cursor-pointer"
+              title="Options de démonstration"
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
+
+            {speakerMenuOpen && (
+              <div className="absolute right-0 top-full mt-1.5 w-60 p-1.5 rounded-2xl bg-white shadow-[0_10px_32px_rgba(15,23,42,0.12)] z-50 animate-fade-slide-up space-y-0.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFastMode(!fastMode);
+                    setSpeakerMenuOpen(false);
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl hover:bg-[#F8F9FA] text-[13px] text-[#202124] cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    <Zap className="w-3.5 h-3.5 text-[#5F6368]" />
+                    <span>Vitesse animation</span>
+                  </span>
+                  <span className="font-mono text-[12px] text-[#5F6368]">
+                    {fastMode ? '1.5s' : '5s'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleResetDemo}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-[#F8F9FA] text-[13px] text-[#202124] cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-[#5F6368]" />
+                  <span>Réinitialiser {currentScenario.shortName}</span>
+                </button>
+
+                <a
+                  href="https://console.cloud.google.com/bigquery?project=data-days-demo"
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={() => setSpeakerMenuOpen(false)}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl hover:bg-[#F8F9FA] text-[13px] text-[#202124]"
+                >
+                  <span>Console BigQuery GCP</span>
+                  <ExternalLink className="w-3.5 h-3.5 text-[#5F6368]" />
+                </a>
+              </div>
+            )}
+          </div>
+
+          {/* Exact "Open IDE" pill from Screenshots 1-3 */}
+          <a
+            href="https://console.cloud.google.com/bigquery?project=data-days-demo"
+            target="_blank"
+            rel="noreferrer"
+            className="px-3.5 py-1 rounded-full bg-[#F1F3F5] hover:bg-[#E4E7EB] text-[13px] font-medium text-[#202124] transition-colors"
+          >
+            Open IDE
+          </a>
+
+          {activeNav === 'chat' && currentTurns.length > 0 && (
+            <div className="flex items-center gap-1 ml-0.5">
+              <button
+                type="button"
+                onClick={() =>
+                  allArtifacts.length > 0 &&
+                  setInspectorModal({ kind: 'artifact', artifact: allArtifacts[0] })
+                }
+                className="p-1.5 rounded-lg hover:bg-[#ECEEF2] text-[#5F6368] cursor-pointer"
+                title="Artifacts"
+              >
+                <FileText className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setOverviewOpen(!overviewOpen)}
+                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                  overviewOpen
+                    ? 'bg-[#E8EAED] text-[#202124]'
+                    : 'hover:bg-[#ECEEF2] text-[#5F6368]'
+                }`}
+                title="Toggle Overview"
+              >
+                <PanelRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+        </div>
+      </header>
+
+      {/* Body Layout: Left Sidebar + Rounded White Main Surface */}
+      <div className="flex-1 flex min-h-0">
+        {sidebarOpen && (
+          <aside className="w-[244px] shrink-0 px-3 pt-1 pb-3 flex flex-col justify-between">
+            <div className="space-y-6">
+              {/* Top Navigation matching Screenshots 1-3 */}
+              <div className="space-y-1">
+                <button
+                  type="button"
+                  onClick={handleNewConversation}
+                  className="w-full flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-[#FDFDFE] shadow-[0_1px_3px_rgba(0,0,0,0.04)] text-[13.5px] font-medium text-[#202124] transition-all cursor-pointer"
+                >
+                  <Plus className="w-4 h-4 text-[#5F6368]" />
+                  <span>New Conversation</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveNav('automations')}
+                  className={`w-full flex items-center gap-2.5 px-3.5 py-2 rounded-xl text-[13.5px] transition-colors cursor-pointer ${
+                    activeNav === 'automations'
+                      ? 'bg-[#EAECEF] text-[#111318] font-medium'
+                      : 'text-[#3C4043] hover:bg-[#EFEFF3]'
+                  }`}
+                >
+                  <Clock className="w-4 h-4 text-[#5F6368]" />
+                  <span>Automations</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveNav('customizations')}
+                  className={`w-full flex items-center justify-between px-3.5 py-2 rounded-xl text-[13.5px] transition-colors cursor-pointer ${
+                    activeNav === 'customizations'
+                      ? 'bg-[#EAECEF] text-[#111318] font-medium'
+                      : 'text-[#3C4043] hover:bg-[#EFEFF3]'
+                  }`}
+                >
+                  <span className="flex items-center gap-2.5">
+                    <Briefcase className="w-4 h-4 text-[#5F6368]" />
+                    <span>Customizations</span>
+                  </span>
+                </button>
+              </div>
+
+              {/* Projects section matching Antigravity sidebar with "Demo 1", "Demo 2", "Demo 3" */}
+              <div className="px-1">
+                <div className="flex items-center justify-between px-2.5 mb-2 text-[12px] text-[#70757A]">
+                  <span>Projects</span>
+                  <div className="flex items-center gap-2">
+                    <ListFilter className="w-3.5 h-3.5" />
+                    <FolderPlus className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 px-2.5 py-1.5 text-[13.5px] text-[#3C4043]">
+                    <Folder className="w-4 h-4 text-[#5F6368]" />
+                    <span>data-days-demo</span>
+                  </div>
+
+                  <div className="space-y-0.5">
+                    {(['demo1', 'demo2', 'demo3'] as DemoId[]).map((id) => {
+                      const sc = DEMO_SCENARIOS[id];
+                      const count = historyByDemo[id].length;
+                      const selected = activeNav === 'chat' && activeDemo === id;
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => {
+                            setActiveDemo(id);
+                            setActiveNav('chat');
+                          }}
+                          className={`w-full flex items-center justify-between px-3.5 py-1.5 rounded-xl text-[13.5px] transition-colors cursor-pointer ${
+                            selected
+                              ? 'bg-[#EAECEF] text-[#111318] font-medium'
+                              : 'text-[#3C4043] hover:bg-[#EFEFF3]'
+                          }`}
+                        >
+                          <span>{sc.shortName}</span>
+                          <span className="text-[12px] text-[#70757A]">
+                            {count > 0 ? 'now' : ''}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Settings matching Screenshots */}
+            <div className="px-1">
+              <div className="flex items-center gap-2.5 px-3 py-1.5 text-[13.5px] text-[#3C4043]">
+                <Settings className="w-4 h-4 text-[#5F6368]" />
+                <span>Settings</span>
+              </div>
+            </div>
+          </aside>
+        )}
+
+        {/* Main White Rounded Stage Surface */}
+        <main className="flex-1 bg-white rounded-tl-2xl shadow-[0_0_24px_rgba(15,23,42,0.03)] flex min-w-0 overflow-hidden">
+          {activeNav === 'customizations' && (
+            <div className="flex-1 min-w-0">
+              <CustomizationsView
+                installed={dakInstalled}
+                onInstall={() => setDakInstalled(true)}
+                onStartBuilding={() => setActiveNav('chat')}
+              />
+            </div>
+          )}
+
+          {activeNav === 'automations' && (
+            <div className="flex-1 flex flex-col items-center justify-center p-12 text-center">
+              <div className="max-w-md space-y-2">
+                <h2 className="text-[18px] font-semibold text-[#111318]">Automations</h2>
+                <p className="text-[13.5px] text-[#5F6368] leading-relaxed">
+                  Les pipelines récurrents Auto Data Quality et la synchronisation{' '}
+                  <span className="font-mono text-[#202124]">alloydb_sync</span> s'afficheront ici.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {activeNav === 'chat' && (
+            <>
+              <ChatStage
+                scenario={currentScenario}
+                executedTurns={currentTurns}
+                dakInstalled={dakInstalled}
+                isStreaming={isStreaming}
+                onSendTurn={handleSendTurn}
+                onOpenCustomizations={() => setActiveNav('customizations')}
+                onOpenInspector={setInspectorModal}
+              />
+
+              {overviewOpen && currentTurns.length > 0 && (
+                <OverviewPanel
+                  files={allFiles}
+                  terminalLogs={allLogs}
+                  subagents={allSubagents}
+                  backgroundTasks={allBgTasks}
+                  artifacts={allArtifacts}
+                  isStreaming={isStreaming}
+                  onOpenInspector={setInspectorModal}
+                  onOpenCustomizations={() => setActiveNav('customizations')}
+                />
+              )}
+            </>
+          )}
+        </main>
+      </div>
+
+      {/* Slide-over Code / SQL / Terminal / Artifact Inspector */}
+      <InspectorDrawer modal={inspectorModal} onClose={() => setInspectorModal(null)} />
+    </div>
+  );
+};
+
+export default App;
