@@ -223,6 +223,12 @@ export const ChatStage: React.FC<ChatStageProps> = ({
   const nextSuggestedTurn = scenario.turns.find((t) => !completedIds.has(t.id)) || null;
 
   useEffect(() => {
+    setInputValue('');
+    setSelectedTurnIndex(null);
+    setSlashMenuOpen(false);
+  }, [scenario.id]);
+
+  useEffect(() => {
     scrollEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [executedTurns]);
 

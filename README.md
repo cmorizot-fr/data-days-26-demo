@@ -1,34 +1,114 @@
-# Paris Data Summit 2026 — Agentic Data Cloud Demo
+# Paris Data Summit 2026 — Agentic Data Cloud Demo (*Banque Hexagone*)
 
-Dépôt de démonstration end-to-end illustrant le passage d'un SI bancaire siloté à une architecture gouvernée sur **Google's Agentic Data Cloud**, de la couche `RAW` aux agents mobiles temps réel.
+Dépôt de démonstration de bout en bout illustrant la transformation d'un SI bancaire siloté (**Banque Hexagone**) vers une plateforme gouvernée sur **Google's Agentic Data Cloud**, pilotée de manière interactive par **Antigravity (`AGY`)** et le plugin **Data Agent Kit (`DAK`)**.
 
-Le document de référence métier et technique est [`DESIGN_AND_CONTEXT.md`](./DESIGN_AND_CONTEXT.md).
+---
 
-## Structure du repository
+## 🎯 Vision & Fil rouge métier
+
+La **Banque Hexagone** (`80 000` clients, `95 000` comptes, `450` agences sur `8` régions) fait face à un paradoxe apparent : **aucune clôture de compte sur le trimestre** (`+15 000` ouvertures récentes), mais une **fuite silencieuse de `2,42 Md€` de dépôts à vue** vers des néobanques et courtiers (dont `68 %` chez les `18-32 ans` entre le 1er et le 5 du mois) qui dégrade lourdement sa marge nette (**PNB**).
+
+La démonstration se déroule en **4 actes** :
+
+| Acte | Objectif technique & métier | Briques Google Cloud & `DAK` |
+| :--- | :--- | :--- |
+| **Démo #1**<br>*Agrégation `RAW`* | Diagnostiquer un drop Mainframe z/OS (`EBCDIC CP500 + COMP-3`, détection d'un batch en `ABEND_S0C7`), parser vers **BigLake Managed Iceberg**, fédérer **AWS S3** sans copie et exposer `250` contrats PDF. | `BigLake Iceberg`, `Managed Spark`, `BigQuery Omni`, `Object Tables`, `dbt` |
+| **Démo #2**<br>*Couche `SILVER` & DQ* | Industrialiser le nettoyage dans `dbt` (doublons `end_to_end_id`, rejets `RJCT`/`PDNG`, dates `00000000`, `650` comptes orphelins inter-cloud) et publier des Data Products. | `dbt-bigquery`, `Data Quality`, `Knowledge Catalog` |
+| **Démo #3**<br>*Sémantique & CFO* | Réconcilier les formules métier contradictoires et démontrer l'écart critique sur le PNB trimestriel : **`+42,80 M€`** en requête SQL naïve contre **`-38,42 M€`** avec la vue certifiée `Knowledge Catalog` (coût ALM `-24,12 M€` + primes PDF `-14,30 M€`). | `Knowledge Catalog` (`OKF` / `kcmd`), `BigQuery Data Agents` |
+| **Démo #4**<br>*Scale Mobile Temps Réel* | Calculer la propension d'épargne avec `BQML` / `AI SQL` et synchroniser les agrégats vers **AlloyDB** (`< 15 ms`) pour alimenter un conseiller mobile temps réel. | `BQML`, `AlloyDB` (`alloydb_sync`), `ADK` |
+
+---
+
+## 🖥️ Déployer en local l'interface de démo (`stage_ui`)
+
+Le dossier [`stage_ui/`](./stage_ui) contient une application **React 18 + TypeScript + Vite + Tailwind CSS v4** reproduisant fidèlement l'expérience scénique d'**Antigravity** équipée du plugin **Data Agent Kit (`DAK`)** (support visuel autonome pour les répétitions et le backup sur scène).
+
+### Prérequis
+- **Node.js** `>= 18` (recommandé : `20 LTS` ou `22 LTS`) et **npm**.
+
+### 1. Installation & lancement en mode développement
+
+```bash
+cd stage_ui
+npm install
+npm run dev
+```
+
+L'interface est immédiatement accessible dans le navigateur sur :
+👉 **[http://localhost:5173](http://localhost:5173)**
+
+### 2. Build de production & prévisualisation locale
+
+Pour tester le bundle statique optimisé tel qu'il serait servi hors-ligne le jour J :
+
+```bash
+cd stage_ui
+npm run build
+npm run preview
+```
+
+### 3. Prise en main de l'interface scénique
+- **Barre latérale `Workspaces` (`Démo #1` à `Démo #4`)** : **1 Workspace par Démo** et, à l'intérieur de chaque Workspace, **1 Conversation distincte par étape de la démo**.
+- **Exécution interactive guidée** : cliquez sur la suggestion de prompt pré-remplie (ou appuyez sur `Tab`) puis envoyez le message pour dérouler en temps réel les appels MCP, les skills `DAK` mobilisés, les questions d'arbitrage d'`AGY` et les résultats chiffrés.
+- **Vue `Customizations` (`Settings` / `Plugins`)** : permet d'inspecter sur scène le contenu du plugin **Data Agent Kit (`DAK`)** (skills spécialisés BigQuery/Spark/dbt/KC et serveurs MCP connectés).
+- **Panneau latéral `Overview` (droite)** : affiche dynamiquement les sous-agents actifs, l'inspecteur des fichiers générés (modèles SQL `dbt`, scripts PySpark, bundles `OKF`) et les journaux de commandes terminales.
+- **Contrôles Speaker** :
+  - **Mode `Fast` (`⚡`)** : accélère (`×3`) l'animation des traces d'outils pendant les répétitions.
+  - **`Reset`** : remet à zéro la conversation du scénario courant en un clic.
+
+---
+
+## 🐍 Environnement Python & Générateur de données (`seed=2026`)
+
+Le générateur local produit des fichiers déterministes au centime près (incluant les fichiers binaires Mainframe z/OS `EBCDIC CP500` + décimaux condensés `COMP-3` et relevés `CFONB 120`).
+
+### Prérequis
+- **Python** `>= 3.11, < 3.14`
+- **[uv](https://docs.astral.sh/uv/)** pour la gestion rapide de l'environnement et des dépendances
+
+### Installation & génération Core Banking
+
+```bash
+# 1. Créer le fichier d'environnement local à partir du modèle
+cp .env.example .env
+
+# 2. Synchroniser l'environnement virtuel Python via uv
+uv sync
+
+# 3. Générer le drop Mainframe z/OS (clients, comptes EBCDIC, relevés CFONB 120 & copybooks)
+uv run python 00_data_generator/generate_mainframe_cfonb.py
+
+# 4. Vérifier les invariants métier et techniques au centime près
+uv run python 00_data_generator/validate_corebanking.py
+```
+
+> Les fichiers générés sont écrits dans `00_data_generator/output/` (ignoré par Git afin de ne pas alourdir le dépôt).
+
+---
+
+## 📂 Structure du repository
 
 ```text
 .
-├── DESIGN_AND_CONTEXT.md              # Blueprint d'architecture & invariants métier
-├── AGENTS.md                          # Règles pour Antigravity (AGY) & DAK
-├── pyproject.toml                     # Dépendances Python (gérées via uv)
-├── .env.example                       # Variables d'environnement GCP / AWS / AlloyDB
+├── DESIGN_AND_CONTEXT.md              # Blueprint d'architecture complet & invariants chiffrés
+├── AGENTS.md                          # Règles strictes pour Antigravity (AGY) & Data Agent Kit (DAK)
 ├── docs/
-│   └── assets/                        # Schémas d'architecture & supports
-├── 00_data_generator/                 # Générateur déterministe (seed=2026) Couche 0
-├── 01_demo1_raw_aggregation/          # BigLake AWS (Omni), Iceberg RAW & init dbt
-├── 02_demo2_silver_dbt_dq/            # Modèles dbt SILVER, Data Quality & Data Products KC
-├── 03_demo3_kc_semantics_cfo/         # Catalogues legacy, interviews .mp4, KC & BQ Agents
-├── 04_demo4_scale_mobile_adk/         # BQML, alloydb_sync, ADK & App mobile Android
-└── scripts/
-    └── reset_demo_state.sh            # Remise à zéro entre répétitions
+│   ├── DEMO_QUESTIONS_AND_FLOW.md     # Script conversationnel détaillé & skills DAK par tour
+│   └── assets/                        # Schémas d'architecture & supports visuels
+├── stage_ui/                          # Interface web locale de démonstration (React + Vite + Tailwind v4)
+├── 00_data_generator/                 # Générateur déterministe (seed=2026) & copybooks COBOL (.cpy)
+├── 01_demo1_raw_aggregation/          # Scripts & artefacts Démo #1 (BigLake Iceberg, Omni, PDF, init dbt)
+├── 02_demo2_silver_dbt_dq/            # Modèles dbt SILVER, tests Data Quality & Data Products KC
+├── 03_demo3_kc_semantics_cfo/         # Glossaires Knowledge Catalog (OKF) & réconciliation PNB CFO
+├── 04_demo4_scale_mobile_adk/         # BQML, synchronisation AlloyDB & agent mobile ADK
+├── scripts/
+│   └── reset_demo_state.sh            # Script de remise à zéro de l'environnement entre répétitions
+├── pyproject.toml                     # Configuration Python & dépendances (uv)
+└── .env.example                       # Modèle des variables d'environnement GCP / AWS / AlloyDB
 ```
 
-## Démarrage rapide
+## 📚 Documentation de référence
 
-```bash
-# 1. Configurer l'environnement local
-cp .env.example .env
-
-# 2. Installer les dépendances Python avec uv
-uv sync
-```
+- **[`DESIGN_AND_CONTEXT.md`](./DESIGN_AND_CONTEXT.md)** : contexte métier détaillé, architecture cible, anomalies `RAW` injectées et formules exactes des invariants financiers.
+- **[`docs/DEMO_QUESTIONS_AND_FLOW.md`](./docs/DEMO_QUESTIONS_AND_FLOW.md)** : déroulé pas-à-pas sur scène, questions d'arbitrage posées par `AGY` et cartographie des skills `DAK` mobilisés.
+- **[`AGENTS.md`](./AGENTS.md)** : garde-fous techniques et conventions que tout agent IA intervenant sur ce dépôt doit respecter.

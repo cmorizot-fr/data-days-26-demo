@@ -1,4 +1,4 @@
-export type DemoId = 'demo1' | 'demo2' | 'demo3';
+export type DemoId = 'demo1' | 'demo2' | 'demo3' | 'demo4';
 
 export type ActiveNav = 'chat' | 'customizations' | 'automations';
 
@@ -98,8 +98,13 @@ export interface PromptTurn {
   artifact?: ArtifactItem;
 }
 
+/**
+ * Une conversation correspond à une étape précise d'une démo
+ * à l'intérieur du Workspace de cette démo.
+ */
 export interface DemoScenario {
-  id: DemoId;
+  id: string;
+  demoId: DemoId;
   shortName: string;
   conversationTitle: string;
   projectFolder: string;
@@ -107,4 +112,15 @@ export interface DemoScenario {
   greetingName: string;
   modelLabel: string;
   turns: PromptTurn[];
+}
+
+/**
+ * Un Workspace dans la barre latérale correspond à une Démo complète
+ * et regroupe les conversations de chacune de ses étapes.
+ */
+export interface DemoWorkspace {
+  id: DemoId;
+  workspaceLabel: string;
+  folderName: string;
+  conversations: DemoScenario[];
 }

@@ -8,6 +8,9 @@ import {
   Clock,
   Briefcase,
   Folder,
+  FolderOpen,
+  ChevronDown,
+  ChevronRight,
   Settings,
   RotateCcw,
   Zap,
@@ -19,7 +22,7 @@ import {
   FolderPlus,
 } from 'lucide-react';
 import { ActiveNav, DemoId, PromptTurn } from './types';
-import { DEMO_SCENARIOS } from './data/scenarios';
+import { ALL_CONVERSATIONS, DEMO_WORKSPACES } from './data/scenarios';
 import { CustomizationsView } from './components/CustomizationsView';
 import { ChatStage, ExecutedTurn } from './components/ChatStage';
 import {
@@ -29,7 +32,13 @@ import {
 } from './components/OverviewPanel';
 
 export const App: React.FC = () => {
-  const [activeDemo, setActiveDemo] = useState<DemoId>('demo1');
+  const [activeConvId, setActiveConvId] = useState<string>(DEMO_WORKSPACES[0].conversations[0].id);
+  const [expandedWorkspaces, setExpandedWorkspaces] = useState<Record<DemoId, boolean>>({
+    demo1: true,
+    demo2: true,
+    demo3: true,
+    demo4: false,
+  });
   const [activeNav, setActiveNav] = useState<ActiveNav>('chat');
   const [dakInstalled, setDakInstalled] = useState<boolean>(false);
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
@@ -38,18 +47,15 @@ export const App: React.FC = () => {
   const [speakerMenuOpen, setSpeakerMenuOpen] = useState<boolean>(false);
   const [inspectorModal, setInspectorModal] = useState<InspectorModalState>(null);
 
-  const [historyByDemo, setHistoryByDemo] = useState<Record<DemoId, ExecutedTurn[]>>({
-    demo1: [],
-    demo2: [],
-    demo3: [],
-  });
+  const [historyByConv, setHistoryByConv] = useState<Record<string, ExecutedTurn[]>>({});
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
 
-  const currentScenario = DEMO_SCENARIOS[activeDemo];
-  const currentTurns = historyByDemo[activeDemo];
+  const currentScenario = ALL_CONVERSATIONS[activeConvId] || DEMO_WORKSPACES[0].conversations[0];
+  const currentTurns = historyByConv[activeConvId] || [];
 
   const handleSendTurn = (turn: PromptTurn, customText?: string) => {
     if (isStreaming) return;
+    const targetConvId = activeConvId;
     setIsStreaming(true);
 
     if (!dakInstalled) {
@@ -63,9 +69,9 @@ export const App: React.FC = () => {
       visibleTraceCount: 1,
     };
 
-    setHistoryByDemo((prev) => ({
+    setHistoryByConv((prev) => ({
       ...prev,
-      [activeDemo]: [...prev[activeDemo].filter((t) => t.turn.id !== turn.id), initialEntry],
+      [targetConvId]: [...(prev[targetConvId] || []).filter((t) => t.turn.id !== turn.id), initialEntry],
     }));
 
     const speedFactor = fastMode ? 0.32 : 1;
@@ -75,9 +81,9 @@ export const App: React.FC = () => {
       if (idx === 0) return;
       cumulativeMs += tr.durationMs * speedFactor;
       setTimeout(() => {
-        setHistoryByDemo((prev) => ({
+        setHistoryByConv((prev) => ({
           ...prev,
-          [activeDemo]: prev[activeDemo].map((item) =>
+          [targetConvId]: (prev[targetConvId] || []).map((item) =>
             item.turn.id === turn.id ? { ...item, visibleTraceCount: idx + 1 } : item
           ),
         }));
@@ -88,9 +94,9 @@ export const App: React.FC = () => {
       cumulativeMs + (turn.traces[turn.traces.length - 1]?.durationMs || 700) * speedFactor;
 
     setTimeout(() => {
-      setHistoryByDemo((prev) => ({
+      setHistoryByConv((prev) => ({
         ...prev,
-        [activeDemo]: prev[activeDemo].map((item) =>
+        [targetConvId]: (prev[targetConvId] || []).map((item) =>
           item.turn.id === turn.id
             ? { ...item, status: 'done', visibleTraceCount: turn.traces.length }
             : item
@@ -100,20 +106,30 @@ export const App: React.FC = () => {
     }, totalMs);
   };
 
-  const handleResetDemo = () => {
+  const handleResetCurrentConversation = () => {
     if (isStreaming) return;
-    setHistoryByDemo((prev) => ({ ...prev, [activeDemo]: [] }));
+    setHistoryByConv((prev) => ({ ...prev, [activeConvId]: [] }));
+    setSpeakerMenuOpen(false);
+  };
+
+  const handleResetAllWorkspaces = () => {
+    if (isStreaming) return;
+    setHistoryByConv({});
     setSpeakerMenuOpen(false);
   };
 
   const handleNewConversation = () => {
     setActiveNav('chat');
     if (!isStreaming) {
-      setHistoryByDemo((prev) => ({ ...prev, [activeDemo]: [] }));
+      setHistoryByConv((prev) => ({ ...prev, [activeConvId]: [] }));
     }
   };
 
-  // Aggregate right-panel Overview data for current demo
+  const toggleWorkspace = (wsId: DemoId) => {
+    setExpandedWorkspaces((prev) => ({ ...prev, [wsId]: !prev[wsId] }));
+  };
+
+  // Aggregate right-panel Overview data for current conversation step
   const completedTurns = currentTurns.filter((t) => t.status === 'done');
   const allFiles = completedTurns.flatMap((t) => t.turn.filesChanged);
   const allLogs = completedTurns.flatMap((t) => t.turn.terminalLogs);
@@ -151,8 +167,8 @@ export const App: React.FC = () => {
 
           <Search className="w-4 h-4 text-[#5F6368] ml-1" />
 
-          {/* Breadcrumb when active conversation */}
-          {activeNav === 'chat' && currentTurns.length > 0 && (
+          {/* Breadcrumb: Workspace Folder / Step Conversation */}
+          {activeNav === 'chat' && (
             <div className="ml-4 flex items-center gap-2 text-[13.5px]">
               <span className="text-[#5F6368]">{currentScenario.projectFolder}</span>
               <span className="text-[#9AA0A6]">/</span>
@@ -163,7 +179,6 @@ export const App: React.FC = () => {
 
         {/* Right Controls matching Antigravity: ⋮ + Open IDE + Artifacts/Overview toggles */}
         <div className="flex items-center gap-2 relative">
-          {/* Three-dots speaker menu (holds Demo speed / Reset / GCP link discreetly) */}
           <div className="relative">
             <button
               type="button"
@@ -175,7 +190,7 @@ export const App: React.FC = () => {
             </button>
 
             {speakerMenuOpen && (
-              <div className="absolute right-0 top-full mt-1.5 w-60 p-1.5 rounded-2xl bg-white shadow-[0_10px_32px_rgba(15,23,42,0.12)] z-50 animate-fade-slide-up space-y-0.5">
+              <div className="absolute right-0 top-full mt-1.5 w-64 p-1.5 rounded-2xl bg-white shadow-[0_10px_32px_rgba(15,23,42,0.12)] z-50 animate-fade-slide-up space-y-0.5">
                 <button
                   type="button"
                   onClick={() => {
@@ -195,11 +210,20 @@ export const App: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={handleResetDemo}
+                  onClick={handleResetCurrentConversation}
                   className="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-[#F8F9FA] text-[13px] text-[#202124] cursor-pointer"
                 >
                   <RotateCcw className="w-3.5 h-3.5 text-[#5F6368]" />
-                  <span>Réinitialiser {currentScenario.shortName}</span>
+                  <span>Réinitialiser cette étape</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleResetAllWorkspaces}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-[#F8F9FA] text-[13px] text-[#202124] cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-[#5F6368]" />
+                  <span>Tout réinitialiser (4 démos)</span>
                 </button>
 
                 <a
@@ -216,7 +240,6 @@ export const App: React.FC = () => {
             )}
           </div>
 
-          {/* Exact "Open IDE" pill from Screenshots 1-3 */}
           <a
             href="https://console.cloud.google.com/bigquery?project=data-days-demo"
             target="_blank"
@@ -259,9 +282,9 @@ export const App: React.FC = () => {
       {/* Body Layout: Left Sidebar + Rounded White Main Surface */}
       <div className="flex-1 flex min-h-0">
         {sidebarOpen && (
-          <aside className="w-[244px] shrink-0 px-3 pt-1 pb-3 flex flex-col justify-between">
-            <div className="space-y-6">
-              {/* Top Navigation matching Screenshots 1-3 */}
+          <aside className="w-[268px] shrink-0 px-3 pt-1 pb-3 flex flex-col justify-between overflow-y-auto">
+            <div className="space-y-5">
+              {/* Top Navigation */}
               <div className="space-y-1">
                 <button
                   type="button"
@@ -301,55 +324,87 @@ export const App: React.FC = () => {
                 </button>
               </div>
 
-              {/* Projects section matching Antigravity sidebar with "Demo 1", "Demo 2", "Demo 3" */}
-              <div className="px-1">
+              {/* Workspaces : 1 Workspace par Démo, et sous chaque Workspace : 1 Conversation par Étape */}
+              <div className="px-0.5">
                 <div className="flex items-center justify-between px-2.5 mb-2 text-[12px] text-[#70757A]">
-                  <span>Projects</span>
+                  <span>Workspaces</span>
                   <div className="flex items-center gap-2">
                     <ListFilter className="w-3.5 h-3.5" />
                     <FolderPlus className="w-3.5 h-3.5" />
                   </div>
                 </div>
 
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 px-2.5 py-1.5 text-[13.5px] text-[#3C4043]">
-                    <Folder className="w-4 h-4 text-[#5F6368]" />
-                    <span>data-days-demo</span>
-                  </div>
+                <div className="space-y-2">
+                  {DEMO_WORKSPACES.map((ws) => {
+                    const isOpen = expandedWorkspaces[ws.id] ?? false;
+                    const isActiveWs = currentScenario.demoId === ws.id && activeNav === 'chat';
 
-                  <div className="space-y-0.5">
-                    {(['demo1', 'demo2', 'demo3'] as DemoId[]).map((id) => {
-                      const sc = DEMO_SCENARIOS[id];
-                      const count = historyByDemo[id].length;
-                      const selected = activeNav === 'chat' && activeDemo === id;
-                      return (
+                    return (
+                      <div key={ws.id} className="space-y-0.5">
+                        {/* Workspace Folder Header (1 per Demo) */}
                         <button
-                          key={id}
                           type="button"
-                          onClick={() => {
-                            setActiveDemo(id);
-                            setActiveNav('chat');
-                          }}
-                          className={`w-full flex items-center justify-between px-3.5 py-1.5 rounded-xl text-[13.5px] transition-colors cursor-pointer ${
-                            selected
-                              ? 'bg-[#EAECEF] text-[#111318] font-medium'
-                              : 'text-[#3C4043] hover:bg-[#EFEFF3]'
+                          onClick={() => toggleWorkspace(ws.id)}
+                          title={ws.folderName}
+                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-[13px] transition-colors cursor-pointer ${
+                            isActiveWs
+                              ? 'text-[#111318] font-semibold hover:bg-[#EFEFF3]'
+                              : 'text-[#3C4043] font-medium hover:bg-[#EFEFF3]'
                           }`}
                         >
-                          <span>{sc.shortName}</span>
-                          <span className="text-[12px] text-[#70757A]">
-                            {count > 0 ? 'now' : ''}
+                          <span className="flex items-center gap-2 min-w-0">
+                            {isOpen ? (
+                              <FolderOpen className="w-4 h-4 shrink-0 text-[#5F6368]" />
+                            ) : (
+                              <Folder className="w-4 h-4 shrink-0 text-[#5F6368]" />
+                            )}
+                            <span className="truncate">{ws.workspaceLabel}</span>
                           </span>
+                          {isOpen ? (
+                            <ChevronDown className="w-3.5 h-3.5 shrink-0 text-[#70757A]" />
+                          ) : (
+                            <ChevronRight className="w-3.5 h-3.5 shrink-0 text-[#70757A]" />
+                          )}
                         </button>
-                      );
-                    })}
-                  </div>
+
+                        {/* Step Conversations inside Workspace */}
+                        {isOpen && (
+                          <div className="pl-4 space-y-0.5">
+                            {ws.conversations.map((conv) => {
+                              const count = (historyByConv[conv.id] || []).length;
+                              const selected = activeNav === 'chat' && activeConvId === conv.id;
+                              return (
+                                <button
+                                  key={conv.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveConvId(conv.id);
+                                    setActiveNav('chat');
+                                  }}
+                                  className={`w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-[12.5px] transition-colors cursor-pointer text-left ${
+                                    selected
+                                      ? 'bg-[#EAECEF] text-[#111318] font-medium'
+                                      : 'text-[#4B5563] hover:bg-[#EFEFF3]'
+                                  }`}
+                                >
+                                  <span className="truncate pr-1.5">{conv.shortName}</span>
+                                  {count > 0 && (
+                                    <span className="text-[11px] shrink-0 text-[#70757A]">now</span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
 
-            {/* Bottom Settings matching Screenshots */}
-            <div className="px-1">
+            {/* Bottom Settings */}
+            <div className="px-1 pt-3">
               <div className="flex items-center gap-2.5 px-3 py-1.5 text-[13.5px] text-[#3C4043]">
                 <Settings className="w-4 h-4 text-[#5F6368]" />
                 <span>Settings</span>
