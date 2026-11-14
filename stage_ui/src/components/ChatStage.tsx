@@ -21,14 +21,11 @@ import {
   FileText,
 } from 'lucide-react';
 import { AntigravityArchLogo } from './Icons';
+import { DEMO_SETTINGS } from '../data/scenarios';
 import { DemoScenario, ExecutionStepTrace, FileIconKind, InlineChip, PromptTurn } from '../types';
 import { InspectorModalState } from './OverviewPanel';
 
-const AVAILABLE_MODELS = [
-  'Gemini 4 - Carbon',
-  'Gemini 4 - Hydrogen',
-  'Claude Sonnet 5.5',
-] as const;
+const AVAILABLE_MODELS = DEMO_SETTINGS.availableModels;
 
 export interface ExecutedTurn {
   turn: PromptTurn;
@@ -93,28 +90,174 @@ const WorkTreeFileGlyph: React.FC<{ kind: FileIconKind }> = ({ kind }) => {
 };
 
 /**
+ * Tokenizes a shell command line with Antigravity's terminal syntax colors:
+ * - Command binary: coral red (#D93025)
+ * - CLI flags (-rn, --project=...): warm amber (#D97706)
+ * - Quoted strings ("...", '...'): forest green (#188038)
+ * - Paths & arguments: crisp ink (#111318)
+ */
+const renderShellCommand = (cmd: string): React.ReactNode => {
+  const tokenRegex = /([A-Z_][A-Z0-9_]*=(?:"[^"]*"|'[^']*'|[^\s]+)|"[^"]*"|'[^']*'|\s+|\|\||&&|[|;<>]|[^\s|;&<>]+)/g;
+  const tokens = cmd.match(tokenRegex) ?? [cmd];
+  let expectBinary = true;
+
+  return tokens.map((tok, idx) => {
+    if (/^\s+$/.test(tok)) {
+      return <span key={idx}>{tok}</span>;
+    }
+    if (tok === '&&' || tok === '||' || tok === '|' || tok === ';') {
+      expectBinary = true;
+      return (
+        <span key={idx} className="text-[#5F6368]">
+          {tok}
+        </span>
+      );
+    }
+    if (tok === '<' || tok === '>') {
+      return (
+        <span key={idx} className="text-[#5F6368]">
+          {tok}
+        </span>
+      );
+    }
+    // ENV_VAR="value" prefix before the binary
+    const envMatch = tok.match(/^([A-Z_][A-Z0-9_]*=)(.*)$/);
+    if (envMatch && expectBinary) {
+      const [, prefix, val] = envMatch;
+      const isQuoted =
+        (val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"));
+      return (
+        <span key={idx}>
+          <span className="text-[#5F6368]">{prefix}</span>
+          <span className={isQuoted ? 'text-[#188038]' : 'text-[#111318]'}>{val}</span>
+        </span>
+      );
+    }
+    if (expectBinary) {
+      expectBinary = false;
+      return (
+        <span key={idx} className="text-[#D93025]">
+          {tok}
+        </span>
+      );
+    }
+    if ((tok.startsWith('"') && tok.endsWith('"')) || (tok.startsWith("'") && tok.endsWith("'"))) {
+      return (
+        <span key={idx} className="text-[#188038]">
+          {tok}
+        </span>
+      );
+    }
+    if (tok.startsWith('-')) {
+      const eqIdx = tok.indexOf('=');
+      if (eqIdx > 0) {
+        const flagPart = tok.slice(0, eqIdx + 1);
+        const valPart = tok.slice(eqIdx + 1);
+        return (
+          <span key={idx}>
+            <span className="text-[#D97706]">{flagPart}</span>
+            <span className="text-[#111318]">{valPart}</span>
+          </span>
+        );
+      }
+      return (
+        <span key={idx} className="text-[#D97706]">
+          {tok}
+        </span>
+      );
+    }
+    return (
+      <span key={idx} className="text-[#111318]">
+        {tok}
+      </span>
+    );
+  });
+};
+
+/**
  * Renders a single row in the "Worked for Xs -> Explored files, ran commands, edited files" tree
- * Pure white background, indented hierarchy, zero checkmarks or grey boxes!
+ * Clicking a "Ran ..." row expands its inline command & output card directly underneath!
  */
 const WorkTreeStepRow: React.FC<{
   trace: ExecutionStepTrace;
+  defaultCwd: string;
+  fallbackLogs: string[];
   isActiveStep: boolean;
-  onClickRan: () => void;
+  isRanExpanded: boolean;
+  onToggleRan: () => void;
   onClickFile: () => void;
-}> = ({ trace, isActiveStep, onClickRan, onClickFile }) => {
+}> = ({
+  trace,
+  defaultCwd,
+  fallbackLogs,
+  isActiveStep,
+  isRanExpanded,
+  onToggleRan,
+  onClickFile,
+}) => {
   const pulseClass = isActiveStep ? 'animate-pulse' : '';
 
   if (trace.action === 'ran') {
+    const cwdLabel = trace.cwd || defaultCwd;
+    let commandLine = trace.command || '';
+    let outputLines = trace.output || [];
+
+    if (!commandLine && fallbackLogs.length > 0) {
+      const firstCmdIdx = fallbackLogs.findIndex((l) => l.startsWith('$ '));
+      if (firstCmdIdx >= 0) {
+        commandLine = fallbackLogs[firstCmdIdx].slice(2);
+        const rest: string[] = [];
+        for (let i = firstCmdIdx + 1; i < fallbackLogs.length; i++) {
+          if (fallbackLogs[i].startsWith('$ ')) break;
+          rest.push(fallbackLogs[i]);
+        }
+        outputLines = rest;
+      }
+    }
+    if (!commandLine) {
+      commandLine = trace.commandSummary;
+    }
+
     return (
       <div className={`animate-fade-slide-up ${pulseClass}`}>
         <button
           type="button"
-          onClick={onClickRan}
+          onClick={onToggleRan}
           className="inline-flex items-center gap-1 text-[14px] text-[#5F6368] hover:text-[#202124] text-left transition-colors cursor-pointer"
         >
           <span>Ran {trace.commandSummary}</span>
-          <ChevronRight className="w-3.5 h-3.5 shrink-0 text-[#70757A]" />
+          {isRanExpanded ? (
+            <ChevronDown className="w-3.5 h-3.5 shrink-0 text-[#70757A]" />
+          ) : (
+            <ChevronRight className="w-3.5 h-3.5 shrink-0 text-[#70757A]" />
+          )}
         </button>
+
+        {isRanExpanded && (
+          <div className="mt-2 mb-1 rounded-xl bg-white shadow-[0_1px_6px_rgba(15,23,42,0.07)] divide-y divide-[#F0F1F3] overflow-hidden animate-fade-slide-up">
+            {/* Command Prompt Header */}
+            <div className="px-3.5 py-2.5 font-mono text-[13px] leading-snug overflow-x-auto whitespace-nowrap select-text">
+              <span className="text-[#6E7681]">~/.../{cwdLabel} $ </span>
+              {renderShellCommand(commandLine)}
+            </div>
+
+            {/* Command Output Body with soft bottom fade when multi-line */}
+            {outputLines.length > 0 && (
+              <div className="relative">
+                <div className="px-3.5 py-2.5 font-mono text-[13px] leading-[1.55] text-[#111318] max-h-[146px] overflow-y-auto select-text">
+                  {outputLines.map((line, lIdx) => (
+                    <div key={lIdx} className="whitespace-pre-wrap break-all">
+                      {line}
+                    </div>
+                  ))}
+                </div>
+                {outputLines.length >= 5 && (
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-7 bg-gradient-to-t from-white via-white/80 to-transparent" />
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -212,6 +355,7 @@ export const ChatStage: React.FC<ChatStageProps> = ({
   const [selectedTurnIndex, setSelectedTurnIndex] = useState<number | null>(null);
   const [expandedTraces, setExpandedTraces] = useState<Record<string, boolean>>({});
   const [expandedSubGroups, setExpandedSubGroups] = useState<Record<string, boolean>>({});
+  const [expandedRanSteps, setExpandedRanSteps] = useState<Record<string, boolean>>({});
   const [selectedModel, setSelectedModel] = useState<string>(AVAILABLE_MODELS[0]);
   const [modelMenuOpen, setModelMenuOpen] = useState<boolean>(false);
   const [slashMenuOpen, setSlashMenuOpen] = useState<boolean>(false);
@@ -226,6 +370,7 @@ export const ChatStage: React.FC<ChatStageProps> = ({
     setInputValue('');
     setSelectedTurnIndex(null);
     setSlashMenuOpen(false);
+    setExpandedRanSteps({});
   }, [scenario.id]);
 
   useEffect(() => {
@@ -375,15 +520,17 @@ export const ChatStage: React.FC<ChatStageProps> = ({
                                 <WorkTreeStepRow
                                   key={tr.id}
                                   trace={tr}
+                                  defaultCwd={scenario.projectFolder}
+                                  fallbackLogs={turn.terminalLogs}
                                   isActiveStep={
                                     status === 'streaming' && idx === visibleTraceCount - 1
                                   }
-                                  onClickRan={() =>
-                                    turn.terminalLogs.length > 0 &&
-                                    onOpenInspector({
-                                      kind: 'terminal',
-                                      logs: turn.terminalLogs,
-                                    })
+                                  isRanExpanded={Boolean(expandedRanSteps[tr.id])}
+                                  onToggleRan={() =>
+                                    setExpandedRanSteps((prev) => ({
+                                      ...prev,
+                                      [tr.id]: !prev[tr.id],
+                                    }))
                                   }
                                   onClickFile={() =>
                                     turn.filesChanged.length > 0 &&

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   PanelLeft,
   ArrowLeft,
@@ -21,8 +21,12 @@ import {
   ListFilter,
   FolderPlus,
 } from 'lucide-react';
-import { ActiveNav, DemoId, PromptTurn } from './types';
-import { ALL_CONVERSATIONS, DEMO_WORKSPACES } from './data/scenarios';
+import { ActiveNav, AnimationSpeed, DemoId, PromptTurn } from './types';
+import {
+  INITIAL_DEMO_CONFIG,
+  ParsedDemoConfig,
+  fetchRuntimeDemoConfig,
+} from './data/scenarios';
 import { CustomizationsView } from './components/CustomizationsView';
 import { ChatStage, ExecutedTurn } from './components/ChatStage';
 import {
@@ -31,8 +35,21 @@ import {
   OverviewPanel,
 } from './components/OverviewPanel';
 
+const SPEED_FACTORS: Record<AnimationSpeed, number> = {
+  slow: 2.0,    // 2x moins vite (par défaut pour la scène)
+  normal: 1.0,  // Vitesse nominale
+  fast: 0.32,   // Mode accéléré pour répétitions
+};
+
+function scaleWorkedLabel(label: string, factor: number): string {
+  return label.replace(/(\d+)s\b/, (_, sec) => `${Math.max(1, Math.round(Number(sec) * factor))}s`);
+}
+
 export const App: React.FC = () => {
-  const [activeConvId, setActiveConvId] = useState<string>(DEMO_WORKSPACES[0].conversations[0].id);
+  const [demoConfig, setDemoConfig] = useState<ParsedDemoConfig>(INITIAL_DEMO_CONFIG);
+  const [activeConvId, setActiveConvId] = useState<string>(
+    INITIAL_DEMO_CONFIG.workspaces[0]?.conversations[0]?.id ?? 'd1-step1'
+  );
   const [expandedWorkspaces, setExpandedWorkspaces] = useState<Record<DemoId, boolean>>({
     demo1: true,
     demo2: true,
@@ -40,17 +57,34 @@ export const App: React.FC = () => {
     demo4: false,
   });
   const [activeNav, setActiveNav] = useState<ActiveNav>('chat');
+  const [selectedPlugin, setSelectedPlugin] = useState<'dak' | null>(null);
   const [dakInstalled, setDakInstalled] = useState<boolean>(false);
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
   const [overviewOpen, setOverviewOpen] = useState<boolean>(true);
-  const [fastMode, setFastMode] = useState<boolean>(false);
+  const [speedMode, setSpeedMode] = useState<AnimationSpeed>(
+    INITIAL_DEMO_CONFIG.settings.defaultSpeed
+  );
   const [speakerMenuOpen, setSpeakerMenuOpen] = useState<boolean>(false);
   const [inspectorModal, setInspectorModal] = useState<InspectorModalState>(null);
 
   const [historyByConv, setHistoryByConv] = useState<Record<string, ExecutedTurn[]>>({});
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
 
-  const currentScenario = ALL_CONVERSATIONS[activeConvId] || DEMO_WORKSPACES[0].conversations[0];
+  useEffect(() => {
+    setDemoConfig(INITIAL_DEMO_CONFIG);
+  }, []);
+
+  useEffect(() => {
+    fetchRuntimeDemoConfig().then((cfg) => {
+      if (cfg && cfg.workspaces.length > 0) {
+        setDemoConfig(cfg);
+        setSpeedMode(cfg.settings.defaultSpeed);
+      }
+    });
+  }, []);
+
+  const currentScenario =
+    demoConfig.conversationsById[activeConvId] || demoConfig.workspaces[0].conversations[0];
   const currentTurns = historyByConv[activeConvId] || [];
 
   const handleSendTurn = (turn: PromptTurn, customText?: string) => {
@@ -62,8 +96,14 @@ export const App: React.FC = () => {
       setDakInstalled(true);
     }
 
+    const speedFactor = SPEED_FACTORS[speedMode];
+    const scaledTurn: PromptTurn = {
+      ...turn,
+      workedDurationLabel: scaleWorkedLabel(turn.workedDurationLabel, speedFactor),
+    };
+
     const initialEntry: ExecutedTurn = {
-      turn,
+      turn: scaledTurn,
       userPromptText: customText || turn.prompt,
       status: 'streaming',
       visibleTraceCount: 1,
@@ -74,7 +114,6 @@ export const App: React.FC = () => {
       [targetConvId]: [...(prev[targetConvId] || []).filter((t) => t.turn.id !== turn.id), initialEntry],
     }));
 
-    const speedFactor = fastMode ? 0.32 : 1;
     let cumulativeMs = 0;
 
     turn.traces.forEach((tr, idx) => {
@@ -160,9 +199,23 @@ export const App: React.FC = () => {
             <PanelLeft className="w-4 h-4" />
           </button>
 
-          <div className="flex items-center gap-1.5 text-[#9AA0A6]">
-            <ArrowLeft className="w-4 h-4" />
-            <ArrowRight className="w-4 h-4" />
+          <div className="flex items-center gap-1 text-[#9AA0A6]">
+            <button
+              type="button"
+              disabled={!(activeNav === 'customizations' && selectedPlugin !== null)}
+              onClick={() => setSelectedPlugin(null)}
+              className={`p-1 rounded-lg transition-colors ${
+                activeNav === 'customizations' && selectedPlugin !== null
+                  ? 'text-[#5F6368] hover:bg-[#ECEEF2] cursor-pointer'
+                  : 'text-[#9AA0A6] cursor-default'
+              }`}
+              title="Back"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+            <span className="p-1">
+              <ArrowRight className="w-4 h-4" />
+            </span>
           </div>
 
           <Search className="w-4 h-4 text-[#5F6368] ml-1" />
@@ -191,22 +244,40 @@ export const App: React.FC = () => {
 
             {speakerMenuOpen && (
               <div className="absolute right-0 top-full mt-1.5 w-64 p-1.5 rounded-2xl bg-white shadow-[0_10px_32px_rgba(15,23,42,0.12)] z-50 animate-fade-slide-up space-y-0.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFastMode(!fastMode);
-                    setSpeakerMenuOpen(false);
-                  }}
-                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl hover:bg-[#F8F9FA] text-[13px] text-[#202124] cursor-pointer"
-                >
-                  <span className="flex items-center gap-2">
+                <div className="px-3 py-2 space-y-1.5">
+                  <div className="flex items-center gap-2 text-[12.5px] text-[#5F6368]">
                     <Zap className="w-3.5 h-3.5 text-[#5F6368]" />
-                    <span>Vitesse animation</span>
-                  </span>
-                  <span className="font-mono text-[12px] text-[#5F6368]">
-                    {fastMode ? '1.5s' : '5s'}
-                  </span>
-                </button>
+                    <span>Vitesse déroulé</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-[#F1F3F5]">
+                    {(
+                      [
+                        { id: 'slow', label: '0.5× (~10s)' },
+                        { id: 'normal', label: '1× (~5s)' },
+                        { id: 'fast', label: '3× (~1.5s)' },
+                      ] as { id: AnimationSpeed; label: string }[]
+                    ).map((opt) => {
+                      const active = speedMode === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => {
+                            setSpeedMode(opt.id);
+                            setSpeakerMenuOpen(false);
+                          }}
+                          className={`py-1 px-1.5 rounded-lg font-mono text-[11.5px] transition-colors cursor-pointer ${
+                            active
+                              ? 'bg-white text-[#111318] font-semibold'
+                              : 'text-[#5F6368] hover:text-[#202124]'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
 
                 <button
                   type="button"
@@ -227,7 +298,7 @@ export const App: React.FC = () => {
                 </button>
 
                 <a
-                  href="https://console.cloud.google.com/bigquery?project=data-days-demo"
+                  href={demoConfig.settings.gcpConsoleUrl}
                   target="_blank"
                   rel="noreferrer"
                   onClick={() => setSpeakerMenuOpen(false)}
@@ -241,7 +312,7 @@ export const App: React.FC = () => {
           </div>
 
           <a
-            href="https://console.cloud.google.com/bigquery?project=data-days-demo"
+            href={demoConfig.settings.gcpConsoleUrl}
             target="_blank"
             rel="noreferrer"
             className="px-3.5 py-1 rounded-full bg-[#F1F3F5] hover:bg-[#E4E7EB] text-[13px] font-medium text-[#202124] transition-colors"
@@ -310,7 +381,10 @@ export const App: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={() => setActiveNav('customizations')}
+                  onClick={() => {
+                    setActiveNav('customizations');
+                    setSelectedPlugin(null);
+                  }}
                   className={`w-full flex items-center justify-between px-3.5 py-2 rounded-xl text-[13.5px] transition-colors cursor-pointer ${
                     activeNav === 'customizations'
                       ? 'bg-[#EAECEF] text-[#111318] font-medium'
@@ -335,7 +409,7 @@ export const App: React.FC = () => {
                 </div>
 
                 <div className="space-y-2">
-                  {DEMO_WORKSPACES.map((ws) => {
+                  {demoConfig.workspaces.map((ws) => {
                     const isOpen = expandedWorkspaces[ws.id] ?? false;
                     const isActiveWs = currentScenario.demoId === ws.id && activeNav === 'chat';
 
@@ -419,6 +493,8 @@ export const App: React.FC = () => {
             <div className="flex-1 min-w-0">
               <CustomizationsView
                 installed={dakInstalled}
+                selectedPlugin={selectedPlugin}
+                onSelectPlugin={setSelectedPlugin}
                 onInstall={() => setDakInstalled(true)}
                 onStartBuilding={() => setActiveNav('chat')}
               />
@@ -445,7 +521,10 @@ export const App: React.FC = () => {
                 dakInstalled={dakInstalled}
                 isStreaming={isStreaming}
                 onSendTurn={handleSendTurn}
-                onOpenCustomizations={() => setActiveNav('customizations')}
+                onOpenCustomizations={() => {
+                  setSelectedPlugin('dak');
+                  setActiveNav('customizations');
+                }}
                 onOpenInspector={setInspectorModal}
               />
 
@@ -458,7 +537,10 @@ export const App: React.FC = () => {
                   artifacts={allArtifacts}
                   isStreaming={isStreaming}
                   onOpenInspector={setInspectorModal}
-                  onOpenCustomizations={() => setActiveNav('customizations')}
+                  onOpenCustomizations={() => {
+                    setSelectedPlugin('dak');
+                    setActiveNav('customizations');
+                  }}
                 />
               )}
             </>

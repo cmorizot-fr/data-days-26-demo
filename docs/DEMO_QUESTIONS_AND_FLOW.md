@@ -39,14 +39,24 @@
 
 ---
 
-### Conversation Étape 2 — Parsing Spark vers BigLake Iceberg (`raw_bank`)
+### Conversation Étape 2 — Décodage Mainframe via Dataproc Serverless Spark & Documentation BigLake Iceberg (`raw_bank`)
 
-* **Chip 1 :** `Explore les fichiers Mainframe déposés dans gs://data-days-demo-landing/raw/corebanking/ et leurs copybooks .cpy pour en faire des tables BigQuery Iceberg dans raw_bank.`
-* **3 questions posées par `AGY` (`gcp-spark`) :**
-  1. Filtrage automatique sur `99CFT_TRL` `RC=0000` + `CHECKSUM_MVTS_04` (écartant `202610_RUN01.cfonb`) ?
-  2. Rattachement par fenêtre d'ordre physique (`LEAD`) des lignes complémentaires `05` (`BIC` + `EndToEndId`) sur leur mouvement `04` et écriture de 4 tables **BigLake Managed Iceberg** (`cbk_customers_ref`, `cbk_accounts_master`, `cbk_cfonb_balances`, `cbk_cfonb_movements`) ?
-  3. Conservation intacte en `RAW` des anomalies de valeurs métier (`00000000`, codes guichets `'42   '`) pour `dbt` en Démo #2 + confirmation du profil `Spark Connect` ?
-* **Chip 2 :** confirmation et exécution de `parse_corebanking_iceberg.py` sur `ManagedSparkSession`.
+* **Skills `DAK` & outils mobilisés :** `discover-assets`, `gcp-data-pipelines`, `gcp-spark` (`biglake_iceberg.md`, `read_write_data.md`, `gcloud_dataproc.md`), `enforcing-resource-attribution` (`CLOUDSDK_METRICS_ENVIRONMENT="... datacloud.antigravity"`, `--label datacloud:antigravity`).
+* **Chip 1 — Diagnostic des Copybooks & choix du moteur :**
+  > `Explore les fichiers Mainframe déposés dans gs://data-days-demo-landing/RAW/corebanking/ et leurs copybooks .cpy. Peut-on les charger directement dans BigQuery et les documenter, ou faut-il passer par un job Spark Serverless ?`
+  * **Raisonnement d'`AGY` :** explique pourquoi `bq load` natif échoue (flux binaire fixe `RECFM=FB` sans `\n`, `EBCDIC CP500 + COMP-3` signé sur 2/3/8 octets, mix `.cfonb.gz` / `.cfonb`, trailer `99CFT_TRL` avec `202610_RUN01.cfonb` en `ABEND_S0C7` `RC=0012`, et rattachement positionnel `04 + 05` sans clé répétée) et pose les **3 questions d'arbitrage** :
+    1. **Filtrage CFT (`99CFT_TRL`)** : rejet automatique de tout fichier où `RC != 0000` (écartant `202610_RUN01.cfonb`) + contrôle de `DATA_RECORDS` et `CHECKSUM_MVTS_04` ?
+    2. **Architecture BigLake Managed Iceberg pré-documentée** : création de la connexion Cloud Resource `biglake-gcs-conn` (`europe-west1`) et pré-création documentée des 4 tables `ICEBERG` (`cbk_customers_ref`, `cbk_accounts_master`, `cbk_cfonb_balances`, `cbk_cfonb_movements` avec rattachement `04+05`) ?
+    3. **Gouvernance `RAW` sans nettoyage silencieux** : conservation intacte des anomalies métier (`66 000` dates `00000000`/`99999999`, `12,08 %` de guichets décalés `'42   '`, `650` orphelins AWS) pour `dbt` en `Démo #2`, et exécution sur **Dataproc Serverless runtime `2.2`** ?
+* **Chip 2 — Connexion BigLake & DDL documenté des 4 tables Iceberg (`72` colonnes) :**
+  > `Oui sur les 3 points ! Avant de lancer le batch Spark, crée la connexion BigLake et initialise dans raw_bank les 4 tables BigLake Managed Iceberg en documentant complètement le dataset, les tables et les 72 colonnes.`
+  * Création de `biglake-gcs-conn` avec `roles/storage.admin` (`storage.buckets.get` requis par Storage Write API sur tables Iceberg) + `roles/biglake.admin`, exécution de [`01_demo1_raw_aggregation/sql/00_create_documented_mainframe_iceberg_tables.sql`](../01_demo1_raw_aggregation/sql/00_create_documented_mainframe_iceberg_tables.sql) et génération de [`docs/MAINFRAME_BIGQUERY_SCHEMA.md`](./MAINFRAME_BIGQUERY_SCHEMA.md).
+* **Chip 3 — Batch PySpark Dataproc Serverless & script de replay :**
+  > `Parfait ! Génère maintenant le job PySpark Dataproc Serverless pour décoder l'EBCDIC/COMP-3 et les CFONB multi-lignes vers ces 4 tables Iceberg, lance le batch sur europe-west1 et crée un script pour rejouer tout cela.`
+  * Génération de [`01_demo1_raw_aggregation/spark/parse_corebanking_iceberg.py`](../01_demo1_raw_aggregation/spark/parse_corebanking_iceberg.py) (`sc.binaryRecords`, `unpack_comp3`, `sc.binaryFiles` parallélisé, écriture Storage Write API `writeMethod="direct"` `mode("append")`) et du script de replay idempotent [`scripts/run_demo1_mainframe_spark_iceberg.sh`](../scripts/run_demo1_mainframe_spark_iceberg.sh).
+* **Chip 4 — Certification SQL post-chargement (`INFORMATION_SCHEMA` & fuite `-2,42 Md€`) :**
+  > `Vérifie dans BigQuery que les 4 tables Iceberg ont les bons volumes, que les 72 colonnes sont bien documentées dans INFORMATION_SCHEMA et que la fuite vers les néobanques ressort grâce aux lignes 05.`
+  * Vérification des **7 invariants** : `79 350` clients, `94 350` comptes, `2 875 062` soldes `01`/`07`, `5 500 000` mouvements `04+05`, **`72 / 72` colonnes documentées (`100 %`)**, `66 000` dates `00000000`/`99999999` préservées en `RAW` et **`-2 420 000 000,00 €`** de virements sortants `0810` vers les BIC néobanques extraits des lignes `05`.
 
 ---
 

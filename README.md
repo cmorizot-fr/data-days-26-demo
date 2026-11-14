@@ -55,6 +55,7 @@ npm run preview
 - **Contrôles Speaker** :
   - **Mode `Fast` (`⚡`)** : accélère (`×3`) l'animation des traces d'outils pendant les répétitions.
   - **`Reset`** : remet à zéro la conversation du scénario courant en un clic.
+- **Configuration éditable sans toucher au code (`stage_ui/public/demo_config.yaml`)** : l'intégralité des Workspaces, étapes, prompts pré-remplis, questions d'`AGY`, traces et extraits de code se modifie dans [`stage_ui/public/demo_config.yaml`](./stage_ui/public/demo_config.yaml) (rechargement instantané sous `npm run dev`, ou simple `F5` sur `dist/demo_config.yaml` après build).
 
 ---
 
@@ -84,6 +85,18 @@ uv run python 00_data_generator/validate_corebanking.py
 
 > Les fichiers générés sont écrits dans `00_data_generator/output/` (ignoré par Git afin de ne pas alourdir le dépôt).
 
+### Rejouer le chargement Mainframe via Dataproc Serverless Spark → BigLake Iceberg (`Démo #1`)
+
+```bash
+# Transfère le drop binaire sur GCS (RAW/corebanking/), crée et documente les 4 tables
+# BigLake Managed Iceberg dans BigQuery (raw_bank), lance le batch PySpark Serverless
+# et contrôle les volumétries + invariants au centime près :
+./scripts/run_demo1_mainframe_spark_iceberg.sh
+
+# Optionnel : rejouer uniquement le DDL + batch Spark sans ré-uploader les ~980 Mo sur GCS
+./scripts/run_demo1_mainframe_spark_iceberg.sh --skip-upload
+```
+
 ---
 
 ## 📂 Structure du repository
@@ -94,14 +107,19 @@ uv run python 00_data_generator/validate_corebanking.py
 ├── AGENTS.md                          # Règles strictes pour Antigravity (AGY) & Data Agent Kit (DAK)
 ├── docs/
 │   ├── DEMO_QUESTIONS_AND_FLOW.md     # Script conversationnel détaillé & skills DAK par tour
+│   ├── MAINFRAME_BIGQUERY_SCHEMA.md   # Documentation complète des tables & colonnes Mainframe BigQuery
 │   └── assets/                        # Schémas d'architecture & supports visuels
 ├── stage_ui/                          # Interface web locale de démonstration (React + Vite + Tailwind v4)
 ├── 00_data_generator/                 # Générateur déterministe (seed=2026) & copybooks COBOL (.cpy)
-├── 01_demo1_raw_aggregation/          # Scripts & artefacts Démo #1 (BigLake Iceberg, Omni, PDF, init dbt)
+├── 01_demo1_raw_aggregation/          # Job PySpark Serverless, DDL BigLake Iceberg, Omni, PDF, init dbt
 ├── 02_demo2_silver_dbt_dq/            # Modèles dbt SILVER, tests Data Quality & Data Products KC
 ├── 03_demo3_kc_semantics_cfo/         # Glossaires Knowledge Catalog (OKF) & réconciliation PNB CFO
 ├── 04_demo4_scale_mobile_adk/         # BQML, synchronisation AlloyDB & agent mobile ADK
 ├── scripts/
+│   ├── generate_all_data.sh           # Génération déterministe complète + synchronisation GCS RAW/
+│   ├── run_demo1_mainframe_spark_iceberg.sh # Replay complet Spark Serverless -> BigLake Iceberg (raw_bank)
+│   ├── setup_pubsub_queues.sh         # Provisionnement Pub/Sub & BigQuery Subscriptions temps réel
+│   ├── clean_all_data.sh              # Nettoyage des données locales et/ou GCS
 │   └── reset_demo_state.sh            # Script de remise à zéro de l'environnement entre répétitions
 ├── pyproject.toml                     # Configuration Python & dépendances (uv)
 └── .env.example                       # Modèle des variables d'environnement GCP / AWS / AlloyDB
@@ -111,4 +129,5 @@ uv run python 00_data_generator/validate_corebanking.py
 
 - **[`DESIGN_AND_CONTEXT.md`](./DESIGN_AND_CONTEXT.md)** : contexte métier détaillé, architecture cible, anomalies `RAW` injectées et formules exactes des invariants financiers.
 - **[`docs/DEMO_QUESTIONS_AND_FLOW.md`](./docs/DEMO_QUESTIONS_AND_FLOW.md)** : déroulé pas-à-pas sur scène, questions d'arbitrage posées par `AGY` et cartographie des skills `DAK` mobilisés.
+- **[`docs/MAINFRAME_BIGQUERY_SCHEMA.md`](./docs/MAINFRAME_BIGQUERY_SCHEMA.md)** : dictionnaire complet des datasets, des 4 tables **BigLake Managed Iceberg** (`cbk_*`) et de leurs 72 colonnes documentées dans BigQuery.
 - **[`AGENTS.md`](./AGENTS.md)** : garde-fous techniques et conventions que tout agent IA intervenant sur ce dépôt doit respecter.

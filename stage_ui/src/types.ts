@@ -2,6 +2,8 @@ export type DemoId = 'demo1' | 'demo2' | 'demo3' | 'demo4';
 
 export type ActiveNav = 'chat' | 'customizations' | 'automations';
 
+export type AnimationSpeed = 'slow' | 'normal' | 'fast';
+
 export type FileIconKind = 'sql' | 'yml' | 'py' | 'dak' | 'cpy' | 'csv' | 'mp4' | 'md';
 
 export type ExecutionStepTrace =
@@ -9,6 +11,9 @@ export type ExecutionStepTrace =
       id: string;
       action: 'ran';
       commandSummary: string;
+      cwd?: string;
+      command?: string;
+      output?: string[];
       durationMs: number;
     }
   | {

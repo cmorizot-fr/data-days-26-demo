@@ -26,6 +26,7 @@ Toute modification du générateur de données (`00_data_generator/`) doit prés
 ## 3. Conventions de développement
 * **Python :** Utiliser `uv` pour la gestion des dépendances (`pyproject.toml`). Privilégier `polars`, `pyarrow` et `duckdb` pour la génération et la validation locale rapide.
 * **Scripts & Secrets :** Ne jamais committer de `.env` ni de clés GCP/AWS. Utiliser `.env.example` comme référence.
+* **Orchestration de la génération & du nettoyage (`scripts/`) :** Tout nouveau générateur ajouté dans `00_data_generator/` doit obligatoirement être branché dans [`scripts/generate_all_data.sh`](./scripts/generate_all_data.sh) (qui lance toutes les générations et synchronise vers GCS) et pris en compte par [`scripts/clean_all_data.sh`](./scripts/clean_all_data.sh) (qui nettoie proprement toutes les données générées en local et/ou sur GCS).
 
 ## 4. Spécificités du `Flow 1` (`Démo #1`) & Posture Interactive `AGY` + `DAK`
 Le script conversationnel complet et les skills `Data Agent Kit (DAK)` associés à chaque étape sont consignés dans `docs/DEMO_QUESTIONS_AND_FLOW.md`.
@@ -42,5 +43,8 @@ Organisation de l'interface (`stage_ui` & démo) : **1 Workspace par Démo** (`0
    * **Conversation Étape 4 — *Init `dbt` (`dbt-bigquery`) & Doc technique `Knowledge Catalog` (`curate-context`)* :** génération de `dbt_project.yml` et `_raw_sources.yml`.
 2. **Règle d'or sur scène (ne jamais décider en silence) :**
    * Face à un piège physique, un fichier `ABEND` ou un conflit sémantique, `AGY` résume toujours ses constats et pose ses **2 à 3 questions d'arbitrage ciblées** avant d'exécuter.
+3. **Configuration pré-scriptée de `stage_ui` (ne jamais coder les scénarios en dur en TypeScript) :**
+   * Toute la partie pré-scriptée de l'interface web (`stage_ui` : paramètres globaux, Workspaces par démo, Conversations par étape, prompts pré-remplis, questions/réponses d'`AGY`, traces d'outils, diffs de fichiers, logs terminaux et artefacts) doit **toujours rester centralisée et éditable dans le fichier de configuration YAML [`stage_ui/public/demo_config.yaml`](./stage_ui/public/demo_config.yaml)** (chargé dynamiquement par `stage_ui/src/data/scenarios.ts`, modifiable à chaud sous `npm run dev` ou par simple `F5` sur `dist/demo_config.yaml`).
+
 
 
