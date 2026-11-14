@@ -60,11 +60,26 @@
 
 ---
 
-### Conversation Étape 3 — Fédération AWS S3 (`Borderless Lakehouse`) & Contrats PDF (`Object Tables`)
-* Exposition sans copie des tables Iceberg `AWS Glue / S3` (`federate-lakehouse-catalog`) et indexation des `250` avenants PDF via **Object Table** BigLake.
+### Conversation Étape 3 — Fédération AWS S3 (`Borderless Lakehouse` / Catalogue `AWS Glue`)
+* Exposition sans copie des tables Iceberg `AWS Glue / S3` (`federate-lakehouse-catalog`).
 
-### Conversation Étape 4 — Init `dbt` & Documentation technique `Knowledge Catalog`
-* Initialisation `dbt_project.yml` + `_raw_sources.yml` (`dbt-bigquery`) et synchronisation technique initiale vers `Knowledge Catalog`.
+### Conversation Étape 4 — Streaming Temps Réel `Pub/Sub` → `BigQuery` & Sécurité `CLS` (`IBAN` / `PII`)
+* Historisation sans serveur via BigQuery Subscriptions (`raw_sepa_payments_pubsub_stream`, `raw_iban_events_pubsub_stream`), audit `PII` et masquage `CLS`.
+
+### Conversation Étape 5 — Découverte automatique GCS PDF via `Dataplex Cloud Storage Discovery` (`Object Tables`)
+* **Skills `DAK` mobilisés :** `discover-assets`, `gcp-data-pipelines`, `accidental-data-loss-prevention`, `enforcing-resource-attribution`.
+* **Chip 1 — Diagnostic du bucket `RAW/` & 3 questions d'arbitrage avant lancement du scan :**
+  > `On a déposé dans gs://data-days-demo-landing/RAW/ nos 250 PDF d'avenants promotionnels d'agences et nos 6 PDF réglementaires pour le CFO. Peux-tu utiliser Cloud Storage Discovery de Knowledge Catalog pour les exposer automatiquement en Object Tables dans BigQuery sans écrire de DDL ?`
+  1. **Filtrage `includePatterns` strict** : verrouiller `RAW/PROMO_CONTRACTS_PDF/**` (`250` PDF) et `RAW/REGULATORY_CFO_PDF/**` (`6` PDF) pour éviter de scanner `RAW/corebanking/` (`.ebcdic` + `RUN01` `ABEND_S0C7`), `RAW/AWS/` et `iceberg/` ?
+  2. **Object Table managée `data_days_demo_landing.raw` + 2 vues gouvernées dans `raw_bank`** : conserver l'Object Table BigLake auto-publiée par Discovery (`metadataCacheMode=AUTOMATIC`, colonne `ref` `ObjectRef` via `biglake-gcs-conn`) et exposer dans `raw_bank` deux vues filtrées sur `content_type = 'application/pdf'` (`raw_promo_contracts_pdf` et `raw_cfo_regulatory_pdf`) ?
+  3. **Octroi CLI des 3 rôles Service Agent Dataplex & cadence** : accorder en CLI `discoveryServiceAgent`, `discoveryPublishingServiceAgent` et `discoveryBigLakePublishingServiceAgent` à `service-1051798075322@gcp-sa-dataplex.iam.gserviceaccount.com` (zéro clic manuel en console) + scan immédiat et planification quotidienne `06:00 Europe/Paris` ?
+* **Chip 2 — Exécution du scan `hexagone-raw-pdf-discovery` & script de replay :**
+  * Création et exécution du DataScan `data-discovery`, publication de [`01_expose_discovered_pdf_views.sql`](../01_demo1_raw_aggregation/sql/01_expose_discovered_pdf_views.sql) et script de replay [`run_demo1_gcs_pdf_discovery.sh`](../scripts/run_demo1_gcs_pdf_discovery.sh).
+* **Chip 3 — Certification des 256 PDF exposés (`250` avenants `-14,30 M€` + `6` normes CFO) :**
+  * Contrôle SQL de `data_days_demo_landing.raw` (`discovery_managed`), `raw_bank.raw_promo_contracts_pdf` (`250` PDF) et `raw_bank.raw_cfo_regulatory_pdf` (`6` PDF ANC/ALM/ILAAP/ACPR).
+
+### Conversation Étape 6 — Init `dbt` & Documentation technique `Knowledge Catalog`
+* Initialisation `dbt_project.yml` + `_raw_sources.yml` (`dbt-bigquery`, 10 sources dont les 2 vues PDF découvertes) et synchronisation technique initiale vers `Knowledge Catalog`.
 
 ---
 

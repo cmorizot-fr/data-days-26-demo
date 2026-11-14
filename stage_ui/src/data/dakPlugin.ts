@@ -272,3 +272,33 @@ export const DATA_AGENT_KIT_PLUGIN = {
     },
   ] as DakHookSpec[],
 };
+
+export const WORKSPACE_VISUAL_AUDIT_SKILL = {
+  id: 'bq-visual-audit',
+  name: 'bq-visual-audit',
+  publisher: 'Workspace Skill · Banque Hexagone',
+  filePath: '.agents/skills/bq-visual-audit/SKILL.md',
+  shortDescription:
+    'Déclenche automatiquement un contrôle visuel intégré (graphiques MCP data-agent-kit/render_chart, jauges Data Quality, ponts PNB et vignettes PDF ObjectRef) après chaque création de table, vue ou Data Product dans BigQuery.',
+  triggers: [
+    'Tables BigLake Managed Iceberg créées ou chargées via Dataproc Serverless Spark (raw_bank)',
+    'Object Tables BigLake découvertes via Dataplex Cloud Storage Discovery (aperçu visuel des PDF)',
+    'Modèles et Data Products dbt matérialisés en couche SILVER (scorecard Auto Data Quality)',
+    'Vues gouvernées Knowledge Catalog en couche GOLD & tables prédictives BQML AI.FORECAST',
+  ],
+  mcpToolsUsed: ['bigquery/execute_sql', 'data-agent-kit/render_chart', 'bigquery/get_table_info'],
+  skillMarkdownPreview: `---
+name: bq-visual-audit
+description: >-
+  Exécute systématiquement un contrôle visuel post-création (graphiques ECharts via
+  data-agent-kit/render_chart, jauges d'anomalies, ponts de réconciliation financière et
+  aperçus documentaires ObjectRef) après toute création, alimentation ou exposition de table,
+  table BigLake Managed Iceberg, Object Table, modèle dbt SILVER ou vue gouvernée GOLD dans BigQuery.
+---
+
+## Protocole obligatoire en 3 étapes
+1. Requête SQL consolidée (volumes, complétude INFORMATION_SCHEMA, distribution métier, DQ).
+2. Rendu graphique inline systématique via MCP \`data-agent-kit/render_chart\` (Apache ECharts V5).
+3. Échantillonnage visuel de vignettes \`ObjectRef\` dès qu'une Object Table PDF est exposée.`,
+};
+

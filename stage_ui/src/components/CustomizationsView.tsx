@@ -11,14 +11,17 @@ import {
   GitBranch,
   Globe,
   TerminalSquare,
+  BarChart3,
+  Eye,
 } from 'lucide-react';
 import { DataAgentKitLogo } from './Icons';
-import { DATA_AGENT_KIT_PLUGIN } from '../data/dakPlugin';
+import { DATA_AGENT_KIT_PLUGIN, WORKSPACE_VISUAL_AUDIT_SKILL } from '../data/dakPlugin';
+import { SelectedCustomizationId } from '../types';
 
 interface CustomizationsViewProps {
   installed: boolean;
-  selectedPlugin: 'dak' | null;
-  onSelectPlugin: (plugin: 'dak' | null) => void;
+  selectedPlugin: SelectedCustomizationId;
+  onSelectPlugin: (plugin: SelectedCustomizationId) => void;
   onInstall: () => void;
   onStartBuilding: () => void;
 }
@@ -436,6 +439,82 @@ export const CustomizationsView: React.FC<CustomizationsViewProps> = ({
   }
 
   // =========================================================================
+  // Workspace Skill Sheet: bq-visual-audit (.agents/skills/bq-visual-audit/SKILL.md)
+  // =========================================================================
+  if (selectedPlugin === 'bq-visual-audit') {
+    return (
+      <div className="h-full overflow-y-auto px-10 py-10 bg-white select-text">
+        <div className="max-w-[760px] mx-auto pb-12">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-[#E8F0FE] flex items-center justify-center shrink-0">
+                <BarChart3 className="w-5 h-5 text-[#174EA6]" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2.5">
+                  <h1 className="text-[22px] font-mono font-medium text-[#1F1F1F] tracking-[-0.01em]">
+                    {WORKSPACE_VISUAL_AUDIT_SKILL.name}
+                  </h1>
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/12 text-emerald-900 text-[11.5px] font-medium select-none">
+                    Workspace Skill · Always Active
+                  </span>
+                </div>
+                <p className="text-[12.5px] font-mono text-[#5F6368] mt-0.5">
+                  {WORKSPACE_VISUAL_AUDIT_SKILL.filePath}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={onStartBuilding}
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-[#1F1F1F] hover:bg-[#303134] text-white text-[13px] font-medium transition-colors cursor-pointer select-none shrink-0"
+            >
+              <span>Retour au Chat</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <p className="mt-5 text-[14.5px] leading-[1.65] text-[#5F6368]">
+            {WORKSPACE_VISUAL_AUDIT_SKILL.shortDescription}
+          </p>
+
+          <div className="mt-6 rounded-2xl bg-[#F8F9FA] px-5 py-4 space-y-3">
+            <div className="text-[12.5px] font-semibold uppercase tracking-wide text-[#5F6368]">
+              Déclenchement automatique après chaque création dans BigQuery
+            </div>
+            {WORKSPACE_VISUAL_AUDIT_SKILL.triggers.map((trig) => (
+              <div key={trig} className="flex items-center gap-3">
+                <Eye className="w-4 h-4 text-[#1A73E8] shrink-0" />
+                <span className="text-[13.5px] text-[#1F1F1F] leading-snug">{trig}</span>
+              </div>
+            ))}
+          </div>
+
+          <h3 className="text-[16px] font-semibold text-[#1F1F1F] mt-8 mb-2.5">
+            Outils MCP Data Agent Kit orchestrés
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {WORKSPACE_VISUAL_AUDIT_SKILL.mcpToolsUsed.map((tool) => (
+              <span
+                key={tool}
+                className="px-3 py-1 rounded-lg bg-[#F1F3F5] font-mono text-[12.5px] text-[#202124]"
+              >
+                {tool}
+              </span>
+            ))}
+          </div>
+
+          <h3 className="text-[16px] font-semibold text-[#1F1F1F] mt-8 mb-2.5">
+            Définition du Skill ({WORKSPACE_VISUAL_AUDIT_SKILL.filePath})
+          </h3>
+          <CodeSnippetBlock lang="markdown" code={WORKSPACE_VISUAL_AUDIT_SKILL.skillMarkdownPreview} />
+        </div>
+      </div>
+    );
+  }
+
+  // =========================================================================
   // Marketplace / Installed List View
   // =========================================================================
   const normalizedQuery = query.trim().toLowerCase();
@@ -443,6 +522,12 @@ export const CustomizationsView: React.FC<CustomizationsViewProps> = ({
   const matchesDak =
     normalizedQuery === '' ||
     'data agent kit bigquery biglake dbt knowledge catalog google cloud spark'
+      .toLowerCase()
+      .includes(normalizedQuery);
+
+  const matchesVisualSkill =
+    normalizedQuery === '' ||
+    'bq-visual-audit visual check chart pdf preview bigquery render_chart audit'
       .toLowerCase()
       .includes(normalizedQuery);
 
@@ -456,6 +541,8 @@ export const CustomizationsView: React.FC<CustomizationsViewProps> = ({
       : [];
 
   const showDakCard = tab === 'marketplace' ? matchesDak : installed && matchesDak;
+  const showVisualSkillCard = matchesVisualSkill;
+  const installedCount = 1 + (installed ? 1 : 0);
 
   return (
     <div className="h-full overflow-y-auto px-10 py-10 bg-white">
@@ -489,11 +576,9 @@ export const CustomizationsView: React.FC<CustomizationsViewProps> = ({
               }`}
             >
               <span>Installed</span>
-              {installed && (
-                <span className="px-1.5 py-0.2 rounded-full text-[11px] bg-[#E8F0FE] text-[#174EA6] font-semibold">
-                  1
-                </span>
-              )}
+              <span className="px-1.5 py-0.2 rounded-full text-[11px] bg-[#E8F0FE] text-[#174EA6] font-semibold">
+                {installedCount}
+              </span>
             </button>
           </div>
         </div>
@@ -520,8 +605,8 @@ export const CustomizationsView: React.FC<CustomizationsViewProps> = ({
           )}
         </div>
 
-        {/* Plugin List */}
-        {showDakCard || filteredOtherPlugins.length > 0 ? (
+        {/* Plugin & Workspace Skill List */}
+        {showDakCard || showVisualSkillCard || filteredOtherPlugins.length > 0 ? (
           <div className="divide-y divide-[#ECEEF2]">
             {showDakCard && (
               <div className="py-2 first:pt-0">
@@ -576,6 +661,41 @@ export const CustomizationsView: React.FC<CustomizationsViewProps> = ({
               </div>
             )}
 
+            {showVisualSkillCard && (
+              <div className="py-2 first:pt-0">
+                <div
+                  onClick={() => onSelectPlugin('bq-visual-audit')}
+                  className="group flex items-center justify-between p-4 rounded-2xl hover:bg-[#F8F9FA] transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className="w-12 h-12 rounded-2xl bg-[#E8F0FE] group-hover:bg-[#DBE8FE] flex items-center justify-center shrink-0 transition-colors">
+                      <BarChart3 className="w-5 h-5 text-[#174EA6]" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2.5">
+                        <span className="font-mono text-[14.5px] font-medium text-[#1F1F1F]">
+                          {WORKSPACE_VISUAL_AUDIT_SKILL.name}
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/12 text-emerald-900">
+                          Workspace Skill
+                        </span>
+                      </div>
+                      <p className="text-[13.5px] text-[#5F6368] truncate max-w-lg mt-0.5">
+                        {WORKSPACE_VISUAL_AUDIT_SKILL.shortDescription}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0 ml-4">
+                    <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#F1F3F5] text-[#3C4043] text-[12.5px] font-medium">
+                      <Check className="w-3.5 h-3.5 text-[#188038]" />
+                      Active
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {filteredOtherPlugins.map((plugin) => {
               const IconComp = plugin.icon;
               return (
@@ -614,11 +734,7 @@ export const CustomizationsView: React.FC<CustomizationsViewProps> = ({
           </div>
         ) : (
           <div className="py-16 text-center rounded-2xl bg-[#F8F9FA]">
-            <p className="text-[14px] text-[#5F6368]">
-              {tab === 'installed' && !installed
-                ? 'No plugins installed yet. Switch to Marketplace to add Data Agent Kit.'
-                : 'No matching customizations found.'}
-            </p>
+            <p className="text-[14px] text-[#5F6368]">No matching customizations found.</p>
           </div>
         )}
       </div>

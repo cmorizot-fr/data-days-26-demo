@@ -118,6 +118,7 @@ uv run python 00_data_generator/validate_corebanking.py
 ├── scripts/
 │   ├── generate_all_data.sh           # Génération déterministe complète + synchronisation GCS RAW/
 │   ├── run_demo1_mainframe_spark_iceberg.sh # Replay complet Spark Serverless -> BigLake Iceberg (raw_bank)
+│   ├── run_demo1_gcs_pdf_discovery.sh # Découverte auto Dataplex GCS PDF -> BigLake Object Tables + vues
 │   ├── setup_pubsub_queues.sh         # Provisionnement Pub/Sub & BigQuery Subscriptions temps réel
 │   ├── clean_all_data.sh              # Nettoyage des données locales et/ou GCS
 │   └── reset_demo_state.sh            # Script de remise à zéro de l'environnement entre répétitions

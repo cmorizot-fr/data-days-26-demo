@@ -21,7 +21,7 @@ import {
   ListFilter,
   FolderPlus,
 } from 'lucide-react';
-import { ActiveNav, AnimationSpeed, DemoId, PromptTurn } from './types';
+import { ActiveNav, AnimationSpeed, DemoId, PromptTurn, SelectedCustomizationId } from './types';
 import {
   INITIAL_DEMO_CONFIG,
   ParsedDemoConfig,
@@ -57,7 +57,7 @@ export const App: React.FC = () => {
     demo4: false,
   });
   const [activeNav, setActiveNav] = useState<ActiveNav>('chat');
-  const [selectedPlugin, setSelectedPlugin] = useState<'dak' | null>(null);
+  const [selectedPlugin, setSelectedPlugin] = useState<SelectedCustomizationId>(null);
   const [dakInstalled, setDakInstalled] = useState<boolean>(false);
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
   const [overviewOpen, setOverviewOpen] = useState<boolean>(true);
@@ -523,6 +523,10 @@ export const App: React.FC = () => {
                 onSendTurn={handleSendTurn}
                 onOpenCustomizations={() => {
                   setSelectedPlugin('dak');
+                  setActiveNav('customizations');
+                }}
+                onOpenVisualSkill={() => {
+                  setSelectedPlugin('bq-visual-audit');
                   setActiveNav('customizations');
                 }}
                 onOpenInspector={setInspectorModal}

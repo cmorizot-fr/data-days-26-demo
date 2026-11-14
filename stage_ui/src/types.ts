@@ -80,6 +80,49 @@ export interface EditorialSectionItem {
   bullets: string[];
 }
 
+export type SelectedCustomizationId = 'dak' | 'bq-visual-audit' | null;
+
+export type VisualTone = 'neutral' | 'positive' | 'warning' | 'ruby' | 'blue';
+
+export interface VisualCheckKpi {
+  label: string;
+  value: string;
+  sublabel?: string;
+  tone?: VisualTone;
+}
+
+export interface VisualCheckBarRow {
+  label: string;
+  sublabel?: string;
+  valueLabel: string;
+  pct: number;
+  tone?: VisualTone;
+  badge?: string;
+}
+
+export interface VisualCheckDocPreview {
+  id: string;
+  title: string;
+  subtitle: string;
+  uri: string;
+  metaBadge: string;
+  highlightLabel: string;
+  tone?: VisualTone;
+  imageUrl: string;
+}
+
+export interface VisualCheckBlock {
+  skillBadge?: string;
+  title: string;
+  subtitle?: string;
+  kpis?: VisualCheckKpi[];
+  chartTitle?: string;
+  bars?: VisualCheckBarRow[];
+  documentsTitle?: string;
+  documents?: VisualCheckDocPreview[];
+  footerNote?: string;
+}
+
 export interface PromptTurn {
   id: string;
   chipLabel: string;
@@ -95,6 +138,7 @@ export interface PromptTurn {
   };
   sectionHeading: string;
   items: EditorialSectionItem[];
+  visualCheck?: VisualCheckBlock;
   traces: ExecutionStepTrace[];
   filesChanged: FileDiffItem[];
   terminalLogs: string[];

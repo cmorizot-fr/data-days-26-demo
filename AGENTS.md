@@ -45,6 +45,5 @@ Organisation de l'interface (`stage_ui` & démo) : **1 Workspace par Démo** (`0
    * Face à un piège physique, un fichier `ABEND` ou un conflit sémantique, `AGY` résume toujours ses constats et pose ses **2 à 3 questions d'arbitrage ciblées** avant d'exécuter.
 3. **Configuration pré-scriptée de `stage_ui` (ne jamais coder les scénarios en dur en TypeScript) :**
    * Toute la partie pré-scriptée de l'interface web (`stage_ui` : paramètres globaux, Workspaces par démo, Conversations par étape, prompts pré-remplis, questions/réponses d'`AGY`, traces d'outils, diffs de fichiers, logs terminaux et artefacts) doit **toujours rester centralisée et éditable dans le fichier de configuration YAML [`stage_ui/public/demo_config.yaml`](./stage_ui/public/demo_config.yaml)** (chargé dynamiquement par `stage_ui/src/data/scenarios.ts`, modifiable à chaud sous `npm run dev` ou par simple `F5` sur `dist/demo_config.yaml`).
-
-
-
+4. **Contrôle visuel systématique après toute création BigQuery (`.agents/skills/bq-visual-audit/SKILL.md`) :**
+   * Après chaque étape qui crée, peuple ou expose des tables/vues/Data Products dans BigQuery (BigLake Iceberg, fédération AWS Glue, streams Pub/Sub, Object Tables PDF, `dbt build SILVER`, vues certifiées `GOLD` ou `BQML`), `AGY` doit mobiliser le skill Workspace [`.agents/skills/bq-visual-audit/SKILL.md`](./.agents/skills/bq-visual-audit/SKILL.md) couplé à `MCP data-agent-kit/render_chart` (plus aperçu de vignettes `ObjectRef` pour les PDF) et afficher un bloc `visualCheck` sans aucune bordure colorée (luminance de surface uniquement).

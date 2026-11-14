@@ -544,17 +544,17 @@ workspaces:
                 target: data-days-demo.raw_bank
                 duration: 3m 56s
           - id: d1-s2-t4
-            chipLabel: 4. Certifier les volumes, les 72 descriptions & la fuite 90j
+            chipLabel: 4. Certifier & contrôler visuellement les 4 tables Iceberg
             prompt: Vérifie dans BigQuery que les 4 tables Iceberg ont les bons volumes, que les 72 colonnes sont bien documentées dans INFORMATION_SCHEMA et que la fuite vers les néobanques ressort grâce aux lignes 05.
-            workedDurationLabel: Worked for 4s
-            workGroupSummary: Audited BigLake Iceberg row counts, INFORMATION_SCHEMA descriptions & 90d flight
-            intermediateMessage: Exécution du contrôle SQL sur `data-days-demo.raw_bank` et `INFORMATION_SCHEMA.COLUMN_FIELD_PATHS`.
-            taskFinishedLabel: All 7 Mainframe BigLake Iceberg invariants verified in BigQuery
-            leadConfirmation: "Les **7 contrôles de certification** passent à 100 % au centime près dans"
+            workedDurationLabel: Worked for 5s
+            workGroupSummary: Audited BigLake Iceberg row counts, INFORMATION_SCHEMA & rendered bq-visual-audit chart
+            intermediateMessage: Exécution du contrôle SQL sur `data-days-demo.raw_bank` (`INFORMATION_SCHEMA.COLUMN_FIELD_PATHS`) et rendu graphique automatique `bq-visual-audit` (`MCP data-agent-kit/render_chart`).
+            taskFinishedLabel: All 7 Mainframe BigLake Iceberg invariants & visual check verified in BigQuery
+            leadConfirmation: "Les **7 contrôles de certification** et le **contrôle visuel post-chargement** passent à 100 % au centime près dans"
             leadLink:
               text: bigquery.cloud.google.com/dataset/data-days-demo:raw_bank
               url: https://console.cloud.google.com/bigquery?project=data-days-demo
-            sectionHeading: "Résultat de l'audit SQL post-chargement (`raw_bank`) :"
+            sectionHeading: "Résultat de l'audit SQL & contrôle visuel post-chargement (`raw_bank`) :"
             items:
               - title: Volumétries exactes & 72/72 colonnes documentées dans BigQuery
                 chips:
@@ -565,11 +565,64 @@ workspaces:
               - title: Signal métier déjà visible grâce au rattachement `04 + 05` & anomalies `RAW` préservées
                 bullets:
                   - "Les virements sortants `0810` vers les BIC néobanques/courtiers extraits des lignes `05` (`REVOLT21XXX`, `TRBKDEBBXXX`, `NTSBDEB1XXX`, `BOURFRPPXXX`, `DEGIRO2AXXX`) totalisent exactement **`-2 420 000 000,00 €`** sur 90 jours, tandis que les `66 000` dates `00000000`/`99999999` (`1,20 %`) sont intactes pour l'audit `dbt` en `Démo #2`."
+            visualCheck:
+              skillBadge: bq-visual-audit · MCP render_chart
+              title: "Contrôle visuel post-création · 4 tables BigLake Managed Iceberg (raw_bank)"
+              subtitle: "Décodage EBCDIC CP500 + COMP-3 & CFONB 120 (04+05) — lot 202610_RUN01 (ABEND RC=0012) écarté"
+              kpis:
+                - label: Mouvements 04+05
+                  value: "5 500 000"
+                  sublabel: "3 080 073 lignes 05 jointes"
+                  tone: positive
+                - label: Colonnes documentées
+                  value: "72 / 72"
+                  sublabel: "100 % INFORMATION_SCHEMA"
+                  tone: positive
+                - label: Fuite 90j (code 0810)
+                  value: "-2,42 Md€"
+                  sublabel: "68,0 % chez 18-32 ans (J1–J5)"
+                  tone: ruby
+                - label: Dates RAW conservées
+                  value: "66 000"
+                  sublabel: "1,20 % pour audit Demo 2"
+                  tone: warning
+              chartTitle: "Ventilation visuelle de la fuite des dépôts 90j par BIC contrepartie (lignes CFONB 05 = -2 420,00 M€)"
+              bars:
+                - label: "Revolut (REVOLT21XXX)"
+                  sublabel: "pic J1–J5 post-salaire"
+                  valueLabel: "-822,80 M€"
+                  pct: 100
+                  tone: ruby
+                  badge: "34,0 %"
+                - label: "Trade Republic (TRBKDEBBXXX)"
+                  sublabel: "épargne & courtage"
+                  valueLabel: "-653,40 M€"
+                  pct: 79
+                  tone: ruby
+                  badge: "27,0 %"
+                - label: "BoursoBank (BOURFRPPXXX)"
+                  sublabel: "banque en ligne"
+                  valueLabel: "-435,60 M€"
+                  pct: 53
+                  tone: warning
+                  badge: "18,0 %"
+                - label: "N26 (NTSBDEB1XXX)"
+                  sublabel: "compte mobile"
+                  valueLabel: "-314,60 M€"
+                  pct: 38
+                  tone: warning
+                  badge: "13,0 %"
+                - label: "DEGIRO (DEGIRO2AXXX)"
+                  sublabel: "CTO / PEA externe"
+                  valueLabel: "-193,60 M€"
+                  pct: 24
+                  tone: blue
+                  badge: "8,0 %"
             traces:
               - id: d1-s2-tr19
                 action: ran
                 commandSummary: bq query — verify 4 Iceberg row counts, 72 column descriptions & -2.42B€ 90d flight
-                durationMs: 700
+                durationMs: 650
                 cwd: 01_demo1_raw_aggregation
                 command: bq --location=europe-west1 query --project_id=data-days-demo --use_legacy_sql=false --label datacloud:antigravity "SELECT check_name, observed_value, expected_value FROM ..."
                 output:
@@ -584,6 +637,20 @@ workspaces:
                   - "| 6_raw_invalid_dates_preserved | 66000           | 66000          |"
                   - "| 7_deposit_flight_90d_eur      | -2420000000.00  | -2420000000.00 |"
                   - "+-------------------------------+-----------------+----------------+"
+              - id: d1-s2-tr20
+                action: analyzed
+                icon: dak
+                fileName: .agents/skills/bq-visual-audit/SKILL.md
+                lineRange: "#L1-52"
+                durationMs: 350
+              - id: d1-s2-tr21
+                action: ran
+                commandSummary: MCP data-agent-kit/render_chart → BigLake Iceberg volumes & -2.42B€ BIC breakdown
+                durationMs: 500
+                cwd: 01_demo1_raw_aggregation
+                command: mcp call data-agent-kit render_chart --spec '{"title":{"text":"90d Deposit Flight by Counterparty BIC (-2.42B EUR)"}}'
+                output:
+                  - "Rendered inline SVG visual check: 4/4 Iceberg tables reconciled, 72/72 columns documented, -2.42B EUR BIC split"
             filesChanged: []
             terminalLogs:
               - $ bq --location=europe-west1 query --use_legacy_sql=false --label datacloud:antigravity "SELECT ... FROM raw_bank.cbk_*"
@@ -594,6 +661,7 @@ workspaces:
               - "5_documented_columns          = 72 / 72         [OK]"
               - "6_raw_invalid_dates_preserved = 66,000 (1.20%)  [OK]"
               - "7_deposit_flight_90d_eur      = -2,420,000,000.00 € [OK]"
+              - $ mcp call data-agent-kit render_chart [bq-visual-audit PASS]
             subagents:
               - id: sa-d1-s2d
                 role: BigQuery Invariant Auditor
@@ -744,9 +812,363 @@ workspaces:
             terminalLogs: []
             subagents: []
             backgroundTasks: []
+      - id: d1-step-pdf-discovery
+        demoId: demo1
+        shortName: 5. Discovery GCS PDF → Object Tables
+        conversationTitle: Découverte automatique des PDF via Dataplex Cloud Storage Discovery
+        projectFolder: 01_demo1_raw_aggregation
+        gitBranch: main
+        greetingName: Clément
+        modelLabel: Gemini 4 - Carbon
+        turns:
+          - id: d1-spdf-t1
+            chipLabel: 1. Préparer la découverte auto des PDF sur GCS (sans DDL)
+            prompt: On a déposé dans gs://data-days-demo-landing/RAW/ nos 250 PDF d'avenants promotionnels d'agences et nos 6 PDF réglementaires pour le CFO. Peux-tu utiliser Cloud Storage Discovery de Knowledge Catalog pour les exposer automatiquement en Object Tables dans BigQuery sans écrire de DDL ?
+            workedDurationLabel: Worked for 5s
+            workGroupSummary: Inspected GCS RAW prefixes & analyzed Dataplex Cloud Storage Discovery guardrails
+            intermediateMessage: J'ai inspecté le bucket `gs://data-days-demo-landing/RAW/` (`250` PDF sous `PROMO_CONTRACTS_PDF/` et `6` PDF sous `REGULATORY_CFO_PDF/`), la connexion `biglake-gcs-conn` et les règles de publication `Dataplex Cloud Storage Discovery`.
+            taskFinishedLabel: GCS PDF prefixes & Dataplex Discovery guardrails analyzed
+            leadConfirmation: "**Dataplex Cloud Storage Discovery (`DATA_DISCOVERY`)** est idéal ici : il catalogue les PDF dans **Knowledge Catalog** et publie automatiquement l'**Object Table BigLake** sans aucun DDL manuel sur"
+            leadLink:
+              text: console.cloud.google.com/dataplex/cloud-storage-discovery?project=data-days-demo
+              url: https://console.cloud.google.com/dataplex/cloud-storage-discovery?project=data-days-demo
+            sectionHeading: "J'ai détecté 3 points d'attention sur le bucket — confirme-moi ces arbitrages avant lancement :"
+            items:
+              - title: "1. Filtrage `includePatterns` strict (ne pas scanner `corebanking/` ni `iceberg/`)"
+                bullets:
+                  - "Le préfixe `RAW/` contient aussi les binaires Mainframe `.ebcdic`, le dump corrompu `202610_RUN01.cfonb` (`ABEND_S0C7`), `RAW/AWS/` et `iceberg/`. Je verrouille `--storage-include-patterns` uniquement sur `RAW/PROMO_CONTRACTS_PDF/**` (`250` PDF) et `RAW/REGULATORY_CFO_PDF/**` (`6` PDF) ?"
+              - title: "2. Dataset managé `data_days_demo_landing.raw` + 2 vues gouvernées dans `raw_bank`"
+                chips:
+                  - kind: bq
+                    label: data_days_demo_landing.raw
+                  - kind: bq
+                    label: biglake-gcs-conn
+                bullets:
+                  - "Comme les deux sous-dossiers contiennent du `application/pdf` sous `RAW/`, Discovery consolide automatiquement une Object Table BigLake `data_days_demo_landing.raw` (`gs://.../RAW/*`, cache `AUTOMATIC`, colonne `ref` `ObjectRef` native). Pour isoler chaque corpus des objets voisins et garder `raw_bank` comme point d'entrée unique, j'expose par-dessus deux vues zéro-copie `raw_bank.raw_promo_contracts_pdf` (`250` contrats `-14,30 M€`) et `raw_bank.raw_cfo_regulatory_pdf` (`6` normes ANC/ALM/ACPR) ?"
+              - title: "3. Octroi CLI des 3 rôles Service Agent Dataplex & cadence du scan"
+                bullets:
+                  - "J'attribue en CLI (sans clic manuel en console) `discoveryServiceAgent`, `discoveryPublishingServiceAgent` et `discoveryBigLakePublishingServiceAgent` à `service-1051798075322@gcp-sa-dataplex.iam.gserviceaccount.com`, je lance un scan immédiat et je programme une passe quotidienne `06:00 Europe/Paris` ?"
+            traces:
+              - id: d1-spdf-tr1
+                action: analyzed
+                icon: dak
+                fileName: discover-assets/SKILL.md
+                lineRange: "#L1-68"
+                durationMs: 400
+              - id: d1-spdf-tr2
+                action: analyzed
+                icon: dak
+                fileName: gcp-data-pipelines/SKILL.md
+                lineRange: "#L1-94"
+                durationMs: 400
+              - id: d1-spdf-tr3
+                action: analyzed
+                icon: dak
+                fileName: accidental-data-loss-prevention/SKILL.md
+                lineRange: "#L1-32"
+                durationMs: 350
+              - id: d1-spdf-tr4
+                action: ran
+                commandSummary: inspect GCS prefixes under gs://data-days-demo-landing/RAW/ & count PDFs
+                durationMs: 650
+                cwd: 01_demo1_raw_aggregation
+                command: CLOUDSDK_METRICS_ENVIRONMENT="datacloud.antigravity" gcloud storage ls gs://data-days-demo-landing/RAW/ && gcloud storage ls "gs://data-days-demo-landing/RAW/PROMO_CONTRACTS_PDF/*.pdf" | wc -l && gcloud storage ls "gs://data-days-demo-landing/RAW/REGULATORY_CFO_PDF/*.pdf"
+                output:
+                  - "gs://data-days-demo-landing/RAW/AWS/                 [Parquet CRM]"
+                  - "gs://data-days-demo-landing/RAW/PAYMENTS/            [JSONL SEPA]"
+                  - "gs://data-days-demo-landing/RAW/PROMO_CONTRACTS_PDF/ [250 PDF — 1.41 MiB]"
+                  - "gs://data-days-demo-landing/RAW/REGULATORY_CFO_PDF/  [6 PDF   — 0.03 MiB]"
+                  - "gs://data-days-demo-landing/RAW/corebanking/         [25 binary z/OS files — MUST EXCLUDE]"
+            filesChanged: []
+            terminalLogs:
+              - $ CLOUDSDK_METRICS_ENVIRONMENT="datacloud.antigravity" gcloud storage ls gs://data-days-demo-landing/RAW/
+              - "PROMO_CONTRACTS_PDF/ (250 PDF) | REGULATORY_CFO_PDF/ (6 PDF) | corebanking/ | AWS/ | PAYMENTS/"
+            subagents:
+              - id: sa-d1-spdf-a
+                role: Unstructured Lakehouse Architect
+                skill: discover-assets
+                status: completed
+            backgroundTasks: []
+          - id: d1-spdf-t2
+            chipLabel: 2. Confirmer & exécuter le scan Dataplex Cloud Storage Discovery
+            prompt: "Oui sur les 3 points : filtre uniquement les 2 dossiers PDF, accorde en CLI les 3 rôles au Service Agent Dataplex, lance le scan hexagone-raw-pdf-discovery avec biglake-gcs-conn et publie les 2 vues gouvernées dans raw_bank."
+            workedDurationLabel: Worked for 6s
+            workGroupSummary: Configured Dataplex IAM, ran DataScan hexagone-raw-pdf-discovery & created governed views
+            intermediateMessage: Attribution des 3 rôles IAM au Service Agent Dataplex, création et exécution du scan `hexagone-raw-pdf-discovery` (`tableType=BIGLAKE`) puis exposition des 2 vues gouvernées dans `raw_bank`.
+            taskFinishedLabel: Dataplex Cloud Storage Discovery scan & governed views completed
+            leadConfirmation: Le scan **Dataplex Cloud Storage Discovery** (`hexagone-raw-pdf-discovery`) est `ACTIVE` / `SUCCEEDED`, a publié automatiquement l'**Object Table BigLake** `data_days_demo_landing.raw` et alimenté les 2 vues gouvernées dans
+            leadLink:
+              text: bigquery.cloud.google.com/dataset/data-days-demo:raw_bank
+              url: https://console.cloud.google.com/bigquery?project=data-days-demo
+            sectionHeading: "Ce qui a été provisionné et découvert automatiquement :"
+            items:
+              - title: DataScan `hexagone-raw-pdf-discovery` & Object Table managée sans DDL
+                chips:
+                  - kind: kc
+                    label: hexagone-raw-pdf-discovery
+                  - kind: bq
+                    label: data_days_demo_landing.raw
+                bullets:
+                  - "Publication automatique en mode `metadata-managed-mode: discovery_managed` avec `metadataCacheMode = AUTOMATIC`, connexion `biglake-gcs-conn` et structure `ref` (`ObjectRef`) prête pour les fonctions multimodales Gemini."
+              - title: Deux vues PDF isolées dans `raw_bank` & script de replay idempotent
+                chips:
+                  - kind: sql
+                    label: 01_expose_discovered_pdf_views.sql
+                  - kind: yml
+                    label: run_demo1_gcs_pdf_discovery.sh
+                bullets:
+                  - "Création de `raw_bank.raw_promo_contracts_pdf` (`250` contrats agences `PROMO-2026-001` à `250`) et `raw_bank.raw_cfo_regulatory_pdf` (`6` normes ANC / ALM / ILAAP / ACPR), rejouable via `./scripts/run_demo1_gcs_pdf_discovery.sh`."
+            traces:
+              - id: d1-spdf-tr5
+                action: analyzed
+                icon: dak
+                fileName: enforcing-resource-attribution/SKILL.md
+                lineRange: "#L1-138"
+                durationMs: 350
+              - id: d1-spdf-tr6
+                action: ran
+                commandSummary: grant discoveryServiceAgent & BigLake publishing roles to Dataplex Service Agent
+                durationMs: 600
+                cwd: 01_demo1_raw_aggregation
+                command: CLOUDSDK_METRICS_ENVIRONMENT="datacloud.antigravity" gcloud projects add-iam-policy-binding data-days-demo --member="serviceAccount:service-1051798075322@gcp-sa-dataplex.iam.gserviceaccount.com" --role="roles/dataplex.discoveryPublishingServiceAgent"
+                output:
+                  - "Service Agent Dataplex: service-1051798075322@gcp-sa-dataplex.iam.gserviceaccount.com"
+                  - "Granted roles/dataplex.discoveryServiceAgent on gs://data-days-demo-landing"
+                  - "Granted roles/dataplex.discoveryPublishingServiceAgent & discoveryBigLakePublishingServiceAgent on data-days-demo"
+              - id: d1-spdf-tr7
+                action: ran
+                commandSummary: gcloud dataplex datascans create & run data-discovery hexagone-raw-pdf-discovery
+                durationMs: 950
+                cwd: 01_demo1_raw_aggregation
+                command: CLOUDSDK_METRICS_ENVIRONMENT="datacloud.antigravity" gcloud dataplex datascans create data-discovery hexagone-raw-pdf-discovery --location=europe-west1 --data-source-resource="//storage.googleapis.com/projects/data-days-demo/buckets/data-days-demo-landing" --bigquery-publishing-table-type=BIGLAKE --bigquery-publishing-connection="projects/data-days-demo/locations/europe-west1/connections/biglake-gcs-conn" --storage-include-patterns="RAW/PROMO_CONTRACTS_PDF/**,RAW/REGULATORY_CFO_PDF/**" --labels="datacloud=antigravity,domain=pdf_discovery,env=demo2026"
+                output:
+                  - "Created [projects/data-days-demo/locations/europe-west1/dataScans/hexagone-raw-pdf-discovery] (state=ACTIVE)"
+                  - "Triggered discovery job 3d8fcaba-6466-40eb-bc4c-46aeb49646f6 -> state=SUCCEEDED"
+                  - "Auto-published BigLake Object Table: data-days-demo.data_days_demo_landing.raw (metadataCacheMode=AUTOMATIC)"
+              - id: d1-spdf-tr8
+                action: edited
+                icon: sql
+                fileName: 01_expose_discovered_pdf_views.sql
+                added: 47
+                removed: 0
+                durationMs: 450
+              - id: d1-spdf-tr9
+                action: edited
+                icon: yml
+                fileName: run_demo1_gcs_pdf_discovery.sh
+                added: 221
+                removed: 0
+                durationMs: 450
+            filesChanged:
+              - path: 01_demo1_raw_aggregation/sql/01_expose_discovered_pdf_views.sql
+                language: sql
+                badge: SQL
+                added: 47
+                removed: 0
+                content: |-
+                  CREATE OR REPLACE VIEW `data-days-demo.raw_bank.raw_promo_contracts_pdf` AS
+                  SELECT
+                    REGEXP_EXTRACT(uri, r'/(PROMO-2026-[0-9]{3})_') AS promo_contract_id,
+                    REGEXP_EXTRACT(uri, r'/PROMO-2026-[0-9]{3}_(REG[1-8])_') AS region_code_hint,
+                    uri, content_type, size AS size_bytes, md5_hash, updated AS updated_ts, ref
+                  FROM `data-days-demo.data_days_demo_landing.raw`
+                  WHERE content_type = 'application/pdf'
+                    AND STARTS_WITH(uri, 'gs://data-days-demo-landing/RAW/PROMO_CONTRACTS_PDF/');
+
+                  CREATE OR REPLACE VIEW `data-days-demo.raw_bank.raw_cfo_regulatory_pdf` AS
+                  SELECT
+                    REGEXP_EXTRACT(uri, r'/(REG_[0-9]{2}_[^/]+)\.pdf$') AS doc_code,
+                    uri, content_type, size AS size_bytes, md5_hash, updated AS updated_ts, ref
+                  FROM `data-days-demo.data_days_demo_landing.raw`
+                  WHERE content_type = 'application/pdf'
+                    AND STARTS_WITH(uri, 'gs://data-days-demo-landing/RAW/REGULATORY_CFO_PDF/');
+            terminalLogs:
+              - $ ./scripts/run_demo1_gcs_pdf_discovery.sh
+              - "Created DataScan hexagone-raw-pdf-discovery (europe-west1) — Job 3d8fcaba SUCCEEDED"
+              - "Published BigLake Object Table data-days-demo.data_days_demo_landing.raw"
+              - "Created governed views raw_bank.raw_promo_contracts_pdf (250) & raw_bank.raw_cfo_regulatory_pdf (6)"
+            subagents:
+              - id: sa-d1-spdf-b
+                role: Dataplex Discovery Engineer
+                skill: enforcing-resource-attribution
+                status: completed
+            backgroundTasks:
+              - id: bg-d1-spdf
+                command: gcloud dataplex datascans run hexagone-raw-pdf-discovery
+                target: data_days_demo_landing.raw
+                duration: 1m 12s
+          - id: d1-spdf-t3
+            chipLabel: 3. Vérifier l'Object Table & contrôle visuel des PDF (250 + 6)
+            prompt: Vérifie dans BigQuery l'Object Table découverte automatiquement par Dataplex ainsi que les 2 vues PDF dans raw_bank, leur colonne ObjectRef et affiche un contrôle visuel d'échantillons.
+            workedDurationLabel: Worked for 5s
+            workGroupSummary: Verified Object Table metadata, ran bq-visual-audit chart & sampled PDF ObjectRef previews
+            intermediateMessage: Contrôle SQL des métadonnées `discovery_managed`, appel du skill `bq-visual-audit` (`MCP data-agent-kit/render_chart`) et génération des vignettes d'inspection `ObjectRef` sur les `250 + 6` PDF.
+            taskFinishedLabel: 250 agency promo PDFs & 6 CFO regulatory PDFs visually verified in BigQuery
+            leadConfirmation: Les **256 documents PDF** sont exposés sans copie, contrôlés visuellement et prêts pour `AI.GENERATE_TABLE` (`Démo #2`) et les questions réglementaires CFO (`Démo #3`) dans
+            leadLink:
+              text: bigquery.cloud.google.com/dataset/data-days-demo:raw_bank
+              url: https://console.cloud.google.com/bigquery?project=data-days-demo
+            sectionHeading: "Contrôle des objets découverts & alignement inter-silos :"
+            items:
+              - title: "`raw_promo_contracts_pdf` (`250` PDF — jointure native AWS CRM)"
+                chips:
+                  - kind: bq
+                    label: raw_promo_contracts_pdf
+                bullets:
+                  - "`250` fichiers `application/pdf` (`PROMO-2026-001` à `250`, `1,41 Mo`), alignés à 100 % sur `promo_contract_id` du portefeuille AWS CRM, dont `PROMO-2026-042` sur l'agence `0042` Paris de Lucas Martin."
+              - title: "`raw_cfo_regulatory_pdf` (`6` PDF — doctrine PCEC, ALM, ILAAP & ACPR)"
+                chips:
+                  - kind: bq
+                    label: raw_cfo_regulatory_pdf
+                bullets:
+                  - "`6` textes normatifs (`REG_01` ANC PCEC `2014-07`, `REG_02` TCI ALM `-24,12 M€`, `REG_03` seuil ILAAP `2,00 Md€`, `REG_04` plafond Comité des Risques `9,00 M€`, `REG_05` UE `2024/886` SEPA Instant, `REG_06` ACPR `2024-R-01` épargne mobile)."
+            visualCheck:
+              skillBadge: bq-visual-audit · ObjectRef + render_chart
+              title: "Contrôle visuel post-découverte · data_days_demo_landing.raw & vues raw_bank"
+              subtitle: "256 fichiers application/pdf indexés automatiquement par Dataplex Cloud Storage Discovery (0 DDL écrit)"
+              kpis:
+                - label: Cache BigLake Object Table
+                  value: AUTOMATIC
+                  sublabel: discovery_managed actif
+                  tone: positive
+                - label: Avenants Agences PDF
+                  value: 250 PDF
+                  sublabel: "-14,30 M€ hors-SAP"
+                  tone: blue
+                - label: Corpus Normatif CFO
+                  value: 6 PDF
+                  sublabel: ANC · ALM · ILAAP · ACPR
+                  tone: positive
+                - label: Clés jointes AWS CRM
+                  value: "250 / 250"
+                  sublabel: "100 % promo_contract_id"
+                  tone: positive
+              chartTitle: "Répartition visuelle des 256 PDF exposés dans BigQuery par famille documentaire"
+              bars:
+                - label: "Gabarit A · Avenant Taux Boosté Livret Maison"
+                  sublabel: "raw_promo_contracts_pdf"
+                  valueLabel: "95 PDF (37,1 %)"
+                  pct: 100
+                  tone: blue
+                  badge: ObjectRef OK
+                - label: "Gabarit B · Prime Cash Bienvenue 18-32 ans"
+                  sublabel: "raw_promo_contracts_pdf"
+                  valueLabel: "90 PDF (35,2 %)"
+                  pct: 95
+                  tone: blue
+                  badge: ObjectRef OK
+                - label: "Gabarit C · Dérogation Rétention Anti-Néobanque"
+                  sublabel: "raw_promo_contracts_pdf"
+                  valueLabel: "65 PDF (25,4 %)"
+                  pct: 68
+                  tone: warning
+                  badge: Hors-bilan SAP
+                - label: "Normes Prudentielles & Comptables CFO"
+                  sublabel: "raw_cfo_regulatory_pdf"
+                  valueLabel: "6 PDF (2,3 %)"
+                  pct: 14
+                  tone: positive
+                  badge: Doctrine CFO
+              documentsTitle: "Inspection visuelle d'échantillons ObjectRef découverts sur GCS"
+              documents:
+                - id: doc-promo-042
+                  title: "PROMO-2026-042 · Paris 0042"
+                  subtitle: "Gabarit A · Livret Maison +175 bps"
+                  uri: "gs://data-days-demo-landing/RAW/PROMO_CONTRACTS_PDF/PROMO-2026-042_REG1_TAUX_BOOSTE_LIVRET.pdf"
+                  metaBadge: PROMO-2026-042
+                  highlightLabel: "90 369,55 € hors-SAP"
+                  tone: warning
+                  imageUrl: "./assets/pdf_previews/promo_042_taux_booste.png"
+                - id: doc-promo-003
+                  title: "PROMO-2026-003 · Jeunes"
+                  subtitle: "Gabarit B · Prime Cash 18-32 ans"
+                  uri: "gs://data-days-demo-landing/RAW/PROMO_CONTRACTS_PDF/PROMO-2026-003_REG1_PRIME_BIENVENUE_JEUNES.pdf"
+                  metaBadge: PROMO-2026-003
+                  highlightLabel: "Prime Cash + Parrainage"
+                  tone: blue
+                  imageUrl: "./assets/pdf_previews/promo_003_prime_jeunes.png"
+                - id: doc-promo-001
+                  title: "PROMO-2026-001 · Rétention"
+                  subtitle: "Gabarit C · Contre-offre Néobanque"
+                  uri: "gs://data-days-demo-landing/RAW/PROMO_CONTRACTS_PDF/PROMO-2026-001_REG1_AVENANT_RETENTION.pdf"
+                  metaBadge: PROMO-2026-001
+                  highlightLabel: "Dérogation Niveau II"
+                  tone: ruby
+                  imageUrl: "./assets/pdf_previews/promo_001_retention.png"
+                - id: doc-reg-02
+                  title: "REG_02 · Charte ALM TCI"
+                  subtitle: "Refinancement €STR 398 bps"
+                  uri: "gs://data-days-demo-landing/RAW/REGULATORY_CFO_PDF/REG_02_CHARTE_ALM_TCI_REFINANCEMENT_BCE.pdf"
+                  metaBadge: REG_02_ALM
+                  highlightLabel: "Règle TCI -24,12 M€"
+                  tone: positive
+                  imageUrl: "./assets/pdf_previews/reg_02_charte_alm_cfo.png"
+            traces:
+              - id: d1-spdf-tr10
+                action: ran
+                commandSummary: bq query — verify discovery_managed Object Table & 250 + 6 governed PDF views
+                durationMs: 600
+                cwd: 01_demo1_raw_aggregation
+                command: bq --location=europe-west1 query --project_id=data-days-demo --use_legacy_sql=false --label datacloud:antigravity "SELECT check_name, target, observed_rows, note FROM ..."
+                output:
+                  - "+---------------------------+----------------------------------+---------------+------------------------+"
+                  - "| check_name                | target                           | observed_rows | note                   |"
+                  - "+---------------------------+----------------------------------+---------------+------------------------+"
+                  - "| 1_object_table_discovered | data_days_demo_landing.raw       | 287           | OBJECT_TABLE (BIGLAKE) |"
+                  - "| 2_promo_contracts_view    | raw_bank.raw_promo_contracts_pdf | 250           | 250 PDF (-14.30 M EUR) |"
+                  - "| 3_cfo_regulatory_view     | raw_bank.raw_cfo_regulatory_pdf  | 6             | 6 PDF (ANC/ALM/ACPR)   |"
+                  - "+---------------------------+----------------------------------+---------------+------------------------+"
+              - id: d1-spdf-tr11
+                action: analyzed
+                icon: dak
+                fileName: .agents/skills/bq-visual-audit/SKILL.md
+                lineRange: "#L1-52"
+                durationMs: 350
+              - id: d1-spdf-tr12
+                action: ran
+                commandSummary: MCP data-agent-kit/render_chart + sample ObjectRef PDF thumbnails (PROMO-042, REG_02...)
+                durationMs: 550
+                cwd: 01_demo1_raw_aggregation
+                command: mcp call data-agent-kit render_chart --spec '{"title":{"text":"Discovered PDF Object Tables (250 + 6)"}}'
+                output:
+                  - "Rendered inline SVG breakdown chart (95 Type A, 90 Type B, 65 Type C, 6 CFO Regulatory)"
+                  - "Sampled 4 ObjectRef signed previews: PROMO-2026-042, PROMO-2026-003, PROMO-2026-001, REG_02_CHARTE_ALM"
+            filesChanged: []
+            terminalLogs:
+              - $ bq --location=europe-west1 query --use_legacy_sql=false --label datacloud:antigravity "SELECT ... FROM raw_bank.raw_*_pdf"
+              - "data_days_demo_landing.raw       = OBJECT_TABLE (discovery_managed, cache=AUTOMATIC) [OK]"
+              - "raw_bank.raw_promo_contracts_pdf = 250 PDF (ObjectRef ref ready for AI.GENERATE_TABLE) [OK]"
+              - "raw_bank.raw_cfo_regulatory_pdf  = 6 PDF   (ANC / ALM / ILAAP / ACPR norms ready)      [OK]"
+              - $ mcp call data-agent-kit render_chart [bq-visual-audit + 4 PDF thumbnails ready]
+            subagents:
+              - id: sa-d1-spdf-c
+                role: Multimodal Catalog Auditor
+                skill: discover-assets
+                status: completed
+            backgroundTasks: []
+            artifact:
+              id: art-d1-pdf
+              title: Découverte Automatique GCS PDF · Knowledge Catalog
+              subtitle: Dataplex Cloud Storage Discovery → BigLake Object Tables
+              markdownSummary:
+                heading: Exposition Zéro-DDL du Silo Documentaire PDF (europe-west1)
+                metrics:
+                  - label: Avenants Agences PDF
+                    value: 250 contrats
+                    tone: positive
+                  - label: Corpus Réglementaire CFO
+                    value: 6 normes
+                    tone: positive
+                  - label: DDL externe écrit à la main
+                    value: 0 ligne
+                    tone: positive
+                bullets:
+                  - "Scan Dataplex hexagone-raw-pdf-discovery actif avec cache de métadonnées BigLake AUTOMATIC."
+                  - "250 avenants agences (-14,30 M€ hors-SAP) prêts pour extraction structurée dbt AI.GENERATE_TABLE (Demo 2)."
+                  - "6 normes prudentielles (seuil ILAAP 2,00 Md€, plafond 9,00 M€, ACPR 2024-R-01) prêtes pour le CFO (Demo 3 & 4)."
       - id: d1-step4
         demoId: demo1
-        shortName: 5. Init dbt & Doc Knowledge Catalog
+        shortName: 6. Init dbt & Doc Knowledge Catalog
         conversationTitle: Initialisation dbt staging & Documentation Knowledge Catalog
         projectFolder: 01_demo1_raw_aggregation
         gitBranch: main
@@ -757,14 +1179,14 @@ workspaces:
             chipLabel: 1. Initialiser dbt & publier la doc technique KC
             prompt: Initialise la structure industrielle dbt sur raw_bank et publie la documentation technique initiale dans Knowledge Catalog.
             workedDurationLabel: Worked for 5s
-            workGroupSummary: Generated dbt project & synced technical metadata to Knowledge Catalog
-            intermediateMessage: Génération du projet `dbt` (`hexagone_bank_lakehouse`) et synchronisation des métadonnées techniques vers Knowledge Catalog en cours.
-            taskFinishedLabel: dbt staging & Knowledge Catalog technical sync finished
-            leadConfirmation: Le socle `dbt` est compilé et les fiches techniques des tables `RAW` sont publiées dans
+            workGroupSummary: Generated dbt project, synced technical metadata to KC & rendered bq-visual-audit
+            intermediateMessage: Génération du projet `dbt` (`hexagone_bank_lakehouse`), synchronisation des métadonnées techniques vers Knowledge Catalog et contrôle visuel `bq-visual-audit` des `10` sources `raw_bank`.
+            taskFinishedLabel: dbt staging, Knowledge Catalog sync & visual source inventory finished
+            leadConfirmation: Le socle `dbt` est compilé, contrôlé visuellement et les fiches techniques des `10` tables/vues `RAW` sont publiées dans
             leadLink:
               text: console.cloud.google.com/dataplex/search?project=data-days-demo
               url: https://console.cloud.google.com/dataplex?project=data-days-demo
-            sectionHeading: "Ce qui a été mis en place :"
+            sectionHeading: "Ce qui a été mis en place et contrôlé visuellement :"
             items:
               - title: Initialisation du projet industriel dbt
                 chips:
@@ -773,44 +1195,102 @@ workspaces:
                   - kind: yml
                     label: _raw_sources.yml
                 bullets:
-                  - Déclaration des tables Iceberg Mainframe (`cbk_*`), AWS Omni (`ext_aws_*`), flux SEPA/SAP et Object Table PDF avec persistance automatique vers Knowledge Catalog.
+                  - Déclaration des tables Iceberg Mainframe (`cbk_*`), AWS Omni (`ext_aws_*`), flux SEPA/SAP et des 2 vues Object Tables PDF découvertes par Dataplex (`raw_promo_contracts_pdf` & `raw_cfo_regulatory_pdf`) avec persistance automatique vers Knowledge Catalog.
               - title: Premières alertes remontées par la documentation technique
                 chips:
                   - kind: kc
                     label: Knowledge Catalog · raw_bank
                 bullets:
                   - Le profilage initial met déjà en évidence `~3,4 %` de doublons `end_to_end_id`, `8,1 %` de statuts `RJCT` / `PDNG`, `1,2 %` de dates Mainframe `00000000` / `99999999` et `650` comptes AWS non réconciliés.
+            visualCheck:
+              skillBadge: bq-visual-audit · MCP render_chart
+              title: "Panorama visuel des 10 sources unifiées · data-days-demo.raw_bank"
+              subtitle: "5 silos technologiques fédérés et catalogués dans dbt (_raw_sources.yml) sans duplication inutile"
+              kpis:
+                - label: Sources dbt raw_bank
+                  value: "10 actifs"
+                  sublabel: 5 silos bancaires
+                  tone: positive
+                - label: Copie AWS S3 & PDF
+                  value: "0 octet"
+                  sublabel: Omni & Object Tables
+                  tone: positive
+                - label: Signaux DQ détectés
+                  value: "4 familles"
+                  sublabel: À traiter en Demo 2
+                  tone: warning
+              chartTitle: "Répartition volumétrique des 5 silos exposés dans raw_bank"
+              bars:
+                - label: "Mainframe z/OS (4 tables BigLake Managed Iceberg cbk_*)"
+                  valueLabel: "8,55 M lignes"
+                  pct: 100
+                  tone: blue
+                  badge: Iceberg GCS
+                - label: "Flux Temps Réel Paiements SEPA & IBAN (Pub/Sub → BQ)"
+                  valueLabel: "6,20 M événements"
+                  pct: 73
+                  tone: blue
+                  badge: Streaming + CLS
+                - label: "Grand Livre SAP / ALM PCEC (raw_sap_gl_alm)"
+                  valueLabel: "1,20 M écritures"
+                  pct: 26
+                  tone: neutral
+                  badge: Comptabilité brute
+                - label: "CRM Commercial AWS S3 via Glue (ext_aws_crm_*)"
+                  valueLabel: "400 000 lignes"
+                  pct: 16
+                  tone: positive
+                  badge: 0 copie S3
+                - label: "Silo Documentaire GCS (raw_promo & raw_cfo PDF)"
+                  valueLabel: "256 PDF"
+                  pct: 10
+                  tone: positive
+                  badge: Dataplex Discovery
             traces:
               - id: d1-s4-tr1
                 action: analyzed
                 icon: dak
                 fileName: dbt-bigquery/SKILL.md
                 lineRange: "#L1-112"
-                durationMs: 500
+                durationMs: 450
               - id: d1-s4-tr2
                 action: edited
                 icon: yml
                 fileName: dbt_project.yml
                 added: 28
                 removed: 0
-                durationMs: 500
+                durationMs: 450
               - id: d1-s4-tr3
                 action: edited
                 icon: yml
                 fileName: _raw_sources.yml
-                added: 38
+                added: 40
                 removed: 0
-                durationMs: 550
+                durationMs: 500
               - id: d1-s4-tr4
                 action: ran
                 commandSummary: dbt compile --select staging.* & sync technical metadata to Knowledge Catalog
-                durationMs: 800
+                durationMs: 700
                 cwd: 02_demo2_silver_dbt_dq
                 command: dbt compile --select "staging.*" && kcmd sync-technical-metadata --schema raw_bank
                 output:
                   - "16:24:11  Registered adapter: bigquery=1.9.0"
-                  - 16:24:12  Found 9 sources in data-days-demo.raw_bank (4 Managed Iceberg, 2 AWS Omni, 2 Streams, 1 Object Table)
+                  - 16:24:12  Found 10 sources in data-days-demo.raw_bank (4 Managed Iceberg, 2 AWS Omni, 2 Streams, 2 Discovered PDF Views)
                   - 16:24:13  Synced technical catalog entries to Knowledge Catalog — 3 data quality warnings flagged.
+              - id: d1-s4-tr5
+                action: analyzed
+                icon: dak
+                fileName: .agents/skills/bq-visual-audit/SKILL.md
+                lineRange: "#L1-52"
+                durationMs: 350
+              - id: d1-s4-tr6
+                action: ran
+                commandSummary: MCP data-agent-kit/render_chart → Unified RAW 10-source panorama
+                durationMs: 450
+                cwd: 02_demo2_silver_dbt_dq
+                command: mcp call data-agent-kit render_chart --spec '{"title":{"text":"raw_bank Unified 5-Silo Inventory"}}'
+                output:
+                  - "Rendered inline SVG inventory chart across 10 dbt sources (0 bytes copied from AWS S3 & PDF)"
             filesChanged:
               - path: 02_demo2_silver_dbt_dq/dbt_project.yml
                 language: yaml
@@ -838,7 +1318,7 @@ workspaces:
               - path: 02_demo2_silver_dbt_dq/models/staging/_raw_sources.yml
                 language: yaml
                 badge: YML
-                added: 38
+                added: 40
                 removed: 0
                 content: |-
                   version: 2
@@ -847,7 +1327,7 @@ workspaces:
                     - name: raw_bank
                       database: data-days-demo
                       schema: raw_bank
-                      description: "Couche RAW : BigLake Iceberg Mainframe, AWS S3 Omni & Object Tables PDF"
+                      description: "Couche RAW : BigLake Iceberg Mainframe, AWS S3 Omni & Object Tables PDF (Dataplex Discovery)"
                       tables:
                         - name: cbk_customers_ref
                         - name: cbk_accounts_master
@@ -858,10 +1338,12 @@ workspaces:
                         - name: raw_sepa_payments
                         - name: raw_sap_gl_alm
                         - name: raw_promo_contracts_pdf
+                        - name: raw_cfo_regulatory_pdf
             terminalLogs:
               - $ dbt compile --project-dir 02_demo2_silver_dbt_dq
-              - Found 9 sources in data-days-demo.raw_bank
+              - Found 10 sources in data-days-demo.raw_bank
               - Synced technical metadata to Knowledge Catalog (europe-west1) — 3 DQ warnings flagged.
+              - $ mcp call data-agent-kit render_chart [bq-visual-audit PASS]
             subagents:
               - id: sa-d1-s4
                 role: dbt Project Architect
@@ -891,7 +1373,7 @@ workspaces:
                 bullets:
                   - Mainframe z/OS (EBCDIC+COMP3 & CFONB 04+05) décodé par Managed Spark en BigLake Iceberg.
                   - AWS S3 CRM (80k clients, 320k notes) fédéré sans copie via BigQuery Omni.
-                  - 250 contrats promotionnels PDF exposés via Object Table GCS.
+                  - 250 avenants PDF agences + 6 normes CFO découverts automatiquement par Dataplex Cloud Storage Discovery.
                   - "Passage requis en Demo 2 : nettoyage dbt SILVER + scans Auto Data Quality."
   - id: demo2
     workspaceLabel: Demo 2 · SILVER & Data Quality
@@ -910,10 +1392,10 @@ workspaces:
             chipLabel: 1. Lancer le scan Auto Data Quality RAW
             prompt: Peux-tu lancer un scan Auto Data Quality complet sur les tables raw_bank et détailler toutes les anomalies avant qu'on construise la couche SILVER ?
             workedDurationLabel: Worked for 5s
-            workGroupSummary: Explored files, ran commands, edited files
-            intermediateMessage: Le scan Auto Data Quality Dataplex / BigQuery est en cours d'exécution sur les `13,2 M` d'enregistrements de `data-days-demo.raw_bank`.
-            taskFinishedLabel: Auto Data Quality scan on raw_bank finished
-            leadConfirmation: L'audit complet de qualité sur `raw_bank` est disponible dans
+            workGroupSummary: Ran Dataplex Auto DQ scan on raw_bank & rendered bq-visual-audit anomaly chart
+            intermediateMessage: Le scan Auto Data Quality Dataplex / BigQuery et le contrôle visuel `bq-visual-audit` analysent les `13,2 M` d'enregistrements de `data-days-demo.raw_bank`.
+            taskFinishedLabel: Auto Data Quality scan & visual anomaly profile on raw_bank finished
+            leadConfirmation: L'audit complet de qualité et le profil visuel des anomalies sur `raw_bank` sont disponibles dans
             leadLink:
               text: console.cloud.google.com/dataplex/govern/quality?project=data-days-demo
               url: https://console.cloud.google.com/dataplex?project=data-days-demo
@@ -933,23 +1415,71 @@ workspaces:
                     label: cbk_cfonb_movements
                 bullets:
                   - "`1,2 %` de dates de valeur encodées à `00000000` ou `99999999` (`66 000` lignes), codes agences non normalisés (`'0042'` vs `'42  '`), et `650` comptes récents créés sur AWS S3 pas encore réconciliés dans le Mainframe J-1."
+            visualCheck:
+              skillBadge: bq-visual-audit · MCP render_chart
+              title: "Profil visuel des anomalies détectées · data-days-demo.raw_bank"
+              subtitle: "13 249 412 lignes inspectées par Dataplex Auto Data Quality avant transformation dbt SILVER"
+              kpis:
+                - label: Statuts non compensés
+                  value: "8,10 %"
+                  sublabel: "502 200 RJCT / PDNG"
+                  tone: ruby
+                - label: Doublons techniques
+                  value: "3,40 %"
+                  sublabel: "210 800 end_to_end_id"
+                  tone: ruby
+                - label: Dates CFONB invalides
+                  value: "1,20 %"
+                  sublabel: "66 000 en 00000000/99999999"
+                  tone: warning
+                - label: Orphelins AWS S3 J0
+                  value: "650 comptes"
+                  sublabel: "Absents du maître z/OS J-1"
+                  tone: warning
+              chartTitle: "Distribution visuelle des non-conformités à corriger dans les modèles dbt SILVER"
+              bars:
+                - label: "Guichets Mainframe non normalisés ('42   ' vs '0042')"
+                  valueLabel: "12,08 % (664 637)"
+                  pct: 100
+                  tone: warning
+                  badge: LPAD requis
+                - label: "Messages SEPA non réglés (statuts RJCT & PDNG)"
+                  valueLabel: "8,10 % (502 200)"
+                  pct: 67
+                  tone: ruby
+                  badge: Filtrer ACSC
+                - label: "Retries réseau en doublon sur end_to_end_id"
+                  valueLabel: "3,40 % (210 800)"
+                  pct: 28
+                  tone: ruby
+                  badge: ROW_NUMBER = 1
+                - label: "Dates de valeur CFONB 00000000 / 99999999"
+                  valueLabel: "1,20 % (66 000)"
+                  pct: 14
+                  tone: ruby
+                  badge: Fallback compta
+                - label: "Comptes ouverts J0 sur AWS S3 hors Mainframe J-1"
+                  valueLabel: "0,68 % (650)"
+                  pct: 9
+                  tone: warning
+                  badge: FULL OUTER JOIN
             traces:
               - id: d2-tr1
                 action: analyzed
                 icon: dak
                 fileName: data-autocleaning/SKILL.md
                 lineRange: "#L1-86"
-                durationMs: 550
+                durationMs: 450
               - id: d2-tr2
                 action: analyzed
                 icon: yml
                 fileName: _raw_sources.yml
                 lineRange: "#L1-38"
-                durationMs: 450
+                durationMs: 400
               - id: d2-tr3
                 action: ran
                 commandSummary: profile uniqueness, date formats & cross-silo keys in data-days-demo.raw_bank
-                durationMs: 850
+                durationMs: 750
                 cwd: 02_demo2_silver_dbt_dq
                 command: CLOUDSDK_METRICS_ENVIRONMENT="datacloud.antigravity" gcloud dataplex datascans run raw-bank-dq-scan --project=data-days-demo --location=europe-west1
                 output:
@@ -958,13 +1488,27 @@ workspaces:
                   - "[FAIL] raw_sepa_payments.tx_status settled_only: 91.90% (8.10% RJCT / PDNG)"
                   - "[FAIL] cbk_cfonb_movements.date_valeur_raw valid_iso_date: 98.80% (66,000 rows in 00000000 / 99999999)"
                   - "[WARN] cross_silo_key_check (ext_aws_crm vs cbk_accounts_master): 650 recent J0 orphan accounts"
+              - id: d2-tr3b
+                action: analyzed
+                icon: dak
+                fileName: .agents/skills/bq-visual-audit/SKILL.md
+                lineRange: "#L1-52"
+                durationMs: 350
+              - id: d2-tr3c
+                action: ran
+                commandSummary: MCP data-agent-kit/render_chart → RAW anomaly distribution chart
+                durationMs: 450
+                cwd: 02_demo2_silver_dbt_dq
+                command: mcp call data-agent-kit render_chart --spec '{"title":{"text":"RAW Layer Data Quality Anomalies"}}'
+                output:
+                  - "Rendered inline SVG anomaly distribution chart across 5 RAW findings"
               - id: d2-tr4
                 action: edited
                 icon: yml
                 fileName: raw_dq_audit_rules.yaml
                 added: 32
                 removed: 0
-                durationMs: 650
+                durationMs: 550
             filesChanged:
               - path: 02_demo2_silver_dbt_dq/dq_scans/raw_dq_audit_rules.yaml
                 language: yaml
@@ -989,6 +1533,7 @@ workspaces:
               - "[FAIL] raw_sepa_payments.end_to_end_id uniqueness: 96.60% (threshold 100%)"
               - "[FAIL] cbk_cfonb_movements.date_valeur_raw valid_date: 98.80% (threshold 100%)"
               - "[WARN] cross-silo AWS CRM <-> Mainframe account key match: 650 unmatched J0 accounts"
+              - $ mcp call data-agent-kit render_chart [bq-visual-audit anomaly chart ready]
             subagents:
               - id: sa-d2-1
                 role: Data Quality Auditor
@@ -1164,14 +1709,14 @@ workspaces:
             chipLabel: 1. Exécuter dbt build & publier les 5 Data Products
             prompt: Lance dbt build sur data-days-demo et publie les 5 Data Products élémentaires dans Knowledge Catalog.
             workedDurationLabel: Worked for 6s
-            workGroupSummary: Explored files, ran commands, edited files
-            intermediateMessage: Exécution de `dbt build --select silver.*` sur `data-days-demo` (`europe-west1`) et publication des Data Products dans Knowledge Catalog en cours.
-            taskFinishedLabel: dbt build (29/29 PASS) & Knowledge Catalog publication finished
-            leadConfirmation: Les 5 Data Products `SILVER` sont matérialisés à `100 %` de Data Quality et publiés dans
+            workGroupSummary: Executed dbt build (29/29 PASS), published Data Products & ran bq-visual-audit
+            intermediateMessage: Exécution de `dbt build --select silver.*` sur `data-days-demo` (`europe-west1`), contrôle visuel `bq-visual-audit` des 5 tables `silver_bank` et publication dans Knowledge Catalog.
+            taskFinishedLabel: dbt build (29/29 PASS), visual audit & KC publication finished
+            leadConfirmation: Les 5 Data Products `SILVER` sont matérialisés à `100 %` de Data Quality, contrôlés visuellement et publiés dans
             leadLink:
               text: console.cloud.google.com/dataplex/dp?project=data-days-demo
               url: https://console.cloud.google.com/dataplex?project=data-days-demo
-            sectionHeading: "Ce qui a été mis en place :"
+            sectionHeading: "Ce qui a été mis en place et contrôlé visuellement :"
             items:
               - title: 5 Data Products élémentaires certifiés techniquement (`100 %` DQ PASS)
                 chips:
@@ -1187,11 +1732,59 @@ workspaces:
                     label: dp_finance_gl_alm
                 bullets:
                   - Les schémas `SILVER` sont désormais 100 % propres techniquement (`0` doublon, `0` NULL), mais ne contiennent pas encore les règles métier implicites du contrôle de gestion CFO.
+            visualCheck:
+              skillBadge: bq-visual-audit · MCP render_chart
+              title: "Contrôle visuel post-création · 5 Data Products silver_bank"
+              subtitle: "29 / 29 tests dbt schema.yml validés — purge complète des anomalies RAW & structuration IA des 250 PDF"
+              kpis:
+                - label: Assertions dbt DQ
+                  value: "29 / 29 PASS"
+                  sublabel: "100,0 % Auto DQ"
+                  tone: positive
+                - label: Comptes unifiés
+                  value: "95 000"
+                  sublabel: "+650 comptes AWS J0 joints"
+                  tone: positive
+                - label: Contrats PDF extraits
+                  value: "-14,30 M€"
+                  sublabel: "250 PDF via AI.GENERATE_TABLE"
+                  tone: warning
+                - label: Fuite 18-32 ans (J1–J5)
+                  value: "68,0 %"
+                  sublabel: "sur -2,42 Md€ SEPA ACSC"
+                  tone: ruby
+              chartTitle: "Certification qualité & volumétrie nette des 5 tables créées dans silver_bank"
+              bars:
+                - label: "dp_accounts_balances (95 000 comptes réconciliés z/OS + AWS)"
+                  valueLabel: "100,0 % DQ"
+                  pct: 100
+                  tone: positive
+                  badge: 0 orphelin
+                - label: "dp_payment_flows (5,49 M virements ACSC nets)"
+                  valueLabel: "100,0 % DQ"
+                  pct: 100
+                  tone: positive
+                  badge: "-713 000 purgés"
+                - label: "dp_customers_interactions (80k clients & 320k notes CRM)"
+                  valueLabel: "100,0 % DQ"
+                  pct: 100
+                  tone: positive
+                  badge: Borderless S3
+                - label: "dp_finance_gl_alm (1,20 M écritures SAP / PCEC)"
+                  valueLabel: "100,0 % DQ"
+                  pct: 100
+                  tone: warning
+                  badge: Sémantique KC requise
+                - label: "dp_contracts_promos (250 PDF extraits = -14,30 M€)"
+                  valueLabel: "100,0 % DQ"
+                  pct: 100
+                  tone: blue
+                  badge: AI.GENERATE_TABLE
             traces:
               - id: d2-tr11
                 action: ran
                 commandSummary: dbt build --select silver.* on data-days-demo.silver_bank (29/29 PASS)
-                durationMs: 950
+                durationMs: 850
                 cwd: 02_demo2_silver_dbt_dq
                 command: dbt build --select "silver.*" --target prod
                 output:
@@ -1201,17 +1794,31 @@ workspaces:
                   - 4 of 5 OK created sql table model silver_bank.dp_finance_gl_alm ............. [CREATE TABLE (1.20m rows) in 1.54s]
                   - 5 of 5 OK created sql table model silver_bank.dp_contracts_promos ........... [CREATE TABLE (250 rows) in 1.89s]
                   - Done. PASS=29 WARN=0 ERROR=0 SKIP=0 TOTAL=29
+              - id: d2-tr11b
+                action: analyzed
+                icon: dak
+                fileName: .agents/skills/bq-visual-audit/SKILL.md
+                lineRange: "#L1-52"
+                durationMs: 350
+              - id: d2-tr11c
+                action: ran
+                commandSummary: MCP data-agent-kit/render_chart → SILVER 5 Data Products DQ & PDF extraction audit
+                durationMs: 500
+                cwd: 02_demo2_silver_dbt_dq
+                command: mcp call data-agent-kit render_chart --spec '{"title":{"text":"SILVER Data Products Certification (100% DQ)"}}'
+                output:
+                  - "Rendered inline SVG visual check: 5/5 tables at 100.0% DQ PASS, -14,300,000.00 EUR extracted from 250 PDFs"
               - id: d2-tr12
                 action: edited
                 icon: yml
                 fileName: silver_data_products.yaml
                 added: 29
                 removed: 0
-                durationMs: 600
+                durationMs: 500
               - id: d2-tr13
                 action: ran
                 commandSummary: publish 5 certified Data Products to Knowledge Catalog (europe-west1)
-                durationMs: 850
+                durationMs: 750
                 cwd: 02_demo2_silver_dbt_dq
                 command: kcmd publish-products --file kc_products/silver_data_products.yaml --location europe-west1
                 output:
@@ -1242,6 +1849,7 @@ workspaces:
             terminalLogs:
               - $ dbt build --select silver.*
               - PASS=29 WARN=0 ERROR=0 SKIP=0 TOTAL=29 [3.4s]
+              - $ mcp call data-agent-kit render_chart [bq-visual-audit PASS]
               - $ kcmd publish-products --file kc_products/silver_data_products.yaml
               - "Published 5 Data Products to Knowledge Catalog (status: CERTIFIED_DQ)."
             subagents:
@@ -1392,14 +2000,14 @@ workspaces:
             chipLabel: 1. Publier les 3 glossaires KC & vérifier le PNB (-38,42 M€)
             prompt: Publie les 3 glossaires métier et le Context Set certifié dans Knowledge Catalog sur data-days-demo, puis vérifie l'écart exact de PNB CFO.
             workedDurationLabel: Worked for 5s
-            workGroupSummary: Explored files, ran commands, edited files
-            intermediateMessage: Validation `kcmd` et publication des 3 glossaires métier ainsi que du graphe sémantique dans Knowledge Catalog (`data-days-demo`) en cours.
-            taskFinishedLabel: Knowledge Catalog context set & 3 business glossaries published
-            leadConfirmation: L'ancrage sémantique du `BQ Agent` est actif et certifié au centime près dans
+            workGroupSummary: Published KC glossaries, created gold_bank view & rendered bq-visual-audit PNB bridge
+            intermediateMessage: Validation `kcmd`, publication des 3 glossaires métier dans Knowledge Catalog (`data-days-demo`) et contrôle visuel `bq-visual-audit` sur `gold_bank.v_cfo_certified_pnb_variance`.
+            taskFinishedLabel: Knowledge Catalog context set & visual CFO reconciliation finished
+            leadConfirmation: L'ancrage sémantique du `BQ Agent` est actif et certifié visuellement au centime près dans
             leadLink:
               text: console.cloud.google.com/dataplex/glossaries?project=data-days-demo
               url: https://console.cloud.google.com/dataplex?project=data-days-demo
-            sectionHeading: "Ce qui a été mis en place :"
+            sectionHeading: "Ce qui a été mis en place et contrôlé visuellement :"
             items:
               - title: Publication des 3 glossaires métier et du Context Set OKF
                 chips:
@@ -1419,6 +2027,50 @@ workspaces:
                     label: v_cfo_certified_pnb_variance
                 bullets:
                   - Passage de `+42 800 000,00 €` (faux résultat naïf) à exactement `-38 420 000,00 €` d'écart net de PNB vs budget (`-24 120 000,00 €` de coût de refinancement €STR ALM + `-14 300 000,00 €` engagés dans les `250` PDF d'agence).
+            visualCheck:
+              skillBadge: bq-visual-audit · MCP render_chart
+              title: "Contrôle visuel post-création · gold_bank.v_cfo_certified_pnb_variance"
+              subtitle: "Pont de réconciliation PNB CFO : SQL naïf (+42,80 M€) vs Vérité gouvernée Knowledge Catalog (-38,42 M€)"
+              kpis:
+                - label: Requête naïve (sans KC)
+                  value: "+42,80 M€"
+                  sublabel: Hallucination comptable
+                  tone: warning
+                - label: Refinancement ALM €STR
+                  value: "-24,12 M€"
+                  sublabel: "Fuite 2,42 Md€ > ILAAP 2 Md€"
+                  tone: ruby
+                - label: Engagements 250 PDF
+                  value: "-14,30 M€"
+                  sublabel: "Plafond Risques 9 M€ dépassé"
+                  tone: ruby
+                - label: PNB Net Certifié KC
+                  value: "-38,42 M€"
+                  sublabel: Exact au centime près
+                  tone: positive
+              chartTitle: "Pont visuel de marge nette d'intérêt (PNB) & alertes normatives CFO"
+              bars:
+                - label: "1. SQL naïf sur SILVER (sans sens D/C + comptes internes 58*)"
+                  valueLabel: "+42 800 000,00 €"
+                  pct: 100
+                  tone: warning
+                  badge: FAUX POSITIF
+                - label: "2. Charge TCI €STR 398 bps sur dépôts évaporés (REG_02)"
+                  valueLabel: "-24 120 000,00 €"
+                  pct: 63
+                  tone: ruby
+                  badge: ALERTE ILAAP > 2,00 Md€
+                - label: "3. Déduction primes & taux boostés des 250 PDF agences (REG_04)"
+                  valueLabel: "-14 300 000,00 €"
+                  pct: 37
+                  tone: ruby
+                  badge: PLAFOND 9,00 M€ DÉPASSÉ
+                - label: "4. Écart Net PNB Certifié CFO (v_cfo_certified_pnb_variance)"
+                  valueLabel: "-38 420 000,00 €"
+                  pct: 90
+                  tone: positive
+                  badge: CERTIFIÉ KC
+              footerNote: "Écart d'interprétation corrigé par Knowledge Catalog : 81,22 M€ d'erreur évitée en Comité Exécutif, avec détection immédiate de 2 franchissements de seuils prudentiels."
             traces:
               - id: d3-tr6
                 action: edited
@@ -1426,11 +2078,11 @@ workspaces:
                 fileName: governed_cfo_pnb_variance.sql
                 added: 27
                 removed: 0
-                durationMs: 600
+                durationMs: 550
               - id: d3-tr7
                 action: ran
                 commandSummary: kcmd validate bundle/ && kcmd publish --project data-days-demo
-                durationMs: 850
+                durationMs: 750
                 cwd: 03_demo3_kc_semantics_cfo
                 command: kcmd validate bundle/ && kcmd publish bundle/ --project data-days-demo --location europe-west1
                 output:
@@ -1441,7 +2093,7 @@ workspaces:
               - id: d3-tr8
                 action: ran
                 commandSummary: verify certified PNB variance view (-38,420,000.00 EUR) on data-days-demo.gold_bank
-                durationMs: 800
+                durationMs: 700
                 cwd: 03_demo3_kc_semantics_cfo
                 command: bq query --use_legacy_sql=false --label datacloud:antigravity "SELECT * FROM gold_bank.v_cfo_certified_pnb_variance"
                 output:
@@ -1450,6 +2102,20 @@ workspaces:
                   - +-------------------------+----------------------+----------------------------+
                   - "|            -24120000.00 |         -14300000.00 |               -38420000.00 |"
                   - +-------------------------+----------------------+----------------------------+
+              - id: d3-tr8b
+                action: analyzed
+                icon: dak
+                fileName: .agents/skills/bq-visual-audit/SKILL.md
+                lineRange: "#L1-52"
+                durationMs: 350
+              - id: d3-tr8c
+                action: ran
+                commandSummary: MCP data-agent-kit/render_chart → CFO PNB waterfall (+42.80M€ naive vs -38.42M€ certified)
+                durationMs: 500
+                cwd: 03_demo3_kc_semantics_cfo
+                command: mcp call data-agent-kit render_chart --spec '{"title":{"text":"CFO PNB Variance Bridge (EUR)"}}'
+                output:
+                  - "Rendered inline SVG waterfall chart: +42.80M EUR (naive) -> -24.12M EUR (ALM) - 14.30M EUR (250 PDFs) = -38.42M EUR"
             filesChanged:
               - path: 03_demo3_kc_semantics_cfo/sql/governed_cfo_pnb_variance.sql
                 language: sql
@@ -1484,6 +2150,7 @@ workspaces:
               - +-------------------------+----------------------+----------------------------+
               - "|            -24120000.00 |         -14300000.00 |               -38420000.00 |"
               - +-------------------------+----------------------+----------------------------+
+              - $ mcp call data-agent-kit render_chart [bq-visual-audit PASS]
             subagents:
               - id: sa-d3-3
                 role: Knowledge Catalog Steward
@@ -1534,41 +2201,111 @@ workspaces:
             chipLabel: 1. Calculer Budget Insight & propension Livret Boost
             prompt: À partir des Data Products silver_bank et des règles Knowledge Catalog, génère les requêtes BigQuery AI (AI.FORECAST reste à vivre & détection dérive abonnements) pour alimenter les agents mobiles.
             workedDurationLabel: Worked for 5s
-            workGroupSummary: Analyzed SILVER schemas, generated BQML forecast & offer eligibility SQL
-            intermediateMessage: Calcul des projections de reste à vivre (`AI.FORECAST` TimesFM) et détection des hausses d'abonnements sur les `80 000` clients dans BigQuery en cours.
-            taskFinishedLabel: BigQuery AI Budget Insights & Offer Propensity computed
-            leadConfirmation: "Les features prédictives sont matérialisées dans `gold_bank.customer_mobile_insights` (client témoin `CUST00002026` Lucas Martin : hausse abonnement `+4,00 €`, remboursement santé `+42,00 €`, excédent fin de mois prévu `+300,00 €` éligible au *Livret Boost Maison 4 %*)."
-            sectionHeading: "Ce qui a été mis en place :"
+            workGroupSummary: Analyzed SILVER schemas, ran BQML AI.FORECAST & rendered bq-visual-audit chart
+            intermediateMessage: Calcul des projections de reste à vivre (`AI.FORECAST` TimesFM), détection des hausses d'abonnements sur les `80 000` clients et contrôle visuel `bq-visual-audit` sur `gold_bank.customer_mobile_insights`.
+            taskFinishedLabel: BigQuery AI Budget Insights & visual audit completed
+            leadConfirmation: "Les features prédictives sont matérialisées et vérifiées visuellement dans `gold_bank.customer_mobile_insights` (client témoin `CUST00002026` Lucas Martin : hausse abonnement `+4,00 €`, remboursement santé `+42,00 €`, excédent fin de mois prévu `+300,00 €` éligible au *Livret Boost Maison 4 %*)."
+            sectionHeading: "Ce qui a été mis en place et contrôlé visuellement :"
             items:
               - title: Prévision budgétaire `AI.FORECAST` & détection d’anomalies récurrentes
                 chips:
                   - kind: sql
                     label: 01_bqml_budget_insights.sql
+                  - kind: bq
+                    label: customer_mobile_insights
                 bullets:
-                  - Identification automatique du passage `STRMFLIX` de `15,99 €` à `19,99 €` (`+4,00 €`) et projection du solde net fin de mois à `+300,00 €`.
+                  - Identification automatique du passage `STRMFLIX` de `15,99 €` à `19,99 €` (`+4,00 €`) et projection du solde net fin de mois à `+300,00 €` dans le respect de la Recommandation `ACPR 2024-R-01`.
+            visualCheck:
+              skillBadge: bq-visual-audit · MCP render_chart
+              title: "Contrôle visuel post-création · gold_bank.customer_mobile_insights"
+              subtitle: "80 000 clients scorés par AI.FORECAST (TimesFM) — focus client témoin CUST00002026 (Lucas Martin)"
+              kpis:
+                - label: Portefeuille scoré BQML
+                  value: 80 000 clients
+                  sublabel: 100 % couverture mobile
+                  tone: positive
+                - label: Alerte dérive abonnement
+                  value: "+4,00 € / mois"
+                  sublabel: "STRMFLIX (15,99 € → 19,99 €)"
+                  tone: warning
+                - label: Remboursement détecté
+                  value: "+42,00 €"
+                  sublabel: Mutuelle Santé J-2
+                  tone: blue
+                - label: Reste à vivre fin de mois
+                  value: "+300,00 €"
+                  sublabel: "Éligible Livret Boost 4 %"
+                  tone: positive
+              chartTitle: "Décomposition visuelle du flux mensuel projeté — Lucas Martin (CUST00002026)"
+              bars:
+                - label: Salaire net crédité (virement employeur J+2)
+                  valueLabel: "+1 850,00 €"
+                  pct: 100
+                  tone: positive
+                  badge: Entrée fixe
+                - label: Loyer & charges fixes prélevées (J+5)
+                  valueLabel: "-980,00 €"
+                  pct: 53
+                  tone: neutral
+                  badge: Prélèvements
+                - label: Dépenses courantes CB projetées (AI.FORECAST)
+                  valueLabel: "-592,01 €"
+                  pct: 32
+                  tone: blue
+                  badge: TimesFM 30j
+                - label: Remboursement mutuelle santé hors-norme
+                  valueLabel: "+42,00 €"
+                  pct: 14
+                  tone: positive
+                  badge: Événement positif
+                - label: Hausse tarifaire abonnement STRMFLIX détectée
+                  valueLabel: "-19,99 € (+4 €)"
+                  pct: 10
+                  tone: warning
+                  badge: Alerte budget
+                - label: Excédent net fin de mois certifié (seuil ACPR >= 100 €)
+                  valueLabel: "+300,00 €"
+                  pct: 28
+                  tone: positive
+                  badge: Livret Boost 4 %
+              footerNote: "Contrôle automatique bq-visual-audit : 0 recommandation d'épargne émise sur les clients à reste à vivre projeté < 100 € (conformité ACPR 2024-R-01)."
             traces:
               - id: d4-tr1
                 action: analyzed
                 icon: dak
                 fileName: bigquery-ai-ml/SKILL.md
                 lineRange: "#L1-104"
-                durationMs: 500
+                durationMs: 450
               - id: d4-tr2
                 action: edited
                 icon: sql
                 fileName: 01_bqml_budget_insights.sql
                 added: 36
                 removed: 0
-                durationMs: 600
+                durationMs: 550
               - id: d4-tr3
                 action: ran
                 commandSummary: bq query --label datacloud:antigravity 01_bqml_budget_insights.sql
-                durationMs: 850
+                durationMs: 750
                 cwd: 04_demo4_scale_mobile_adk
                 command: bq query --use_legacy_sql=false --label datacloud:antigravity < sql/01_bqml_budget_insights.sql
                 output:
                   - Created data-days-demo.gold_bank.customer_mobile_insights (80,000 rows)
                   - "Sample CUST00002026 (Lucas Martin): sub_hike=+4.00 EUR | health_refund=+42.00 EUR | eom_surplus=+300.00 EUR -> LIVRET_BOOST_MAISON_4PCT"
+              - id: d4-tr3b
+                action: analyzed
+                icon: dak
+                fileName: .agents/skills/bq-visual-audit/SKILL.md
+                lineRange: "#L1-52"
+                durationMs: 350
+              - id: d4-tr3c
+                action: ran
+                commandSummary: MCP data-agent-kit/render_chart → AI.FORECAST cashflow & eligibility visual check
+                durationMs: 500
+                cwd: 04_demo4_scale_mobile_adk
+                command: mcp call data-agent-kit render_chart --spec '{"title":{"text":"CUST00002026 AI.FORECAST EOM Surplus"}}'
+                output:
+                  - "Rendered inline SVG visual audit chart (80,000 customers, 0 ACPR threshold violations)"
             filesChanged:
               - path: 04_demo4_scale_mobile_adk/sql/01_bqml_budget_insights.sql
                 language: sql
@@ -1588,6 +2325,7 @@ workspaces:
             terminalLogs:
               - $ bq query --label datacloud:antigravity < 01_bqml_budget_insights.sql
               - "CUST00002026 (Lucas Martin): sub_delta=+4.00 EUR | eom_surplus=+300.00 EUR | offer=LIVRET_BOOST_MAISON_4PCT"
+              - $ mcp call data-agent-kit render_chart [bq-visual-audit PASS]
             subagents:
               - id: sa-d4-1
                 role: BigQuery AI ML Engineer
@@ -1607,11 +2345,11 @@ workspaces:
             chipLabel: 1. Synchroniser vers AlloyDB & brancher les 3 agents ADK
             prompt: Configure alloydb_sync pour exposer ces insights en moins de 15 ms avec le flux temps réel du jour J aux 3 agents ADK (Budget Insight, Conseil Offres, Action).
             workedDurationLabel: Worked for 5s
-            workGroupSummary: Configured alloydb_sync & ADK operational tools
-            intermediateMessage: Synchronisation `alloydb_sync` vers `bank-digital-primary` (`mobile_bank`) et déploiement des tools ADK en cours.
-            taskFinishedLabel: alloydb_sync (<15ms) & 3 ADK Mobile Agents ready
-            leadConfirmation: Les insights BigQuery et le solde temps réel sont servis en `8,4 ms` depuis `AlloyDB` aux 3 agents `ADK` de l'application Android.
-            sectionHeading: "Ce qui a été mis en place :"
+            workGroupSummary: Configured alloydb_sync, deployed ADK agents & rendered latency visual check
+            intermediateMessage: Synchronisation `alloydb_sync` vers `bank-digital-primary` (`mobile_bank`), déploiement des tools ADK et contrôle visuel de latence `< 15 ms`.
+            taskFinishedLabel: alloydb_sync (<15ms) & 3 ADK Mobile Agents verified
+            leadConfirmation: Les insights BigQuery et le solde temps réel sont servis en `8,4 ms` (`p99`) depuis `AlloyDB` aux 3 agents `ADK` de l'application Android.
+            sectionHeading: "Ce qui a été mis en place et mesuré :"
             items:
               - title: Pont opérationnel `alloydb_sync` (`BigQuery → AlloyDB`)
                 chips:
@@ -1619,6 +2357,45 @@ workspaces:
                     label: adk_mobile_agents.py
                 bullets:
                   - Lecture opérationnelle `< 15 ms` combinant les insights `BQML` (`J-1`) et les événements temps réel du jour `J`, avec exécution transactionnelle 1-clic du virement d'épargne interne.
+            visualCheck:
+              skillBadge: bq-visual-audit · MCP render_chart
+              title: "Contrôle visuel de parité & latence · BigQuery gold_bank ↔ AlloyDB mobile_bank"
+              subtitle: "80 000 profils synchronisés (lag = 0,4 s) — benchmark d'ouverture de l'application mobile"
+              kpis:
+                - label: Parité BQ ↔ AlloyDB
+                  value: "80 000 / 80 000"
+                  sublabel: 100 % lignes synchronisées
+                  tone: positive
+                - label: Latence médiane (p50)
+                  value: 4,1 ms
+                  sublabel: Point-lookup + stream J0
+                  tone: positive
+                - label: Latence p99 mobile
+                  value: 8,4 ms
+                  sublabel: "SLA < 15,0 ms respecté"
+                  tone: positive
+              chartTitle: "Comparatif visuel de temps de réponse à l'ouverture de l'application mobile"
+              bars:
+                - label: Requête analytique directe BigQuery à froid (non adaptée au mobile)
+                  valueLabel: "1 420,0 ms"
+                  pct: 100
+                  tone: warning
+                  badge: Analytique pur
+                - label: Seuil SLA maximal UX mobile Banque Hexagone
+                  valueLabel: "15,0 ms"
+                  pct: 18
+                  tone: neutral
+                  badge: Budget SLA max
+                - label: Lecture opérationnelle AlloyDB p99 (alloydb_sync + J0)
+                  valueLabel: "8,4 ms"
+                  pct: 10
+                  tone: positive
+                  badge: "-99,4 % vs scan froid"
+                - label: Lecture opérationnelle AlloyDB p50 (CUST00002026)
+                  valueLabel: "4,1 ms"
+                  pct: 6
+                  tone: positive
+                  badge: Temps réel ADK
             traces:
               - id: d4-tr4
                 action: edited
@@ -1626,17 +2403,31 @@ workspaces:
                 fileName: adk_mobile_agents.py
                 added: 48
                 removed: 0
-                durationMs: 650
+                durationMs: 600
               - id: d4-tr5
                 action: ran
                 commandSummary: sync gold_bank.customer_mobile_insights → AlloyDB mobile_bank (p99 = 8.4ms)
-                durationMs: 800
+                durationMs: 750
                 cwd: 04_demo4_scale_mobile_adk
                 command: python3 scripts/verify_alloydb_sync.py --cluster "bank-digital-cluster" --customer "CUST00002026"
                 output:
                   - "alloydb_sync replication lag: 0.4s | rows synced: 80,000"
                   - "Point-lookup latency (CUST00002026 + real-time J0 stream): p50=4.1ms, p99=8.4ms (< 15ms SLA)"
                   - "Agent Runtime (ADK): budget_insight_agent, offer_advisor_agent, action_execution_agent READY"
+              - id: d4-tr5b
+                action: analyzed
+                icon: dak
+                fileName: .agents/skills/bq-visual-audit/SKILL.md
+                lineRange: "#L1-52"
+                durationMs: 350
+              - id: d4-tr5c
+                action: ran
+                commandSummary: MCP data-agent-kit/render_chart → BigQuery vs AlloyDB p99 latency check
+                durationMs: 450
+                cwd: 04_demo4_scale_mobile_adk
+                command: mcp call data-agent-kit render_chart --spec '{"title":{"text":"Operational Sync Parity & p99 Latency"}}'
+                output:
+                  - "Rendered inline SVG visual check (80,000/80,000 parity, p99 = 8.4 ms < 15 ms SLA)"
             filesChanged:
               - path: 04_demo4_scale_mobile_adk/agents/adk_mobile_agents.py
                 language: python
@@ -1666,6 +2457,7 @@ workspaces:
             terminalLogs:
               - $ python verify_alloydb_latency.py --customer CUST00002026
               - "AlloyDB read p99 latency: 8.4 ms — 3 ADK agents online on Agent Runtime."
+              - $ mcp call data-agent-kit render_chart [bq-visual-audit PASS]
             subagents:
               - id: sa-d4-2
                 role: AlloyDB & ADK Runtime Architect
