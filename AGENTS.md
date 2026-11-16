@@ -4,7 +4,7 @@ Ce fichier définit les règles strictes que tout agent travaillant sur ce repos
 Le contexte complet du projet est décrit dans `DESIGN_AND_CONTEXT.md`.
 
 ## 1. Principes d'architecture non négociables
-1. **Zéro copie inutile :** Utiliser systématiquement `BigLake` (`Iceberg` sur GCS, `BigQuery Omni` sur AWS S3 et `Object Tables` pour les PDF) plutôt que de dupliquer des fichiers.
+1. **Zéro copie inutile :** Utiliser systématiquement `BigLake` (`Iceberg` sur GCS, `BigQuery Omni` sur AWS S3 et `Object Tables` pour les PDF) plutôt que de dupliquer des fichiers. *Exception assumée :* le silo Finance SAP (`raw_bank.raw_sap_gl_alm`) est chargé directement par `bq load` (simulation d'une extraction SAP, préparée hors scène).
 2. **Industrialisation `dbt` :** Toutes les transformations `RAW -> SILVER` doivent être écrites sous forme de modèles `dbt` versionnés avec leur `schema.yml` (descriptions + tests de qualité).
 3. **Sémantique centralisée dans `Knowledge Catalog` :** Ne jamais coder en dur des formules métier complexes (notamment le calcul de la marge nette PNB CFO) dans les prompts d'agents ; toujours s'appuyer sur les glossaires et vues gouvernées de `Knowledge Catalog`.
 4. **Séparation Analytique / Opérationnel :**
@@ -22,6 +22,7 @@ Toute modification du générateur de données (`00_data_generator/`) doit prés
 * **Écart PNB CFO :**
   * Requête naïve (`SILVER` sans sémantique `KC`) : **`+42 800 000,00 €`**.
   * Requête certifiée (avec `KC`) : **`-38 420 000,00 €`** (`-24,12 M€` coût refinancement ALM + `-14,30 M€` primes/remises des 250 PDF).
+  * Source `raw_bank.raw_sap_gl_alm` (`1 200 000` lignes, `generate_finance_sap_alm.py`) : `SUM(gross_amount_eur)` = `+42,80 M€` ; `SUM(gross_amount_eur × IF(sens_dc='D',-1,1))` hors comptes `58*` = `-24,12 M€` (TCI ALM `3,99 %` = €STR `3,67 %` + `32 bps`, base `90/360`) ; comptes PDF `602910` / `602920` / `708590` absents de SAP.
 
 ## 3. Conventions de développement
 * **Python :** Utiliser `uv` pour la gestion des dépendances (`pyproject.toml`). Privilégier `polars`, `pyarrow` et `duckdb` pour la génération et la validation locale rapide.

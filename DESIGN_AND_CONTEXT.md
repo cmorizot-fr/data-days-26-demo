@@ -31,7 +31,7 @@ flowchart BT
     subgraph SILOS["Couche 0 — Silos sources existants (hétérogènes & bruités)"]
         S_MF["Mainframe core banking (fichiers batch CFONB / .cpy)"]
         S_AWS["SaaS CRM & call center sur AWS (S3 Iceberg + Glue)"]
-        S_FIN["DB Finance SAP / PCEC & drops trésorerie ALM (Postgres / CSV)"]
+        S_FIN["Extraction SAP GL / PCEC + budget BPC + dépôts trésorerie ALM (Parquet, bq load)"]
         S_PAY["SI paiements temps réel (flux Kafka / PubSub ISO 20022)"]
         S_PDF["Contrats & offres promos agences (250 PDF sur GCS)"]
     end
@@ -79,7 +79,7 @@ flowchart BT
 * **État initial :**
   * Fichiers batch Mainframe au format fixe illisible (`CFONB 120` / Copybook `.cpy`, encodage legacy).
   * Données CRM & interactions call center hébergées dans un SaaS sur **AWS** (`S3` + `Glue`).
-  * Données Finance / comptabilité dans une base type **SAP / Postgres** (+ exports ALM).
+  * Données Finance / comptabilité : extraction du **grand livre SAP / PCEC** (+ budget BPC et dépôts quotidiens de la Trésorerie ALM), **préchargée en coulisses** dans `raw_bank.raw_sap_gl_alm` par `bq load` (aucune étape sur scène).
   * Flux d'événements de paiements temps réel (`Kafka` / `Pub/Sub` en `ISO 20022 pacs.008` & JSON).
   * Contrats et avenants promotionnels en **PDF** non structurés sur GCS.
 * **Actions réalisées dans `AGY` (6 étapes conversationnelles interactives) :**
@@ -116,7 +116,7 @@ flowchart BT
 * **Actions réalisées en 2 temps :**
   1. **Le crash sémantique (« Fake résultat ») :**
      * Création d'un **`BQ Agent`** dans BigQuery Studio branché sur les tables `SILVER`, interrogé depuis **`Gemini Enterprise`** sur 4–5 questions Finance du CFO.
-     * La requête SQL s'exécute sans erreur technique, mais renvoie un **résultat métier aberrant (`+42,8 M€` de hausse de marge au lieu de `-38,42 M€`)** car l'agent ignore les règles de signe comptable (`SENS_DC` / `SHKZG`), compte les virements internes compte-à-livret et oublie de déduire le refinancement ALM ainsi que les remises commerciales stockées dans les PDF.
+     * La requête SQL s'exécute sans erreur technique, mais renvoie un **résultat métier aberrant (`+42,8 M€` de hausse de marge au lieu de `-38,42 M€`)** car l'agent ignore les règles de signe comptable (`SENS_DC` / `SHKZG`), compte les virements internes compte-à-livret (`58*`), additionne la charge de refinancement ALM au lieu de la déduire et ignore les remises commerciales stockées dans les PDF.
   2. **Capture de la connaissance & ancrage `Knowledge Catalog` dans `AGY` :**
      * Import et réconciliation des **catalogues legacy** de la banque (exports CSV/JSON historiques incomplets ou contradictoires entre Réseau Commercial et Finance).
      * Ingestion multimodale des **vidéos d'interviews métier pré-enregistrées (`.mp4`)** où les sachants (responsable ALM, contrôle de gestion, réseau) expliquent à l'oral les vraies règles de calcul du PNB net et le rôle des avenants PDF.
@@ -149,7 +149,7 @@ Pour que les 4 démos racontent une seule et même histoire cohérente sans jama
 ### A. Volumétrie cible (optimisée pour `< 2 s` de requête en live)
 * **Clients (`CRM AWS S3`) :** `80 000` clients particuliers répartis sur `8 régions` et `450 agences`, `0` clôture de compte sur le trimestre, `+15 000` ouvertures récentes, `320 000` notes de RDV agence & verbatims d'appels call center.
 * **Comptes & opérations (`Core banking` + `SI paiements`) :** `95 000` comptes courants/livrets, `~5,5 M` d'écritures valorisées batch et `~6,2 M` d'événements dans le flux paiements sur 18 mois (schéma `100 % Nested STRUCT` ISO 20022 aligné entre Parquet historique et flux temps réel Pub/Sub).
-* **Finance & PDF :** `1,2 M` de lignes comptables agrégées, `250` vrais fichiers PDF d'offres promotionnelles sur GCS, `6` PDF réglementaires CFO (`ANC`, `ALM`, `ILAAP`, `Comité des Risques`, `UE 2024/886`, `ACPR 2024-R-01`), et un référentiel d'`offres_epargne` pour la Démo #4.
+* **Finance & PDF :** `1,2 M` de lignes comptables agrégées (`raw_bank.raw_sap_gl_alm`), `250` vrais fichiers PDF d'offres promotionnelles sur GCS, `6` PDF réglementaires CFO (`ANC`, `ALM`, `ILAAP`, `Comité des Risques`, `UE 2024/886`, `ACPR 2024-R-01`), et un référentiel d'`offres_epargne` pour la Démo #4.
 
 ### B. Anomalies `RAW` obligatoires (pour le tacle de Jojo & la Démo #2)
 1. **Doublons techniques de flux (`SI paiements`) :** ~`3,4 %` d'événements en doublon sur `end_to_end_id` (retries réseau) + présence de statuts rejetés/en attente (`RJCT`, `PDNG` = `8,1 %` des messages).
@@ -158,10 +158,15 @@ Pour que les 4 démos racontent une seule et même histoire cohérente sans jama
 
 ### C. Invariants métier & financiers (pour la Démo #3 — `Fake` vs `Certifié`)
 * **Fuite réelle des dépôts à vue (90 jours) :** exactement **`2 420 000 000 €`** de virements sortants compensés (`ACSC`) vers des BIC de néobanques/courtiers (`REVOLT21`, `TRBKDEBB`, etc.), dont **`68,0 %`** chez les **18–32 ans** concentrés entre le **1er et le 5 du mois**.
-* **Résultat « FAKE » du `BQ Agent` avant `Knowledge Catalog` :** **`+42,80 M€`** (obtenu systématiquement lorsqu'un SQL naïf somme les montants comptables bruts non signés sans appliquer le sens Débit/Crédit, inclut les virements internes compte-à-livret `58*` et ignore le coût ALM ainsi que les PDF).
+* **Résultat « FAKE » du `BQ Agent` avant `Knowledge Catalog` :** **`+42,80 M€`** (obtenu systématiquement lorsqu'un SQL naïf `SUM(gross_amount_eur)` somme les montants bruts non signés — réel et budget en contre-valeur négative — sans appliquer le sens Débit/Crédit, inclut les virements internes compte-à-livret `58*`, compte la charge ALM en positif et ignore les PDF).
 * **Résultat « CERTIFIÉ » après `Knowledge Catalog` :** **`-38,42 M€`** d'écart net de PNB par rapport au budget, décomposé exactement en :
-  * **`-24,12 M€`** de coût de refinancement trésorerie ALM (`2,42 Md€` remplacés sur 90 jours au taux €STR ~`398 bps`),
+  * **`-24,12 M€`** de coût de refinancement trésorerie ALM (`2,42 Md€` remplacés par tirages à 3 mois, base `ACT/360` sur 90 jours, au TCI €STR `3,67 %` + `32 bps` = `3,987 %`, soit ~`399 bps`),
   * **`-14,30 M€`** de primes de bienvenue, gratuités et taux boostés engagés dans les **250 avenants PDF** d'agence (en dépassement du plafond Comité des Risques de `9,00 M€`).
+* **Silo Finance SAP / ALM (`raw_bank.raw_sap_gl_alm`, chargé directement par `bq load` via `scripts/load_finance_sap_bq.sh`) :** exactement `1 200 000` lignes générées par `00_data_generator/generate_finance_sap_alm.py` sur la fenêtre de 90 jours, périmètre comptes de résultat `6*` / `7*` + liaisons internes `58*` :
+  * `SAP_FI_GL` (ledger `REEL`, `1 140 110` lignes) : produits `C` / charges `D`, montant brut `gross_amount_eur` jamais signé (code sens `sens_dc`) ; le réel dépasse le budget de `+3,14 M€` en produits **et** en charges (écart signé nul).
+  * `BPC_BUDGET_T4` (ledger `BUDGET`, `19 800` lignes = `450` agences × `4` périodes × `11` comptes) : chargé en contre-valeur **négative** (convention BPC « réel − budget »).
+  * `ALM_TCI_DROP` (`90` lignes, PCEC `601320`, sens `D`) : `-24,12 M€` ; `SAP_FI_LIAISON` (`40 000` lignes, `20 000` virements compte → livret `581000` en 2 jambes `D`/`C`, `12,40 M€` bruts).
+  * **Contrôle :** `SUM(gross_amount_eur)` = `+42 800 000,00 €` (naïf = `2 × 3,14` + `24,12` + `12,40`) ; `SUM(gross × IF(sens_dc='D',-1,1)) WHERE pcec_account NOT LIKE '58%'` = `-24 120 000,00 €`. Les comptes PDF `602910` / `602920` / `708590` sont absents de SAP (hors-SAP).
 
 ### D. Assets « Connaissance Legacy » & Personas Digital (pour les Démos #3 et #4)
 * **Kit legacy pour Démo #3 :**

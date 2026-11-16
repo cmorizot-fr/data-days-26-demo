@@ -1117,7 +1117,7 @@ def get_regulatory_cfo_specs() -> list[dict]:
                 ),
                 (
                     "Taux de référence monétaire (€STR moyen + spread)",
-                    "3,65 % + 32 bps (3,97 %)",
+                    "3,67 % + 32 bps (3,99 %)",
                     "Taux complet de cession interne (TCI marginal de liquidité) facturé au Réseau.",
                 ),
                 (
@@ -1144,7 +1144,7 @@ def get_regulatory_cfo_specs() -> list[dict]:
             ),
             "stamp_l1": "CONVENTION ALCO APPLICABLE",
             "stamp_l2": "TRÉSORERIE CENTRALE & ALM",
-            "stamp_l3": "TCI Marginal : 3,97 % · PCEC 601320",
+            "stamp_l3": "TCI Marginal : 3,99 % · PCEC 601320",
         },
         {
             "filename": "REG_03_ILAAP_SEUILS_LCR_NSFR_ACPR_2026.pdf",

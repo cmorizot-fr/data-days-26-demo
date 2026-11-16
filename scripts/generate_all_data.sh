@@ -72,6 +72,11 @@ if [[ "${SYNC_GCS}" == "true" ]]; then
     gcloud storage rsync --recursive "${OUTPUT_RAW_DIR}" "gs://${GCS_BUCKET_LANDING}/RAW" --project="${GCP_PROJECT_ID}"
   echo "[generate_all_data] Synchronisation GCS terminée."
 
+  # Silo Finance SAP / PCEC & ALM : chargement direct dans BigQuery raw_bank.raw_sap_gl_alm
+  if [[ -f "${OUTPUT_RAW_DIR}/FINANCE_SAP_ALM/raw_sap_gl_alm.parquet" ]]; then
+    "${ROOT_DIR}/scripts/load_finance_sap_bq.sh"
+  fi
+
   if [[ -x "${ROOT_DIR}/scripts/setup_pubsub_queues.sh" ]]; then
     "${ROOT_DIR}/scripts/setup_pubsub_queues.sh"
     uv run --project "${ROOT_DIR}" python "${ROOT_DIR}/00_data_generator/stream_payments_pubsub.py" --project-id "${GCP_PROJECT_ID}" --burst 300

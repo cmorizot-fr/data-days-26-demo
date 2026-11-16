@@ -89,6 +89,9 @@ if [[ "${CLEAN_GCS}" == "true" ]]; then
   echo "[clean_all_data] Purge des tables BigQuery d'historisation temps réel Pub/Sub..."
   bq --location=europe-west1 query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --label datacloud:antigravity \
     "TRUNCATE TABLE \`${GCP_PROJECT_ID}.raw_bank.raw_sepa_payments_pubsub_stream\`; TRUNCATE TABLE \`${GCP_PROJECT_ID}.raw_bank.raw_iban_events_pubsub_stream\`;" >/dev/null 2>&1 || true
+
+  echo "[clean_all_data] Suppression de la table Finance SAP / ALM chargée directement (raw_bank.raw_sap_gl_alm)..."
+  bq --location=europe-west1 rm -f -t "${GCP_PROJECT_ID}:raw_bank.raw_sap_gl_alm" >/dev/null 2>&1 || true
 fi
 
 echo "======================================================================"

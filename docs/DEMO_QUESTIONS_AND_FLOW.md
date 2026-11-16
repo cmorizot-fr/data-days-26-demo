@@ -89,6 +89,7 @@
 
 ### Conversation Étape 6 — Init `dbt` & Documentation technique `Knowledge Catalog`
 * Initialisation `dbt_project.yml` + `_raw_sources.yml` (`dbt-bigquery`, 10 sources dont les 2 vues PDF découvertes) et synchronisation technique initiale vers `Knowledge Catalog`.
+* **Prérequis hors scène :** le silo Finance `raw_bank.raw_sap_gl_alm` (grand livre SAP / PCEC + budget BPC + dépôts TCI ALM, `1 200 000` lignes) est préchargé par [`load_finance_sap_bq.sh`](../scripts/load_finance_sap_bq.sh) ; il est simplement déclaré parmi les 10 sources `dbt` (aucune conversation d'ingestion dédiée).
 
 ---
 

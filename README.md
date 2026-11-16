@@ -95,6 +95,7 @@ Vous pouvez également exécuter chaque générateur individuellement :
 | **AWS S3 CRM** (`80k` clients, `320k` notes, `650` orphelins J0) | `uv run python 00_data_generator/generate_aws_crm_s3.py` | `output/RAW/AWS/` |
 | **Flux Paiements SEPA & IBAN** (`3,4 %` doublons, `8,1 %` `RJCT`/`PDNG`) | `uv run python 00_data_generator/generate_payments_stream.py` | `output/RAW/PAYMENTS/` |
 | **Corpus PDF** (`250` avenants agences `-14,30 M€` + `6` normes CFO/ACPR) | `uv run python 00_data_generator/generate_promo_pdfs.py` | `output/RAW/PROMO_CONTRACTS_PDF/` & `REGULATORY_CFO_PDF/` |
+| **Finance SAP / PCEC & ALM** (`1,2 M` lignes : naïf `+42,80 M€`, signé `-24,12 M€`) | `uv run python 00_data_generator/generate_finance_sap_alm.py` | `output/RAW/FINANCE_SAP_ALM/` + `output/bq_schemas/` |
 
 Pour nettoyer proprement les fichiers générés en local et/ou sur GCS :
 ```bash
@@ -136,6 +137,14 @@ Les pipelines de la **Démo #1** disposent de scripts idempotents prêts à êtr
 uv run python 00_data_generator/stream_payments_pubsub.py --witness-live
 ```
 
+### 6. Grand livre SAP / PCEC & dépôts ALM → `raw_bank.raw_sap_gl_alm` (chargement direct, hors scène)
+```bash
+# bq load --replace du Parquet synchronisé sur GCS, documentation des 17 colonnes
+# et contrôle des invariants (1 200 000 lignes, naïf +42 800 000.00, signé hors 58* -24 120 000.00).
+# Appelé automatiquement par generate_all_data.sh après la synchronisation GCS :
+./scripts/load_finance_sap_bq.sh
+```
+
 ---
 
 ## 📂 Structure du repository
@@ -162,6 +171,7 @@ uv run python 00_data_generator/stream_payments_pubsub.py --witness-live
 │   ├── generate_aws_crm_s3.py                # CRM AWS S3 Parquet & 650 comptes récents J0
 │   ├── generate_payments_stream.py           # Archive 18 mois Parquet 100 % Nested STRUCT (6,2 M lignes)
 │   ├── generate_promo_pdfs.py                # 250 PDF d'avenants agences (-14,30 M€) + 6 PDF CFO
+│   ├── generate_finance_sap_alm.py           # Grand livre SAP / PCEC + budget + TCI ALM (1,2 M lignes)
 │   ├── stream_payments_pubsub.py             # Producteur temps réel Nested STRUCT vers Cloud Pub/Sub
 │   ├── validate_corebanking.py               # Vérification locale des invariants Core Banking
 │   └── copybooks/                            # Copybooks COBOL (.cpy) des fichiers Mainframe

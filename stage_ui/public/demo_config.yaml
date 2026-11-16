@@ -1582,7 +1582,7 @@ workspaces:
                   imageUrl: "./assets/pdf_previews/promo_001_retention.png"
                 - id: doc-reg-02
                   title: "REG_02 · Charte ALM TCI"
-                  subtitle: "Refinancement €STR 398 bps"
+                  subtitle: "Refinancement €STR 399 bps"
                   uri: "gs://data-days-demo-landing/RAW/REGULATORY_CFO_PDF/REG_02_CHARTE_ALM_TCI_REFINANCEMENT_BCE.pdf"
                   metaBadge: REG_02_ALM
                   highlightLabel: "Règle TCI -24,12 M€"
@@ -1760,7 +1760,7 @@ workspaces:
                 command: dbt compile --select "staging.*" && kcmd sync-technical-metadata --schema raw_bank
                 output:
                   - "16:24:11  Registered adapter: bigquery=1.9.0"
-                  - 16:24:12  Found 10 sources in data-days-demo.raw_bank (4 Managed Iceberg, 2 AWS Omni, 2 Streams, 2 Discovered PDF Views)
+                  - 16:24:12  Found 10 sources in data-days-demo.raw_bank (4 Managed Iceberg, 2 AWS Omni, 1 Stream, 1 SAP GL Load, 2 Discovered PDF Views)
                   - 16:24:13  Synced technical catalog entries to Knowledge Catalog — 3 data quality warnings flagged.
               - id: d1-s4-tr5
                 action: analyzed
@@ -1812,7 +1812,7 @@ workspaces:
                     - name: raw_bank
                       database: data-days-demo
                       schema: raw_bank
-                      description: "Couche RAW : BigLake Iceberg Mainframe, AWS S3 Omni & Object Tables PDF (Dataplex Discovery)"
+                      description: "Couche RAW : BigLake Iceberg Mainframe, AWS S3 Omni, flux SEPA, extraction SAP GL / ALM & Object Tables PDF (Dataplex Discovery)"
                       tables:
                         - name: cbk_customers_ref
                         - name: cbk_accounts_master
@@ -2403,7 +2403,7 @@ workspaces:
                   - kind: mp4
                     label: interview_pilotage_reseau.mp4
                 bullets:
-                  - "Formalisation en Open Knowledge Format (`net_interest_margin_gap.md`) des 4 règles impératives : signe Débit/Crédit, exclusion des comptes `58%`, imputation du refinancement €STR à `398 bps` sur les `2,42 Md€` évaporés (`-24,12 M€`) et déduction des primes/taux boostés des `250` avenants PDF (`-14,30 M€`)."
+                  - "Formalisation en Open Knowledge Format (`net_interest_margin_gap.md`) des 4 règles impératives : signe Débit/Crédit, exclusion des comptes `58%`, imputation du refinancement €STR à `399 bps` sur les `2,42 Md€` évaporés (`-24,12 M€`) et déduction des primes/taux boostés des `250` avenants PDF (`-14,30 M€`)."
             traces:
               - id: d3-tr1
                 action: analyzed
@@ -2455,7 +2455,7 @@ workspaces:
                   ## Règle de gestion certifiée (Source : Comité ALM & Contrôle de Gestion)
                   1. **Signe comptable obligatoire** : pondérer `gross_amount_eur` par `CASE WHEN sens_dc = 'D' THEN -1 ELSE 1 END`.
                   2. **Neutralisation intra-groupe** : exclure tous les comptes techniques de liaison `pcec_account LIKE '58%'`.
-                  3. **Coût de refinancement ALM (€STR)** : inclure la charge de remplacement des dépôts à vue évaporés (`-24 120 000,00 €` sur 90j à 398 bps).
+                  3. **Coût de refinancement ALM (€STR)** : inclure la charge de remplacement des dépôts à vue évaporés (`-24 120 000,00 €` sur 90j à 399 bps).
                   4. **Coût commercial hors-bilan PDF** : déduire `SUM(committed_promo_cost_eur)` issu de `dp_contracts_promos` (`-14 300 000,00 €`).
             terminalLogs:
               - $ kcmd import-legacy 03_demo3_kc_semantics_cfo/legacy_catalogs/
@@ -2540,7 +2540,7 @@ workspaces:
                   pct: 100
                   tone: warning
                   badge: FAUX POSITIF
-                - label: "2. Charge TCI €STR 398 bps sur dépôts évaporés (REG_02)"
+                - label: "2. Charge TCI €STR 399 bps sur dépôts évaporés (REG_02)"
                   valueLabel: "-24 120 000,00 €"
                   pct: 63
                   tone: ruby
