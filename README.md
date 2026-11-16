@@ -174,6 +174,7 @@ uv run python 00_data_generator/stream_payments_pubsub.py --witness-live
 │   ├── generate_finance_sap_alm.py           # Grand livre SAP / PCEC + budget + TCI ALM (1,2 M lignes)
 │   ├── stream_payments_pubsub.py             # Producteur temps réel Nested STRUCT vers Cloud Pub/Sub
 │   ├── validate_corebanking.py               # Vérification locale des invariants Core Banking
+│   ├── verify_invariants.py                  # Contrôle croisé inter-silos (univers, AWS, paiements, Finance, PDF)
 │   └── copybooks/                            # Copybooks COBOL (.cpy) des fichiers Mainframe
 ├── 01_demo1_raw_aggregation/                 # Acte 1 : Agrégation RAW sans copie inutile
 │   ├── spark/parse_corebanking_iceberg.py    # Job PySpark Dataproc Serverless -> BigLake Iceberg
