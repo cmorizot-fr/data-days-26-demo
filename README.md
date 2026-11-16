@@ -125,13 +125,15 @@ Les pipelines de la **Démo #1** disposent de scripts idempotents prêts à êtr
 ./scripts/run_demo1_gcs_pdf_discovery.sh
 ```
 
-### 3. Streaming Temps Réel Pub/Sub SEPA & Événements IBAN → BigQuery
+### 3. Streaming Temps Réel Pub/Sub `100 % Nested STRUCT` → BigQuery & Sécurité `CLS`
 ```bash
-# Crée les topics Pub/Sub, Dead-Letter Queues et abonnements BigQuery natifs dans raw_bank :
-./scripts/setup_pubsub_queues.sh
+# Replay complet : tables BigQuery 100 % Nested STRUCT (55/55 chemins documentés),
+# BigQuery Subscriptions (--use-table-schema + DLQ), audit PII hybride in-database
+# et application des 3 Data Policies CLS (LAST_FOUR_CHARACTERS, SHA256, ALWAYS_NULL) :
+./scripts/run_demo1_pubsub_bq_cls.sh --recreate-schema --burst 500
 
-# Injecte un flux temps réel de paiements SEPA ISO 20022 et d'événements IBAN/PII :
-uv run python 00_data_generator/stream_payments_pubsub.py --count 500 --rate 50
+# Émission unitaire des événements temps réel Jour J du client témoin (CUST00002026) :
+uv run python 00_data_generator/stream_payments_pubsub.py --witness-live
 ```
 
 ---
@@ -151,23 +153,25 @@ uv run python 00_data_generator/stream_payments_pubsub.py --count 500 --rate 50
 │   └── assets/                               # Schémas d'architecture & supports visuels
 ├── stage_ui/                                 # Interface web scénique (React 18 + Vite + Tailwind v4)
 │   ├── public/
-│   │   ├── demo_config.yaml                  # Configuration YAML éditable à chaud des 4 démos
+│   │   ├── demo_config.yaml                  # Configuration YAML éditable à chaud (incl. askQuestions)
 │   │   └── assets/pdf_previews/              # Vignettes haute résolution des PDF découverts (zoom UI)
-│   └── src/                                  # Composants ChatStage, VisualCheckCard, CustomizationsView
+│   └── src/                                  # Composants ChatStage, AskQuestionTray, VisualCheckCard
 ├── 00_data_generator/                        # Générateurs déterministes multi-silos (seed=2026)
 │   ├── shared_universe.py                    # Univers partagé (80k clients, 95k comptes, 450 agences)
 │   ├── generate_mainframe_cfonb.py           # Mainframe EBCDIC CP500 + COMP-3 & relevés CFONB 120
 │   ├── generate_aws_crm_s3.py                # CRM AWS S3 Parquet & 650 comptes récents J0
-│   ├── generate_payments_stream.py           # Flux SEPA Instant ISO 20022 & événements IBAN
+│   ├── generate_payments_stream.py           # Archive 18 mois Parquet 100 % Nested STRUCT (6,2 M lignes)
 │   ├── generate_promo_pdfs.py                # 250 PDF d'avenants agences (-14,30 M€) + 6 PDF CFO
-│   ├── stream_payments_pubsub.py             # Producteur temps réel vers Google Cloud Pub/Sub
+│   ├── stream_payments_pubsub.py             # Producteur temps réel Nested STRUCT vers Cloud Pub/Sub
 │   ├── validate_corebanking.py               # Vérification locale des invariants Core Banking
 │   └── copybooks/                            # Copybooks COBOL (.cpy) des fichiers Mainframe
 ├── 01_demo1_raw_aggregation/                 # Acte 1 : Agrégation RAW sans copie inutile
 │   ├── spark/parse_corebanking_iceberg.py    # Job PySpark Dataproc Serverless -> BigLake Iceberg
 │   └── sql/
 │       ├── 00_create_documented_mainframe_iceberg_tables.sql
-│       └── 01_expose_discovered_pdf_views.sql
+│       ├── 01_expose_discovered_pdf_views.sql
+│       ├── 02_create_documented_pubsub_nested_tables.sql
+│       └── 03_audit_pii_nested_pubsub.sql
 ├── 02_demo2_silver_dbt_dq/                   # Acte 2 : Modèles dbt SILVER, Auto DQ & Data Products KC
 ├── 03_demo3_kc_semantics_cfo/                # Acte 3 : Glossaires Knowledge Catalog (OKF) & PNB CFO
 ├── 04_demo4_scale_mobile_adk/                # Acte 4 : BQML AI.FORECAST, AlloyDB (<15ms) & agents ADK
@@ -175,7 +179,9 @@ uv run python 00_data_generator/stream_payments_pubsub.py --count 500 --rate 50
 │   ├── generate_all_data.sh                  # Orchestration complète des générateurs + sync GCS RAW/
 │   ├── run_demo1_mainframe_spark_iceberg.sh  # Replay complet Spark Serverless -> BigLake Iceberg
 │   ├── run_demo1_gcs_pdf_discovery.sh        # Replay complet Dataplex GCS PDF Discovery -> Object Tables
-│   ├── setup_pubsub_queues.sh                # Provisionnement Pub/Sub & BigQuery Subscriptions
+│   ├── run_demo1_pubsub_bq_cls.sh            # Replay complet Pub/Sub Nested STRUCT -> Audit PII -> CLS
+│   ├── apply_pubsub_cls_policy_tags.py       # Déploiement Taxonomie & 3 Data Policies CLS sur STRUCT
+│   ├── setup_pubsub_queues.sh                # Provisionnement Pub/Sub & BigQuery Subscriptions (--use-table-schema)
 │   ├── clean_all_data.sh                     # Nettoyage propre des données locales et/ou GCS
 │   └── reset_demo_state.sh                   # Remise à zéro entre répétitions
 ├── pyproject.toml                            # Configuration Python & dépendances (uv)

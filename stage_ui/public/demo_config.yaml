@@ -54,6 +54,22 @@ workspaces:
               - title: Chemin cible dans le bucket existant & intégrité binaire stricte
                 bullets:
                   - Je dépose le lot sous `gs://data-days-demo-landing/raw/corebanking/202610/` via `gcloud storage cp` parallélisé sans transcodage texte (indispensable pour ne pas corrompre les octets `COMP-3`), avec attribution `datacloud.antigravity` ?
+            askQuestions:
+              - id: d1-s1-q1-abend
+                question: Comment gérer le double fichier d'octobre 2026 (`RUN01` en `ABEND_S0C7` vs `RUN02_RERUN`) ?
+                options:
+                  - "(Recommended) Transférer les deux dans la zone `RAW` pour l'auditabilité CFT et laisser Spark filtrer sur `RC=0000`"
+                  - "Exclure `CFONB120_MVTS_202610_RUN01.cfonb` dès la copie sur GCS"
+              - id: d1-s1-q2-refs
+                question: Quels fichiers complémentaires inclure dans le lot transféré sur GCS ?
+                options:
+                  - "(Recommended) Inclure les 2 maîtres `.ebcdic`, le bordereau `MANIFEST_Z_OS_DROP.ctl` et les 3 Copybooks `copybooks/*.cpy`"
+                  - "Transférer uniquement les relevés mensuels `.cfonb`"
+              - id: d1-s1-q3-binary
+                question: Quel mode de copie et chemin cible utiliser dans le bucket existant ?
+                options:
+                  - "(Recommended) Copie binaire stricte sans transcodage vers `gs://data-days-demo-landing/raw/corebanking/202610/` (`datacloud.antigravity`)"
+                  - "Conversion texte UTF-8 à la volée pendant le transfert"
             traces:
               - id: d1-s1-tr1
                 action: ran
@@ -226,6 +242,22 @@ workspaces:
               - title: "3. Préservation stricte des anomalies métier en couche `RAW` & exécution Serverless"
                 bullets:
                   - "Les relevés contiennent `~1,20 %` (`66 000`) de dates de valeur `00000000` / `99999999`, `12,08 %` de codes guichets décalés (`'42   '`) et `650` comptes récents AWS absents du Mainframe. On conserve 100 % de ces valeurs brutes intactes en `RAW` (pour les auditer avec `dbt` + Auto Data Quality en `Démo #2`) et on soumet sur **Dataproc Serverless runtime `2.2`** (`europe-west1`) ?"
+            askQuestions:
+              - id: d1-s2-q1-cft
+                question: Comment traiter le trailer CFT (`99CFT_TRL`) et le fichier `202610_RUN01.cfonb` (`ABEND_S0C7`) ?
+                options:
+                  - "(Recommended) Rejeter automatiquement tout fichier avec `RC != 0000` et vérifier `DATA_RECORDS` + `CHECKSUM_MVTS_04`"
+                  - "Ingérer tous les fichiers sans filtrer le code retour CFT"
+              - id: d1-s2-q2-iceberg
+                question: Quelle cible de stockage utiliser pour les 4 tables décodées (`04 + 05` rattachés) ?
+                options:
+                  - "(Recommended) Pré-créer et documenter 4 tables BigLake Managed Iceberg (`72` colonnes) via `biglake-gcs-conn`"
+                  - "Charger en tables BigQuery natives non-Iceberg sans descriptions"
+              - id: d1-s2-q3-raw
+                question: Que fait-on des anomalies de contenu (`00000000`, guichets `'42   '`) pendant le job Spark ?
+                options:
+                  - "(Recommended) Conserver 100 % des valeurs brutes en `RAW` pour `dbt` (Démo #2) et lancer sur Dataproc Serverless `2.2`"
+                  - "Nettoyer silencieusement les dates et codes agences dès le décodage binaire"
             traces:
               - id: d1-s2-tr1
                 action: analyzed
@@ -746,7 +778,7 @@ workspaces:
       - id: d1-step-pubsub
         demoId: demo1
         shortName: 4. Streaming Pub/Sub → BQ & CLS
-        conversationTitle: Intégration Temps Réel Pub/Sub vers BigQuery & Sécurité CLS (IBAN / PII)
+        conversationTitle: Intégration Temps Réel Pub/Sub 100 % Nested vers BigQuery & Sécurité CLS (IBAN / PII)
         projectFolder: 01_demo1_raw_aggregation
         gitBranch: main
         greetingName: Clément
@@ -755,61 +787,498 @@ workspaces:
           - id: d1-sp-t1
             chipLabel: 1. Découvrir les files Pub/Sub & inspecter les messages
             prompt: Explore les files Pub/Sub existantes du SI Paiements sur le projet et inspecte quelques messages en transit pour analyser leur schéma avant intégration dans BigQuery.
-            workedDurationLabel: Worked for 1s
-            workGroupSummary: En attente de génération du déroulé
-            intermediateMessage: Déroulé du Chip 1 en attente de définition.
-            taskFinishedLabel: Pending scenario generation
-            leadConfirmation: Le déroulé détaillé de cette étape n'a pas encore été généré.
-            sectionHeading: "À définir :"
-            items: []
-            traces: []
+            workedDurationLabel: Worked for 4s
+            workGroupSummary: Discovered Pub/Sub topics/subscriptions & sampled live ISO 20022 messages
+            intermediateMessage: J'ai inspecté les topics et files Cloud Pub/Sub actifs sur `data-days-demo` (`europe-west1`) et tiré un échantillon en transit depuis la file miroir `sepa-payments-demo-tap-sub`.
+            taskFinishedLabel: Pub/Sub topology & ISO 20022 nested payload inspection finished
+            leadConfirmation: "Le SI Paiements diffuse en continu sur 2 topics régionaux (`sepa-payments-pacs008-topic` et `iban-beneficiary-events-topic`) des événements **fortement imbriqués (`6` blocs ISO 20022 `pacs.008` et `4` blocs d'enrôlement IBAN)** sur"
+            leadLink:
+              text: console.cloud.google.com/cloudpubsub/topic/list?project=data-days-demo
+              url: https://console.cloud.google.com/cloudpubsub/topic/list?project=data-days-demo
+            sectionHeading: "Constats techniques sur les flux inspectés avant branchement vers BigQuery :"
+            items:
+              - title: "1. Structure imbriquée ISO 20022 (`pacs.008`) & piège du `data JSON` par défaut"
+                chips:
+                  - kind: bq
+                    label: sepa-payments-pacs008-topic
+                  - kind: bq
+                    label: iban-beneficiary-events-topic
+                bullets:
+                  - "Chaque message `pacs.008` est structuré en **6 sous-objets** (`header`, `settlement`, `instructed_amount`, `debtor`, `creditor`, `remittance`). Attention : en mode BigQuery Subscription par défaut (`data JSON`), BigQuery interdit de poser du **Column-Level Security (CLS)** sur une clé interne JSON — il faut activer `--use-table-schema` vers des **`STRUCT` natifs**."
+              - title: "2. Anomalies techniques `RAW` observées en transit & Dead-Letter Queue"
+                bullets:
+                  - "L'échantillon révèle `~3,4 %` de réémissions réseau (`settlement.retry_attempt = 1` sur le même `end_to_end_id`) et `~8,1 %` de statuts non réglés (`RJCT` / `PDNG`), tandis que `sepa-payments-dlq-topic` est déjà disponible pour isoler toute dérive de schéma."
+              - title: "3. Coexistence avec le consommateur temps réel mobile (`< 15 ms`)"
+                bullets:
+                  - "Une souscription opérationnelle `sepa-payments-alloydb-ops-sub` est déjà attachée au topic principal pour la future synchronisation mobile AlloyDB (`Démo #4`) et doit rester intacte."
+            askQuestions:
+              - id: d1-sp-q1-schema
+                question: Quel schéma cible veux-tu pour l'historisation BigQuery des flux Pub/Sub ?
+                options:
+                  - "(Recommended) Pré-créer 2 tables 100 % Nested `STRUCT` documentées (`--use-table-schema` + `--write-metadata`)"
+                  - "Conserver l'enveloppe brute `data JSON` par défaut (sans CLS granulaire par sous-champ)"
+                  - "Déployer un pipeline Dataflow intermédiaire pour aplatir les messages"
+              - id: d1-sp-q2-dlq
+                question: Comment gérer le bruit technique du flux (`~3,4 %` retries, `~8,1 %` `RJCT`/`PDNG`) et les erreurs ?
+                options:
+                  - "(Recommended) Tout conserver intact en zone `RAW` pour `dbt` (Démo #2) + router les rejets schéma vers `sepa-payments-dlq-topic`"
+                  - "Filtrer les événements `RJCT`/`PDNG` en amont avant BigQuery"
+                  - "Désactiver la Dead-Letter Queue sur les souscriptions BigQuery"
+              - id: d1-sp-q3-alloydb
+                question: Comment articuler l'historisation BigQuery avec la file existante `sepa-payments-alloydb-ops-sub` ?
+                options:
+                  - "(Recommended) Préserver `sepa-payments-alloydb-ops-sub` intacte (Démo #4 `< 15 ms`) et créer 2 BigQuery Subscriptions dédiées"
+                  - "Modifier la souscription existante pour la rediriger vers BigQuery"
+            traces:
+              - id: d1-sp-tr1
+                action: analyzed
+                icon: dak
+                fileName: discover-assets/SKILL.md
+                lineRange: "#L1-68"
+                durationMs: 350
+              - id: d1-sp-tr2
+                action: analyzed
+                icon: dak
+                fileName: gcp-data-pipelines/SKILL.md
+                lineRange: "#L1-94"
+                durationMs: 350
+              - id: d1-sp-tr3
+                action: ran
+                commandSummary: list Pub/Sub topics & active subscriptions on data-days-demo (europe-west1)
+                durationMs: 550
+                cwd: 01_demo1_raw_aggregation
+                command: CLOUDSDK_METRICS_ENVIRONMENT="datacloud.antigravity" gcloud pubsub topics list --project=data-days-demo && gcloud pubsub subscriptions list --project=data-days-demo --format="table(name.basename(),topic.basename(),deadLetterPolicy.deadLetterTopic.basename())"
+                output:
+                  - "Topics: sepa-payments-pacs008-topic, iban-beneficiary-events-topic, sepa-payments-dlq-topic"
+                  - "NAME                             TOPIC                          DEAD_LETTER_TOPIC"
+                  - "sepa-payments-alloydb-ops-sub    sepa-payments-pacs008-topic"
+                  - "sepa-payments-demo-tap-sub       sepa-payments-pacs008-topic"
+                  - "sepa-payments-bq-raw-sub         sepa-payments-pacs008-topic    sepa-payments-dlq-topic"
+                  - "iban-beneficiary-bq-raw-sub      iban-beneficiary-events-topic"
+              - id: d1-sp-tr4
+                action: ran
+                commandSummary: pull & inspect 1 live ISO 20022 pacs.008 message from sepa-payments-demo-tap-sub
+                durationMs: 600
+                cwd: 01_demo1_raw_aggregation
+                command: CLOUDSDK_METRICS_ENVIRONMENT="datacloud.antigravity" gcloud pubsub subscriptions pull sepa-payments-demo-tap-sub --limit=1 --project=data-days-demo --format="value(message.data.decode(base64))" | jq .
+                output:
+                  - "{"
+                  - '  "header": { "schema_version": "iso20022.pacs.008.001.08", "end_to_end_id": "E2ELIVE2026111600000002" },'
+                  - '  "settlement": { "payment_scheme": "SCT_INST", "tx_status": "ACSC", "retry_attempt": 0 },'
+                  - '  "instructed_amount": { "amount_cents": 66810, "amount_eur": "668.10", "currency": "EUR" },'
+                  - '  "debtor": { "customer_id": "CUST00046838", "full_name": "ARTHUR CHEVALIER", "iban": "FR7630002002680000004683834" },'
+                  - '  "creditor": { "name": "ARTHUR CHEVALIER", "iban": "LT603250000000046838", "agent_bic": "REVOLT21XXX" },'
+                  - '  "remittance": { "unstructured_info": "VIR SEPA INST REVOLT21 ARTHUR CHEVALIER" }'
+                  - "}"
             filesChanged: []
-            terminalLogs: []
+            terminalLogs:
+              - $ gcloud pubsub topics list --project=data-days-demo
+              - Found 3 topics (sepa-payments-pacs008-topic, iban-beneficiary-events-topic, sepa-payments-dlq-topic)
+              - $ gcloud pubsub subscriptions pull sepa-payments-demo-tap-sub --limit=1
+              - Nested ISO 20022 pacs.008 payload detected (6 root objects, 0 flat business keys)
             subagents: []
             backgroundTasks: []
           - id: d1-sp-t2
             chipLabel: 2. Brancher l'historisation temps réel Pub/Sub → BigQuery
-            prompt: Mets en place l'alimentation temps réel sans serveur depuis ces files Pub/Sub vers BigQuery dans raw_bank (avec Dead-Letter Queue et colonnes exploitables pour la gouvernance).
-            workedDurationLabel: Worked for 1s
-            workGroupSummary: En attente de génération du déroulé
-            intermediateMessage: Déroulé du Chip 2 en attente de définition.
-            taskFinishedLabel: Pending scenario generation
-            leadConfirmation: Le déroulé détaillé de cette étape n'a pas encore été généré.
-            sectionHeading: "À définir :"
-            items: []
-            traces: []
-            filesChanged: []
-            terminalLogs: []
+            prompt: "Oui sur les 3 points : pré-crée et documente les 2 tables en 100 % Nested STRUCT avec --use-table-schema + --write-metadata, conserve le flux brut RAW avec la DLQ sepa-payments-dlq-topic, et préserve sepa-payments-alloydb-ops-sub."
+            workedDurationLabel: Worked for 6s
+            workGroupSummary: Created documented Nested STRUCT tables, wired BigQuery Subscriptions & ran bq-visual-audit
+            intermediateMessage: Déploiement de `02_create_documented_pubsub_nested_tables.sql` (`55` chemins `STRUCT` documentés), création des 2 BigQuery Subscriptions `--use-table-schema` et contrôle visuel post-injection (`502` paiements + `32` ajouts IBAN).
+            taskFinishedLabel: Serverless Pub/Sub → BigQuery Nested STRUCT streaming active (0 DLQ)
+            leadConfirmation: "Les 2 souscriptions BigQuery sans serveur (`sepa-payments-bq-historization-sub` et `iban-beneficiary-bq-historization-sub`) alimentent désormais en continu les tables `100 % Nested STRUCT` dans"
+            leadLink:
+              text: bigquery.cloud.google.com/table/data-days-demo:raw_bank.raw_sepa_payments_pubsub_stream
+              url: https://console.cloud.google.com/bigquery?project=data-days-demo
+            sectionHeading: "Ce qui a été déployé et certifié visuellement :"
+            items:
+              - title: "1. Deux tables `100 % Nested STRUCT` documentées à `100 %` (`55 / 55` chemins)"
+                chips:
+                  - kind: sql
+                    label: 02_create_documented_pubsub_nested_tables.sql
+                  - kind: bq
+                    label: raw_sepa_payments_pubsub_stream
+                bullets:
+                  - "Partitionnement `DATE(publish_time)`, clustering `subscription_name` et documentation exhaustive dans `INFORMATION_SCHEMA.COLUMN_FIELD_PATHS` des 6 `STRUCT` ISO 20022 (`header`, `settlement`, `instructed_amount`, `debtor`, `creditor`, `remittance`) et des 4 `STRUCT` d'enrôlement IBAN."
+              - title: "2. Écriture directe `--use-table-schema` sans Dataflow & préservation du bruit `RAW`"
+                chips:
+                  - kind: py
+                    label: setup_pubsub_queues.sh
+                  - kind: bq
+                    label: raw_iban_events_pubsub_stream
+                bullets:
+                  - "`502` paiements et `32` ajouts IBAN ingérés en `< 1 s` avec **`0` message en DLQ**, incluant les événements Jour J du témoin **Lucas Martin (`CUST00002026`)** (`STRMFLIX 19,99 €` + `CPAM +42,00 €`), `18` retries doublons (`3,6 %`) et `38` `RJCT`/`PDNG` (`7,6 %`)."
+            visualCheck:
+              skillBadge: bq-visual-audit · MCP render_chart
+              title: "Contrôle visuel post-création · Pub/Sub → BigQuery Nested STRUCT (raw_bank)"
+              subtitle: "Souscriptions sans serveur --use-table-schema + --write-metadata — 0 message rejeté en DLQ"
+              kpis:
+                - label: Paiements pacs.008
+                  value: "502"
+                  sublabel: "447 ACSC · 0 DLQ"
+                  tone: positive
+                - label: Enrôlements IBAN
+                  value: "32"
+                  sublabel: "31 nominaux · 1 retry"
+                  tone: blue
+                - label: Chemins STRUCT doc.
+                  value: "55 / 55"
+                  sublabel: "100 % COLUMN_FIELD_PATHS"
+                  tone: positive
+                - label: Bruit RAW conservé
+                  value: "3,6 % · 7,6 %"
+                  sublabel: "18 retries · 38 RJCT/PDNG"
+                  tone: warning
+              chartTitle: "Répartition temps réel par schéma de paiement ISO 20022 (raw_sepa_payments_pubsub_stream)"
+              bars:
+                - label: "SCT_INST (+ INBOUND)"
+                  sublabel: "settlement.settlement_method = CLRG_RT1_INST (< 10s)"
+                  valueLabel: "227 évts · 171 128 €"
+                  pct: 100
+                  tone: blue
+                  badge: "208 ACSC · 19 RJCT/PDNG"
+                - label: "CARD_CONTACTLESS"
+                  sublabel: "Paiements proximité sans contact"
+                  valueLabel: "122 évts · 5 423 €"
+                  pct: 54
+                  tone: positive
+                  badge: "111 ACSC · 11 RJCT/PDNG"
+                - label: "SEPA_SDD"
+                  sublabel: "Prélèvements récurrents (dont STRMFLIX 19,99 €)"
+                  valueLabel: "106 évts · 4 976 €"
+                  pct: 47
+                  tone: positive
+                  badge: "100 ACSC · 6 RJCT/PDNG"
+                - label: "CARD_ECOMMERCE"
+                  sublabel: "Paiements carte e-commerce 3DS"
+                  valueLabel: "47 évts · 4 110 €"
+                  pct: 21
+                  tone: neutral
+                  badge: "45 ACSC · 2 RJCT/PDNG"
+              footerNote: "Les 10 sous-champs sensibles imbriqués (debtor.iban, creditor.iban, debtor.full_name, remittance.unstructured_info...) sont désormais adressables individuellement en SQL pour l'audit PII et le Column-Level Security."
+            traces:
+              - id: d1-sp-tr5
+                action: analyzed
+                icon: dak
+                fileName: enforcing-resource-attribution/SKILL.md
+                lineRange: "#L1-118"
+                durationMs: 300
+              - id: d1-sp-tr6
+                action: edited
+                icon: sql
+                fileName: 02_create_documented_pubsub_nested_tables.sql
+                added: 233
+                removed: 0
+                durationMs: 550
+              - id: d1-sp-tr7
+                action: edited
+                icon: py
+                fileName: setup_pubsub_queues.sh
+                added: 48
+                removed: 24
+                durationMs: 450
+              - id: d1-sp-tr8
+                action: ran
+                commandSummary: ./scripts/setup_pubsub_queues.sh --recreate-schema && stream_payments_pubsub.py --burst 500 --witness-live
+                durationMs: 850
+                cwd: 01_demo1_raw_aggregation
+                command: ../scripts/setup_pubsub_queues.sh --recreate-schema && uv run python ../00_data_generator/stream_payments_pubsub.py --burst 500 && uv run python ../00_data_generator/stream_payments_pubsub.py --witness-live
+                output:
+                  - "Created data-days-demo.raw_bank.raw_sepa_payments_pubsub_stream [6 STRUCT blocks]"
+                  - "Created data-days-demo.raw_bank.raw_iban_events_pubsub_stream   [4 STRUCT blocks]"
+                  - "Created subscription sepa-payments-bq-historization-sub (--use-table-schema --write-metadata)"
+                  - "Created subscription iban-beneficiary-bq-historization-sub (--use-table-schema --write-metadata)"
+                  - "[stream_payments_pubsub] Rafale de 500 paiements (+ 31 ajouts IBAN) + témoin CUST00002026 publiée en 0.53s"
+              - id: d1-sp-tr9
+                action: analyzed
+                icon: dak
+                fileName: .agents/skills/bq-visual-audit/SKILL.md
+                lineRange: "#L1-39"
+                durationMs: 300
+              - id: d1-sp-tr10
+                action: ran
+                commandSummary: MCP data-agent-kit/render_chart → Nested STRUCT volume & COLUMN_FIELD_PATHS audit (55/55)
+                durationMs: 500
+                cwd: 01_demo1_raw_aggregation
+                command: bq query --use_legacy_sql=false --label datacloud:antigravity "SELECT COUNT(*) AS pay_rows, COUNTIF(settlement.retry_attempt > 0) AS retries FROM raw_bank.raw_sepa_payments_pubsub_stream"
+                output:
+                  - "| pay_rows: 502 | clean_acsc: 447 | rjct_pdng: 38 | dup_retries: 18 | iban_rows: 32 | documented_paths: 55/55 |"
+            filesChanged:
+              - path: 01_demo1_raw_aggregation/sql/02_create_documented_pubsub_nested_tables.sql
+                language: sql
+                badge: SQL
+                added: 233
+                removed: 0
+                content: |-
+                  CREATE TABLE `data-days-demo.raw_bank.raw_sepa_payments_pubsub_stream` (
+                    subscription_name STRING,
+                    message_id        STRING,
+                    publish_time      TIMESTAMP,
+                    attributes        JSON,
+                    header STRUCT<
+                      schema_version STRING, event_id STRING, end_to_end_id STRING, execution_ts TIMESTAMP
+                    >,
+                    settlement STRUCT<
+                      settlement_method STRING, payment_scheme STRING, tx_status STRING,
+                      status_reason_code STRING, retry_attempt INT64
+                    >,
+                    instructed_amount STRUCT<amount_cents INT64, amount_eur NUMERIC, currency STRING>,
+                    debtor STRUCT<
+                      customer_id STRING, account_id STRING, full_name STRING,
+                      iban STRING, agent_bic STRING, branch_guichet STRING
+                    >,
+                    creditor STRUCT<name STRING, iban STRING, agent_bic STRING>,
+                    remittance STRUCT<unstructured_info STRING>
+                  )
+                  PARTITION BY DATE(publish_time)
+                  CLUSTER BY subscription_name;
+            terminalLogs:
+              - $ ./scripts/setup_pubsub_queues.sh --recreate-schema
+              - Created raw_sepa_payments_pubsub_stream & raw_iban_events_pubsub_stream (55/55 documented STRUCT paths)
+              - $ uv run python 00_data_generator/stream_payments_pubsub.py --burst 500 --witness-live
+              - Ingested 502 payment rows + 32 IBAN enrollment rows (0 DLQ)
             subagents: []
             backgroundTasks: []
           - id: d1-sp-t3
             chipLabel: 3. Scanner les données sensibles (agent PII) au-delà des IBAN
-            prompt: Avant d'exposer ces tables aux équipes Data, fais tourner un agent d'audit PII sur un échantillon des flux arrivés dans BigQuery pour identifier toutes les colonnes avec IBAN et vérifier s'il n'y a pas d'autres données sensibles.
-            workedDurationLabel: Worked for 1s
-            workGroupSummary: En attente de génération du déroulé
-            intermediateMessage: Déroulé du Chip 3 en attente de définition.
-            taskFinishedLabel: Pending scenario generation
-            leadConfirmation: Le déroulé détaillé de cette étape n'a pas encore été généré.
-            sectionHeading: "À définir :"
-            items: []
-            traces: []
-            filesChanged: []
-            terminalLogs: []
-            subagents: []
+            prompt: "Avant d'exposer ces tables aux équipes Data, fais tourner un audit de données sensibles sur les flux arrivés dans BigQuery : je sais qu'il y a des IBAN dans les STRUCT, vérifie s'il n'y a pas d'autres données sensibles."
+            workedDurationLabel: Worked for 5s
+            workGroupSummary: Ran in-database hybrid PII audit (DLP deterministic + semantic freetext) over 55 STRUCT paths
+            intermediateMessage: "Exécution in-database de `03_audit_pii_nested_pubsub.sql` sur les 55 chemins `STRUCT` (détecteurs déterministes IBAN/IPv4 + profilage sémantique des libellés libres, **zéro donnée brute extraite hors de BigQuery**)."
+            taskFinishedLabel: Hybrid PII scan detected 10 sensitive nested STRUCT paths (incl. GDPR Art. 9 health notes)
+            leadConfirmation: "Alerte gouvernance : au-delà des **4 sous-champs `IBAN`**, le scan a découvert **6 autres sous-champs sensibles** nichés dans les `STRUCT`, dont des **motifs médicaux RGPD Art. 9** dans les libellés libres de virement :"
+            sectionHeading: "Cartographie des 10 sous-champs sensibles détectés dans les STRUCT :"
+            items:
+              - title: "1. Identifiants bancaires directs (`4` chemins `STRUCT` · match `100,0 %`)"
+                chips:
+                  - kind: sql
+                    label: 03_audit_pii_nested_pubsub.sql
+                bullets:
+                  - "`debtor.iban` et `creditor.iban` (`raw_sepa_payments_pubsub_stream`), ainsi que `account_holder.debtor_iban` et `beneficiary.iban` (`raw_iban_events_pubsub_stream`)."
+              - title: "2. Identités civiles & empreinte réseau (`4` chemins `STRUCT` · `28,9 %` à `100,0 %`)"
+                bullets:
+                  - "`debtor.full_name` (`100 %`), `creditor.name` (`28,9 %` de personnes physiques lors des virements vers néobanques), `account_holder.full_name` (`100 %`) et l'adresse IPv4 `security_context.device_ip` (`100 %`)."
+              - title: "3. Données critiques cachées en texte libre (`2` chemins `STRUCT` · RGPD Art. 9)"
+                bullets:
+                  - "`remittance.unstructured_info` contient **`25,5 %` de motifs sensibles santé ou logement** (ex. remboursement `CPAM SANTE` du client témoin), et `beneficiary.custom_label` expose à `100 %` le nom personnel saisi dans l'application mobile."
+            askQuestions:
+              - id: d1-sp-q4-scope
+                question: Quel périmètre de sous-champs `STRUCT` veux-tu placer sous protection Column-Level Security (CLS) ?
+                options:
+                  - "(Recommended) Couvrir les 10 sous-champs PII détectés (4 IBAN + 4 identités/IP + 2 champs texte libres)"
+                  - "Protéger uniquement les 4 sous-champs IBAN (`debtor.iban`, `creditor.iban`, etc.)"
+                  - "Verrouiller les `STRUCT` `debtor`, `creditor` et `beneficiary` entiers (bloque aussi `agent_bic` et `customer_id`)"
+              - id: d1-sp-q5-art9
+                question: Comment traiter les motifs libres critiques (données de santé RGPD Art. 9 dans `remittance.unstructured_info`) ?
+                options:
+                  - "(Recommended) Occultation intégrale `ALWAYS_NULL` sur `remittance.unstructured_info` et `beneficiary.custom_label`"
+                  - "Hachage `SHA-256` sur les libellés de virement"
+                  - "Conserver les libellés libres visibles pour les analystes"
+              - id: d1-sp-q6-tiers
+                question: Quelle gradation de Data Policies CLS veux-tu déployer sur `europe-west1` ?
+                options:
+                  - "(Recommended) Taxonomie à 3 niveaux : `LAST_FOUR_CHARACTERS` (IBAN) · `SHA256` (noms & IP) · `ALWAYS_NULL` (texte libre)"
+                  - "Masquage uniforme `ALWAYS_NULL` sur l'ensemble des 10 sous-champs"
+            traces:
+              - id: d1-sp-tr11
+                action: edited
+                icon: sql
+                fileName: 03_audit_pii_nested_pubsub.sql
+                added: 121
+                removed: 0
+                durationMs: 450
+              - id: d1-sp-tr12
+                action: ran
+                commandSummary: run in-database PII audit over nested STRUCT paths (0 raw PII values exported)
+                durationMs: 700
+                cwd: 01_demo1_raw_aggregation
+                command: sed -e 's/__PROJECT_ID__/data-days-demo/g' -e 's/__DATASET_RAW__/raw_bank/g' sql/03_audit_pii_nested_pubsub.sql | bq --location=europe-west1 query --use_legacy_sql=false --label datacloud:antigravity
+                output:
+                  - "| table_name                      | nested_field_path            | detected_info_type                      | match_pct | sensitivity           |"
+                  - "| raw_sepa_payments_pubsub_stream | debtor.iban                  | IBAN_CODE (DLP Deterministic)           |     100.0 | HIGH_FINANCIAL_PII    |"
+                  - "| raw_sepa_payments_pubsub_stream | creditor.iban                | IBAN_CODE (DLP Deterministic)           |     100.0 | HIGH_FINANCIAL_PII    |"
+                  - "| raw_sepa_payments_pubsub_stream | debtor.full_name             | PERSON_NAME (Direct Identifier)         |     100.0 | HIGH_DIRECT_PII       |"
+                  - "| raw_sepa_payments_pubsub_stream | creditor.name                | PERSON_OR_MERCHANT_NAME (Contextual)    |      28.9 | HIGH_DIRECT_PII       |"
+                  - "| raw_sepa_payments_pubsub_stream | remittance.unstructured_info | MEDICAL_AND_HOUSING_FREETEXT (Semantic) |      25.5 | CRITICAL_ART9_GDPR    |"
+                  - "| raw_iban_events_pubsub_stream   | account_holder.debtor_iban   | IBAN_CODE (DLP Deterministic)           |     100.0 | HIGH_FINANCIAL_PII    |"
+                  - "| raw_iban_events_pubsub_stream   | beneficiary.iban             | IBAN_CODE (DLP Deterministic)           |     100.0 | HIGH_FINANCIAL_PII    |"
+                  - "| raw_iban_events_pubsub_stream   | account_holder.full_name     | PERSON_NAME (Direct Identifier)         |     100.0 | HIGH_DIRECT_PII       |"
+                  - "| raw_iban_events_pubsub_stream   | security_context.device_ip   | IP_ADDRESS (GDPR Online Identifier)     |     100.0 | MEDIUM_TECHNICAL_PII  |"
+                  - "| raw_iban_events_pubsub_stream   | beneficiary.custom_label     | PERSONAL_FREETEXT_LABEL (Semantic)      |     100.0 | CRITICAL_FREETEXT_PII |"
+            filesChanged:
+              - path: 01_demo1_raw_aggregation/sql/03_audit_pii_nested_pubsub.sql
+                language: sql
+                badge: SQL
+                added: 121
+                removed: 0
+                content: |-
+                  -- Audit PII hybride in-database (aucune valeur brute PII extraite vers le LLM)
+                  WITH payments_profile AS (
+                    SELECT
+                      COUNT(*) AS n_rows,
+                      COUNTIF(REGEXP_CONTAINS(debtor.iban, r'^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$')) AS debtor_iban_hits,
+                      COUNTIF(REGEXP_CONTAINS(creditor.iban, r'^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$')) AS creditor_iban_hits,
+                      COUNTIF(debtor.full_name IS NOT NULL) AS debtor_name_hits,
+                      COUNTIF(REGEXP_CONTAINS(UPPER(remittance.unstructured_info),
+                        r'(SANTE|CPAM|MEDICAL|ORDONNANCE|PHARMACIE|LOYER)')) AS remittance_sensitive_hits
+                    FROM `data-days-demo.raw_bank.raw_sepa_payments_pubsub_stream`
+                  )
+                  SELECT * FROM payments_profile;
+            terminalLogs:
+              - $ bq query --label datacloud:antigravity < 01_demo1_raw_aggregation/sql/03_audit_pii_nested_pubsub.sql
+              - Detected 10 PII leaf fields across 2 nested STRUCT tables (incl. 25.5% CRITICAL_ART9_GDPR in remittance.unstructured_info)
+            subagents:
+              - id: sa-d1-pii
+                role: Privacy & DLP Governance Auditor
+                skill: discover-assets
+                status: completed
             backgroundTasks: []
           - id: d1-sp-t4
             chipLabel: 4. Appliquer le Column-Level Security (CLS) & masquage BQ
-            prompt: Oui, crée la taxonomie de Policy Tags et applique le Column-Level Security (CLS) dans BigQuery sur les colonnes IBAN (masquage partiel) ainsi que sur les autres champs sensibles détectés par l'agent.
-            workedDurationLabel: Worked for 1s
-            workGroupSummary: En attente de génération du déroulé
-            intermediateMessage: Déroulé du Chip 4 en attente de définition.
-            taskFinishedLabel: Pending scenario generation
-            leadConfirmation: Le déroulé détaillé de cette étape n'a pas encore été généré.
-            sectionHeading: "À définir :"
-            items: []
-            traces: []
-            filesChanged: []
-            terminalLogs: []
+            prompt: "Oui : déploie la taxonomie CLS à 3 niveaux (LAST_FOUR_CHARACTERS sur les 4 IBAN, SHA256 sur les 4 champs noms/IP et ALWAYS_NULL sur les 2 champs texte libres) directement sur les 10 sous-champs des STRUCT, et vérifie le rendu côté analyste."
+            workedDurationLabel: Worked for 6s
+            workGroupSummary: Created CLS Taxonomy & 3 Data Masking Policies, patched 10 STRUCT leaf fields & verified analyst view
+            intermediateMessage: Création de la taxonomie `hexagone-cls-payments-pii` (`europe-west1`), attachement des 3 Data Policies sur les **10 feuilles `STRUCT`** et vérification SQL du masquage dynamique côté Data Analyst.
+            taskFinishedLabel: Fine-grained CLS Policy Tags active on 10 nested STRUCT fields
+            leadConfirmation: "La gouvernance **Column-Level Security (CLS)** est active au cœur des `STRUCT` sans casser l'ingestion temps réel Pub/Sub ni bloquer les colonnes analytiques (`tx_status`, `amount_eur`, `creditor.agent_bic`) sur"
+            leadLink:
+              text: console.cloud.google.com/dataplex/taxonomies?project=data-days-demo
+              url: https://console.cloud.google.com/dataplex/taxonomies?project=data-days-demo
+            sectionHeading: "Ce qui a été appliqué et vérifié en lecture masquée :"
+            items:
+              - title: "1. Taxonomie `hexagone-cls-payments-pii` & 3 Data Policies dynamiques (`europe-west1`)"
+                chips:
+                  - kind: kc
+                    label: PII_IBAN_PARTIAL_MASK
+                  - kind: kc
+                    label: PII_IDENTITY_IP_HASH
+                  - kind: kc
+                    label: PII_SENSITIVE_FREETEXT_REDACT
+                bullets:
+                  - "`hexagone_dp_iban_last4` (`LAST_FOUR_CHARACTERS` → `***********************2623`), `hexagone_dp_identity_sha256` (`SHA256` déterministe conservant la jointure anonymisée) et `hexagone_dp_freetext_redact` (`ALWAYS_NULL` protégeant les motifs médicaux `CPAM`)."
+              - title: "2. Application chirurgicale aux 10 sous-champs `STRUCT` & script de replay"
+                chips:
+                  - kind: py
+                    label: apply_pubsub_cls_policy_tags.py
+                  - kind: py
+                    label: run_demo1_pubsub_bq_cls.sh
+                bullets:
+                  - "Les équipes Data requêtent librement `settlement.tx_status`, `instructed_amount.amount_eur`, `debtor.customer_id` et `creditor.agent_bic` (`REVOLT21XXX`) pour préparer les modèles `dbt` de la `Démo #2`, sans jamais voir un IBAN complet, un nom civil ou un motif de santé en clair."
+            visualCheck:
+              skillBadge: bq-visual-audit · CLS Verification
+              title: "Contrôle visuel post-sécurisation · CLS granulaire sur sous-champs STRUCT"
+              subtitle: "Taxonomie hexagone-cls-payments-pii (europe-west1) — 10 feuilles STRUCT protégées / 45 chemins analytiques en clair"
+              kpis:
+                - label: Chemins STRUCT masqués
+                  value: "10 / 55"
+                  sublabel: "Chirurgical sans bloquer la table"
+                  tone: positive
+                - label: IBAN (4 chemins)
+                  value: "****2623"
+                  sublabel: "LAST_FOUR_CHARACTERS"
+                  tone: blue
+                - label: Identités & IP (4)
+                  value: "SHA-256"
+                  sublabel: "Jointures analytiques intactes"
+                  tone: warning
+                - label: Motifs RGPD Art. 9 (2)
+                  value: "NULL"
+                  sublabel: "CPAM Santé 100 % occulté"
+                  tone: ruby
+              chartTitle: "Couverture des Data Policies BigQuery par niveau de sensibilité sur les STRUCT"
+              bars:
+                - label: "Champs analytiques ouverts aux équipes Data & dbt"
+                  sublabel: "tx_status, end_to_end_id, amount_eur, customer_id, creditor.agent_bic..."
+                  valueLabel: "45 chemins en clair"
+                  pct: 82
+                  tone: positive
+                  badge: LECTURE ANALYTIQUE OK
+                - label: "PII_IBAN_PARTIAL_MASK · LAST_FOUR_CHARACTERS"
+                  sublabel: "debtor.iban, creditor.iban, account_holder.debtor_iban, beneficiary.iban"
+                  valueLabel: "4 sous-champs STRUCT"
+                  pct: 36
+                  tone: blue
+                  badge: "***********************2623"
+                - label: "PII_IDENTITY_IP_HASH · SHA256"
+                  sublabel: "debtor.full_name, creditor.name, account_holder.full_name, device_ip"
+                  valueLabel: "4 sous-champs STRUCT"
+                  pct: 36
+                  tone: warning
+                  badge: PSEUDONYMISÉ SHA-256
+                - label: "PII_SENSITIVE_FREETEXT_REDACT · ALWAYS_NULL"
+                  sublabel: "remittance.unstructured_info (CPAM Santé) & beneficiary.custom_label"
+                  valueLabel: "2 sous-champs STRUCT"
+                  pct: 20
+                  tone: ruby
+                  badge: OCCULTÉ RGPD ART. 9
+              footerNote: "Le flux Pub/Sub continue d'écrire à pleine vitesse via le Service Agent (bigquery.dataEditor) tandis que chaque SELECT applique dynamiquement les 3 Data Policies selon le rôle IAM de l'appelant."
+            traces:
+              - id: d1-sp-tr13
+                action: edited
+                icon: py
+                fileName: apply_pubsub_cls_policy_tags.py
+                added: 245
+                removed: 0
+                durationMs: 550
+              - id: d1-sp-tr14
+                action: edited
+                icon: py
+                fileName: run_demo1_pubsub_bq_cls.sh
+                added: 112
+                removed: 0
+                durationMs: 400
+              - id: d1-sp-tr15
+                action: ran
+                commandSummary: uv run python scripts/apply_pubsub_cls_policy_tags.py --project-id data-days-demo --location europe-west1
+                durationMs: 800
+                cwd: 01_demo1_raw_aggregation
+                command: uv run python ../scripts/apply_pubsub_cls_policy_tags.py --project-id data-days-demo --location europe-west1 --dataset raw_bank
+                output:
+                  - "[cls] Taxonomie active : projects/data-days-demo/locations/europe-west1/taxonomies/865891482327921291"
+                  - "[cls] Data Policy active : hexagone_dp_iban_last4 (LAST_FOUR_CHARACTERS)"
+                  - "[cls] Data Policy active : hexagone_dp_identity_sha256 (SHA256)"
+                  - "[cls] Data Policy active : hexagone_dp_freetext_redact (ALWAYS_NULL)"
+                  - "[cls] Table raw_bank.raw_sepa_payments_pubsub_stream patchée : 5 sous-champs STRUCT protégés par CLS."
+                  - "[cls] Table raw_bank.raw_iban_events_pubsub_stream patchée   : 5 sous-champs STRUCT protégés par CLS."
+              - id: d1-sp-tr16
+                action: ran
+                commandSummary: verify dynamic CLS masking as Data Analyst on witness CUST00002026
+                durationMs: 650
+                cwd: 01_demo1_raw_aggregation
+                command: bq query --use_legacy_sql=false --label datacloud:antigravity "SELECT header.end_to_end_id, settlement.tx_status, instructed_amount.amount_eur, debtor.iban, SUBSTR(TO_HEX(debtor.full_name), 1, 12) AS name_hash, creditor.agent_bic, remittance.unstructured_info FROM raw_bank.raw_sepa_payments_pubsub_stream WHERE debtor.customer_id = 'CUST00002026'"
+                output:
+                  - "+------------------------+-----------+------------+-----------------------------+--------------+-------------+---------------------+"
+                  - "|     end_to_end_id      | tx_status | amount_eur |            iban             |  name_hash   |  agent_bic  |  unstructured_info  |"
+                  - "+------------------------+-----------+------------+-----------------------------+--------------+-------------+---------------------+"
+                  - "| E2EWIT20261113CPAM42   | ACSC      |      42.00 | ***********************2623 | 9f84c2e10b4a | HEXAFRLPXXX | NULL                |"
+                  - "| E2EWIT20261113STRMFLIX | ACSC      |      19.99 | ***********************2623 | 9f84c2e10b4a | BOFAIE3XXXX | NULL                |"
+                  - "+------------------------+-----------+------------+-----------------------------+--------------+-------------+---------------------+"
+            filesChanged:
+              - path: scripts/apply_pubsub_cls_policy_tags.py
+                language: python
+                badge: PY
+                added: 245
+                removed: 0
+                content: |-
+                  TABLE_NESTED_TAG_MAP = {
+                      "raw_sepa_payments_pubsub_stream": {
+                          ("debtor", "iban"): "PII_IBAN_PARTIAL_MASK",                  # LAST_FOUR_CHARACTERS
+                          ("creditor", "iban"): "PII_IBAN_PARTIAL_MASK",                # LAST_FOUR_CHARACTERS
+                          ("debtor", "full_name"): "PII_IDENTITY_IP_HASH",              # SHA256
+                          ("creditor", "name"): "PII_IDENTITY_IP_HASH",                 # SHA256
+                          ("remittance", "unstructured_info"): "PII_SENSITIVE_FREETEXT_REDACT", # ALWAYS_NULL
+                      },
+                      "raw_iban_events_pubsub_stream": {
+                          ("account_holder", "debtor_iban"): "PII_IBAN_PARTIAL_MASK",
+                          ("beneficiary", "iban"): "PII_IBAN_PARTIAL_MASK",
+                          ("account_holder", "full_name"): "PII_IDENTITY_IP_HASH",
+                          ("security_context", "device_ip"): "PII_IDENTITY_IP_HASH",
+                          ("beneficiary", "custom_label"): "PII_SENSITIVE_FREETEXT_REDACT",
+                      },
+                  }
+            terminalLogs:
+              - $ ./scripts/run_demo1_pubsub_bq_cls.sh
+              - Taxonomy hexagone-cls-payments-pii & 3 Data Policies deployed in europe-west1
+              - Patched 10 nested STRUCT leaf fields across raw_sepa_payments_pubsub_stream & raw_iban_events_pubsub_stream
             subagents: []
             backgroundTasks: []
       - id: d1-step-pdf-discovery
@@ -848,6 +1317,22 @@ workspaces:
               - title: "3. Octroi CLI des 3 rôles Service Agent Dataplex & cadence du scan"
                 bullets:
                   - "J'attribue en CLI (sans clic manuel en console) `discoveryServiceAgent`, `discoveryPublishingServiceAgent` et `discoveryBigLakePublishingServiceAgent` à `service-1051798075322@gcp-sa-dataplex.iam.gserviceaccount.com`, je lance un scan immédiat et je programme une passe quotidienne `06:00 Europe/Paris` ?"
+            askQuestions:
+              - id: d1-spdf-q1-include
+                question: Quels préfixes GCS inclure dans le scan `Dataplex Cloud Storage Discovery` ?
+                options:
+                  - "(Recommended) Verrouiller uniquement `RAW/PROMO_CONTRACTS_PDF/**` (`250` PDF) et `RAW/REGULATORY_CFO_PDF/**` (`6` PDF)"
+                  - "Scanner l'intégralité du bucket `gs://data-days-demo-landing/` sans filtre"
+              - id: d1-spdf-q2-views
+                question: Comment exposer l'Object Table publiée automatiquement (`data_days_demo_landing.raw`) ?
+                options:
+                  - "(Recommended) Conserver l'Object Table managée + publier 2 vues filtrées (`raw_promo_contracts_pdf` & `raw_cfo_regulatory_pdf`) dans `raw_bank`"
+                  - "Écrire un `CREATE EXTERNAL TABLE` manuel à la place de Discovery"
+              - id: d1-spdf-q3-iam
+                question: Comment configurer les permissions du Service Agent Dataplex et la planification ?
+                options:
+                  - "(Recommended) Attribuer les 3 rôles IAM en CLI (`zéro clic console`), lancer un scan immédiat + quotidien `06:00`"
+                  - "Exécuter un scan unique sans planification récurrente"
             traces:
               - id: d1-spdf-tr1
                 action: analyzed

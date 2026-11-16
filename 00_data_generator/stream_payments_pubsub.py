@@ -51,12 +51,14 @@ TOPIC_PAYMENTS = "sepa-payments-pacs008-topic"
 TOPIC_IBAN = "iban-beneficiary-events-topic"
 
 MERCHANT_COUNTERPARTIES = [
-    ("CARREFOUR CITY PARIS", "BNPAFRPPXXX", "CARD_CONTACTLESS", 850, 9500),
-    ("MONOPRIX OPERA", "SOGEFRPPXXX", "CARD_CONTACTLESS", 1200, 11000),
-    ("SNCF VOYAGES", "CMCIFRPPXXX", "CARD_ECOMMERCE", 2500, 14500),
-    ("EDF ENERGIE", "AGRIFRPPXXX", "SEPA_SDD", 4500, 13000),
-    ("STRMFLIX DIGITAL", "BOFAIE3XXXX", "SEPA_SDD", 1599, 1999),
-    ("PHARMACIE CENTRALE", "CEPAFRPPXXX", "CARD_CONTACTLESS", 600, 4800),
+    ("CARREFOUR CITY PARIS", "BNPAFRPPXXX", "CARD_CONTACTLESS", 850, 9500, "CB CARREFOUR CITY PARIS"),
+    ("MONOPRIX OPERA", "SOGEFRPPXXX", "CARD_CONTACTLESS", 1200, 11000, "CB MONOPRIX OPERA"),
+    ("SNCF VOYAGES", "CMCIFRPPXXX", "CARD_ECOMMERCE", 2500, 14500, "BILLET TGV INOUI PARIS LYON"),
+    ("EDF ENERGIE", "AGRIFRPPXXX", "SEPA_SDD", 4500, 13000, "PRLV SEPA EDF CONTRAT ELEC"),
+    ("STRMFLIX DIGITAL", "BOFAIE3XXXX", "SEPA_SDD", 1599, 1999, "PRLV SEPA STRMFLIX ABO MENSUEL"),
+    ("PHARMACIE CENTRALE", "CEPAFRPPXXX", "CARD_CONTACTLESS", 600, 4800, "SANTE PHARMACIE ORDONNANCE"),
+    ("CABINET MEDICAL DR ROUSSEAU", "BNPAFRPPXXX", "SCT_INST", 3000, 7500, "HONORAIRES CONSULTATION MEDICALE"),
+    ("FONCIA GESTION LOCATIVE", "SOGEFRPPXXX", "SCT_INST", 68000, 135000, "LOYER MENSUEL APPARTEMENT"),
 ]
 
 REJECT_REASONS = [
@@ -74,6 +76,7 @@ def build_pacs008_payload(
     execution_ts: str,
     customer_id: str,
     debtor_account_id: str,
+    debtor_full_name: str,
     debtor_iban: str,
     guichet_code_5: str,
     creditor_name: str,
@@ -86,24 +89,33 @@ def build_pacs008_payload(
     retry_attempt: int,
     remittance_info: str,
 ) -> dict:
-    """Construit un message JSON inspiré d'ISO 20022 pacs.008.001.08 / pain.002."""
+    """Construit un message JSON 100 % Nested (STRUCT BigQuery) inspiré d'ISO 20022 pacs.008.001.08."""
     amount_eur = round(amount_cents / 100.0, 2)
     return {
-        "schema_version": "iso20022.pacs.008.001.08",
-        "event_id": event_id,
-        "end_to_end_id": end_to_end_id,
-        "execution_ts": execution_ts,
-        "settlement_method": "CLRG_RT1_INST" if payment_scheme == "SCT_INST" else "CLRG_STEP2",
-        "payment_scheme": payment_scheme,
-        "tx_status": tx_status,
-        "status_reason_code": status_reason_code,
-        "retry_attempt": retry_attempt,
-        "amount_cents": int(amount_cents),
-        "amount_eur": f"{amount_eur:.2f}",
-        "currency": "EUR",
+        "header": {
+            "schema_version": "iso20022.pacs.008.001.08",
+            "event_id": event_id,
+            "end_to_end_id": end_to_end_id,
+            "execution_ts": execution_ts,
+        },
+        "settlement": {
+            "settlement_method": (
+                "CLRG_RT1_INST" if payment_scheme.startswith("SCT_INST") else "CLRG_STEP2"
+            ),
+            "payment_scheme": payment_scheme,
+            "tx_status": tx_status,
+            "status_reason_code": status_reason_code,
+            "retry_attempt": int(retry_attempt),
+        },
+        "instructed_amount": {
+            "amount_cents": int(amount_cents),
+            "amount_eur": f"{amount_eur:.2f}",
+            "currency": "EUR",
+        },
         "debtor": {
             "customer_id": customer_id,
             "account_id": debtor_account_id,
+            "full_name": debtor_full_name,
             "iban": debtor_iban,
             "agent_bic": BANK_BIC,
             "branch_guichet": guichet_code_5,
@@ -113,7 +125,54 @@ def build_pacs008_payload(
             "iban": creditor_iban,
             "agent_bic": creditor_bic,
         },
-        "remittance_info": remittance_info,
+        "remittance": {
+            "unstructured_info": remittance_info,
+        },
+    }
+
+
+def build_iban_enrollment_payload(
+    *,
+    event_id: str,
+    event_ts: str,
+    retry_attempt: int,
+    customer_id: str,
+    account_id: str,
+    full_name: str,
+    debtor_iban: str,
+    branch_guichet: str,
+    beneficiary_iban: str,
+    beneficiary_bic: str,
+    custom_label: str,
+    channel: str,
+    sca_strong_auth_status: str,
+    device_ip: str,
+) -> dict:
+    """Construit un événement JSON 100 % Nested (STRUCT BigQuery) d'ajout de bénéficiaire IBAN."""
+    return {
+        "header": {
+            "schema_version": "iban.enrollment.v2",
+            "event_id": event_id,
+            "event_ts": event_ts,
+            "retry_attempt": int(retry_attempt),
+        },
+        "account_holder": {
+            "customer_id": customer_id,
+            "account_id": account_id,
+            "full_name": full_name,
+            "debtor_iban": debtor_iban,
+            "branch_guichet": branch_guichet,
+        },
+        "beneficiary": {
+            "iban": beneficiary_iban,
+            "agent_bic": beneficiary_bic,
+            "custom_label": custom_label,
+        },
+        "security_context": {
+            "channel": channel,
+            "sca_strong_auth_status": sca_strong_auth_status,
+            "device_ip": device_ip,
+        },
     }
 
 
@@ -123,7 +182,7 @@ def generate_live_event_batch(
     batch_size: int,
     seq_start: int,
 ) -> tuple[list[dict], list[dict]]:
-    """Génère un lot cohérent d'événements paiements (+ ajouts d'IBAN associés)."""
+    """Génère un lot cohérent d'événements paiements (+ ajouts d'IBAN associés) 100 % Nested."""
     accounts_df = universe["accounts"]
     customers_df = universe["customers"]
 
@@ -134,9 +193,12 @@ def generate_live_event_batch(
     ibans = cc_df["iban"].to_numpy()
     guichets = cc_df["guichet_code_5"].to_numpy()
     ages = customers_df["age"].to_numpy()
+    first_names = customers_df["first_name"].to_numpy()
+    last_names = customers_df["last_name"].to_numpy()
 
     young_indices = np.flatnonzero((ages >= 18) & (ages <= 32))
     all_indices = np.arange(len(acc_ids))
+    channels = ["MOBILE_APP_ANDROID", "MOBILE_APP_IOS", "WEB_HOMEBANKING"]
 
     payment_msgs: list[dict] = []
     iban_msgs: list[dict] = []
@@ -155,32 +217,56 @@ def generate_live_event_batch(
             else:
                 idx = int(rng.choice(all_indices))
 
+            holder_name = f"{first_names[idx]} {last_names[idx]}"
             neo_bic, neo_label = NEOBANK_DESTINATIONS[
                 int(rng.choice(len(NEOBANK_DESTINATIONS), p=[0.38, 0.32, 0.14, 0.10, 0.06]))
             ]
             payment_scheme = "SCT_INST"
-            creditor_name = f"TITULAIRE EXTERNE {neo_bic[:6]}"
+            creditor_name = holder_name
             creditor_bic = neo_bic
-            creditor_iban = f"LT6032500{idx + 1:011d}" if neo_bic.startswith("REVOLT") else f"DE8950010517{idx + 1:010d}"
+            creditor_iban = (
+                f"LT6032500{idx + 1:011d}"
+                if neo_bic.startswith("REVOLT")
+                else f"DE8950010517{idx + 1:010d}"
+            )
             amount_cents = int(rng.integers(20_000, 185_000))
-            remittance = neo_label
+            remittance = f"{neo_label} {holder_name}"
 
             # 1 fois sur 4, on émet aussi l'événement préalable d'ajout de bénéficiaire IBAN dans le topic dédié
             if float(rng.random()) < 0.25:
-                iban_msgs.append({
-                    "event_id": f"IBAN-{uuid.uuid4().hex[:16].upper()}",
-                    "event_ts": now_dt.isoformat(),
-                    "customer_id": str(cust_ids[idx]),
-                    "account_id": str(acc_ids[idx]),
-                    "beneficiary_iban": creditor_iban,
-                    "beneficiary_bic": creditor_bic,
-                    "beneficiary_label": f"Mon compte {neo_bic[:6]}",
-                    "channel": "MOBILE_APP_IOS_ANDROID",
-                    "sca_strong_auth_status": "VERIFIED_BIOMETRIC",
-                })
+                chosen_ch = channels[int(rng.integers(0, len(channels)))]
+                ip_addr = f"90.{int(rng.integers(10, 120))}.{int(rng.integers(1, 250))}.{int(rng.integers(2, 254))}"
+                iban_evt = build_iban_enrollment_payload(
+                    event_id=f"IBAN-{uuid.uuid4().hex[:16].upper()}",
+                    event_ts=now_dt.isoformat(),
+                    retry_attempt=0,
+                    customer_id=str(cust_ids[idx]),
+                    account_id=str(acc_ids[idx]),
+                    full_name=holder_name,
+                    debtor_iban=str(ibans[idx]),
+                    branch_guichet=str(guichets[idx]),
+                    beneficiary_iban=creditor_iban,
+                    beneficiary_bic=creditor_bic,
+                    custom_label=f"Compte {neo_bic[:6]} {first_names[idx].title()}",
+                    channel=chosen_ch,
+                    sca_strong_auth_status="VERIFIED_BIOMETRIC",
+                    device_ip=ip_addr,
+                )
+                iban_msgs.append(iban_evt)
+                if float(rng.random()) < 0.035:
+                    dup_iban = {
+                        **iban_evt,
+                        "header": {
+                            **iban_evt["header"],
+                            "event_id": f"IBAN-{uuid.uuid4().hex[:16].upper()}",
+                            "retry_attempt": 1,
+                        },
+                    }
+                    iban_msgs.append(dup_iban)
         else:
             idx = int(rng.choice(all_indices))
-            m_name, m_bic, scheme, min_c, max_c = MERCHANT_COUNTERPARTIES[
+            holder_name = f"{first_names[idx]} {last_names[idx]}"
+            m_name, m_bic, scheme, min_c, max_c, m_remit = MERCHANT_COUNTERPARTIES[
                 int(rng.integers(0, len(MERCHANT_COUNTERPARTIES)))
             ]
             payment_scheme = scheme
@@ -188,7 +274,7 @@ def generate_live_event_batch(
             creditor_bic = m_bic
             creditor_iban = f"FR763000400892{idx + 1:09d}44"
             amount_cents = int(rng.integers(min_c, max_c + 1))
-            remittance = f"PAIEMENT {m_name}"
+            remittance = f"{m_remit} - {holder_name}" if "LOYER" in m_remit or "SANTE" in m_remit else m_remit
 
         # Statut : ~8,1 % RJCT / PDNG sur le flux brut
         u_status = float(rng.random())
@@ -206,6 +292,7 @@ def generate_live_event_batch(
             execution_ts=ts_iso,
             customer_id=str(cust_ids[idx]),
             debtor_account_id=str(acc_ids[idx]),
+            debtor_full_name=holder_name,
             debtor_iban=str(ibans[idx]),
             guichet_code_5=str(guichets[idx]),
             creditor_name=creditor_name,
@@ -222,9 +309,17 @@ def generate_live_event_batch(
 
         # Injection fidèle de ~3,4 % de doublons techniques (retry réseau sur le même end_to_end_id)
         if len(payment_msgs) < batch_size and float(rng.random()) < 0.0355:
-            dup_msg = dict(msg)
-            dup_msg["event_id"] = f"EVT-{uuid.uuid4().hex[:18].upper()}"
-            dup_msg["retry_attempt"] = 1
+            dup_msg = {
+                **msg,
+                "header": {
+                    **msg["header"],
+                    "event_id": f"EVT-{uuid.uuid4().hex[:18].upper()}",
+                },
+                "settlement": {
+                    **msg["settlement"],
+                    "retry_attempt": 1,
+                },
+            }
             payment_msgs.append(dup_msg)
 
     return payment_msgs[:batch_size], iban_msgs
@@ -241,6 +336,7 @@ def build_witness_live_events(universe: dict) -> tuple[list[dict], list[dict]]:
         execution_ts=now_iso,
         customer_id=WITNESS_CUST_ID,
         debtor_account_id=WITNESS_ACC_ID,
+        debtor_full_name="LUCAS MARTIN",
         debtor_iban=acc_row["iban"],
         guichet_code_5=acc_row["guichet_code_5"],
         creditor_name="STRMFLIX DIGITAL",
@@ -260,6 +356,7 @@ def build_witness_live_events(universe: dict) -> tuple[list[dict], list[dict]]:
         execution_ts=now_iso,
         customer_id=WITNESS_CUST_ID,
         debtor_account_id=WITNESS_ACC_ID,
+        debtor_full_name="LUCAS MARTIN",
         debtor_iban=acc_row["iban"],
         guichet_code_5=acc_row["guichet_code_5"],
         creditor_name="LUCAS MARTIN",
@@ -270,20 +367,25 @@ def build_witness_live_events(universe: dict) -> tuple[list[dict], list[dict]]:
         status_reason_code=None,
         amount_cents=4200,  # +42,00 € remboursement santé !
         retry_attempt=0,
-        remittance_info="VIR CPAM REMBOURSEMENT SANTE",
+        remittance_info="VIR CPAM REMBOURSEMENT SANTE LUCAS MARTIN",
     )
 
-    iban_evt = {
-        "event_id": f"IBAN-WITNESS-{uuid.uuid4().hex[:10].upper()}",
-        "event_ts": now_iso,
-        "customer_id": WITNESS_CUST_ID,
-        "account_id": WITNESS_ACC_ID,
-        "beneficiary_iban": "LT60325000000002026",
-        "beneficiary_bic": "REVOLT21XXX",
-        "beneficiary_label": "Lucas Martin Revolut",
-        "channel": "MOBILE_APP_ANDROID",
-        "sca_strong_auth_status": "VERIFIED_BIOMETRIC",
-    }
+    iban_evt = build_iban_enrollment_payload(
+        event_id=f"IBAN-WITNESS-{uuid.uuid4().hex[:10].upper()}",
+        event_ts=now_iso,
+        retry_attempt=0,
+        customer_id=WITNESS_CUST_ID,
+        account_id=WITNESS_ACC_ID,
+        full_name="LUCAS MARTIN",
+        debtor_iban=acc_row["iban"],
+        branch_guichet=acc_row["guichet_code_5"],
+        beneficiary_iban="LT60325000000002026",
+        beneficiary_bic="REVOLT21XXX",
+        custom_label="Lucas Martin Revolut",
+        channel="MOBILE_APP_ANDROID",
+        sca_strong_auth_status="VERIFIED_BIOMETRIC",
+        device_ip="90.63.142.18",
+    )
     return [p1, p2], [iban_evt]
 
 
@@ -348,9 +450,10 @@ def publish_messages(
     iban_entries: list[dict] = []
 
     for msg in payment_msgs:
-        if msg["retry_attempt"] > 0:
+        st = msg["settlement"]
+        if st["retry_attempt"] > 0:
             counts["DUP_RETRY"] += 1
-        elif msg["tx_status"] == "ACSC":
+        elif st["tx_status"] == "ACSC":
             counts["ACSC"] += 1
         else:
             counts["RJCT_PDNG"] += 1
@@ -359,10 +462,10 @@ def publish_messages(
         pay_entries.append({
             "data": raw_b64,
             "attributes": {
-                "tx_status": msg["tx_status"],
-                "payment_scheme": msg["payment_scheme"],
+                "tx_status": st["tx_status"],
+                "payment_scheme": st["payment_scheme"],
                 "creditor_bic": msg["creditor"]["agent_bic"],
-                "is_retry": str(msg["retry_attempt"] > 0).lower(),
+                "is_retry": str(st["retry_attempt"] > 0).lower(),
             },
         })
 
@@ -372,8 +475,8 @@ def publish_messages(
         iban_entries.append({
             "data": raw_b64,
             "attributes": {
-                "beneficiary_bic": imsg["beneficiary_bic"],
-                "channel": imsg["channel"],
+                "beneficiary_bic": imsg["beneficiary"]["agent_bic"],
+                "channel": imsg["security_context"]["channel"],
             },
         })
 

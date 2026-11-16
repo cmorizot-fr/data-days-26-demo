@@ -82,12 +82,14 @@ flowchart BT
   * Données Finance / comptabilité dans une base type **SAP / Postgres** (+ exports ALM).
   * Flux d'événements de paiements temps réel (`Kafka` / `Pub/Sub` en `ISO 20022 pacs.008` & JSON).
   * Contrats et avenants promotionnels en **PDF** non structurés sur GCS.
-* **Actions réalisées dans `AGY` :**
-  1. Exploration de l'architecture existante et création par agent du lien **Borderless Lakehouse** vers AWS (`BigQuery Omni` / `BigLake` sur S3, zéro copie).
-  2. Ingestion des fichiers bruts Mainframe et flux en tables **Iceberg hébergées** + exposition des PDF via **Object Tables**.
-  3. Initialisation de la structure industrielle **`dbt`** (couche `staging/raw`), regroupement logique des tables et génération de la **documentation technique initiale** dans `Knowledge Catalog`, qui met immédiatement en évidence les premières incohérences de qualité.
-* **Briques Google Cloud démontrées :** `Antigravity` + `DAK`, `Borderless Lakehouse`, `BigLake Iceberg hosting`, accès non structuré (`Object Tables`), `Knowledge Catalog` (documentation technique des assets).
-* **Transition vers Démo #2 :** *Jojo (Data Steward) intervient : « Vous avez branché les tuyaux, mais regardez l'état de la qualité en RAW — si on expose ça, tout va planter ! »*
+* **Actions réalisées dans `AGY` (6 étapes conversationnelles interactives) :**
+  1. Transfert binaire strict Mainframe z/OS (`EBCDIC CP500 + COMP-3`, conservation d'audit du lot `ABEND_S0C7`) vers GCS `RAW/` et décodage **Dataproc Serverless Spark** vers 4 tables **BigLake Managed Iceberg** documentées (`72/72` colonnes).
+  2. Création par agent du lien **Borderless Lakehouse** vers AWS (`AWS Glue / S3`, zéro copie).
+  3. Branchement temps réel sans serveur **Cloud Pub/Sub → BigQuery Subscriptions (`--use-table-schema`)** en schéma **`100 % Nested STRUCT`** (`ISO 20022 pacs.008` & enrôlements IBAN, `55/55` chemins documentés, `DLQ`), suivi d'un **audit hybride PII in-database** (détectant 10 sous-champs sensibles dont des motifs médicaux RGPD Art. 9) et de l'application chirurgicale du **Column-Level Security (`CLS` : `LAST_FOUR_CHARACTERS`, `SHA256`, `ALWAYS_NULL`)** directement sur les feuilles des `STRUCT`.
+  4. Découverte automatique sans DDL des `250` PDF d'agences et `6` PDF réglementaires CFO via **Dataplex Cloud Storage Discovery (`Object Tables`)**.
+  5. Initialisation de la structure industrielle **`dbt`** (`_raw_sources.yml`) et synchronisation de la **documentation technique initiale** dans `Knowledge Catalog`.
+* **Briques Google Cloud démontrées :** `Antigravity` + `DAK`, `Dataproc Serverless Spark` + `BigLake Managed Iceberg`, `Borderless Lakehouse`, `Pub/Sub BigQuery Subscriptions (Nested STRUCT)` + `Column-Level Security (Data Policies)`, `Dataplex Cloud Storage Discovery (Object Tables)`, `Knowledge Catalog`.
+* **Transition vers Démo #2 :** *Jojo (Data Steward) intervient : « Vous avez branché les tuyaux et protégé les PII, mais regardez l'état de la qualité métier en RAW — si on expose ça, tout va planter ! »*
 
 ---
 
@@ -96,7 +98,7 @@ flowchart BT
 * **État initial :** Données `RAW` accessibles mais truffées d'anomalies réelles (doublons de retry sur le flux paiements, dates mainframe `00000000`, codes agences `NULL`, statuts techniques `RJCT`/`PDNG` mélangés aux virements exécutés `ACSC`).
 * **Actions réalisées dans `AGY` :**
   1. Exécution d'un **agent Data Quality Scan** qui profile les tables `RAW` et remonte les anomalies concrètes.
-  2. Itération assistée dans `AGY` pour générer les modèles **`dbt` (`SILVER`)** intégrant nativement les tests `dbt` et les règles de **Data Quality** BigQuery/KC.
+  2. Itération assistée dans `AGY` pour générer les modèles **`dbt` (`SILVER`)** intégrant nativement les tests `dbt` et les règles de **Data Quality** BigQuery/KC (dépliage des `STRUCT` paiements, dédoublonnage `end_to_end_id`, filtrage `ACSC`).
   3. Publication des **5 data products élémentaires** propres dans `Knowledge Catalog` :
      * `dp_accounts_balances` *(Comptes & soldes valorisés J+1)*
      * `dp_payment_flows` *(Flux paiements SEPA Instant, cartes & ajouts d'IBAN dédoublonnés)*
@@ -146,8 +148,8 @@ Pour que les 4 démos racontent une seule et même histoire cohérente sans jama
 
 ### A. Volumétrie cible (optimisée pour `< 2 s` de requête en live)
 * **Clients (`CRM AWS S3`) :** `80 000` clients particuliers répartis sur `8 régions` et `450 agences`, `0` clôture de compte sur le trimestre, `+15 000` ouvertures récentes, `320 000` notes de RDV agence & verbatims d'appels call center.
-* **Comptes & opérations (`Core banking` + `SI paiements`) :** `95 000` comptes courants/livrets, `~5,5 M` d'écritures valorisées batch et `~6,2 M` d'événements dans le flux paiements sur 18 mois.
-* **Finance & PDF :** `1,2 M` de lignes comptables agrégées, `250` vrais fichiers PDF d'offres promotionnelles sur GCS, et un référentiel d'`offres_epargne` pour la Démo #4.
+* **Comptes & opérations (`Core banking` + `SI paiements`) :** `95 000` comptes courants/livrets, `~5,5 M` d'écritures valorisées batch et `~6,2 M` d'événements dans le flux paiements sur 18 mois (schéma `100 % Nested STRUCT` ISO 20022 aligné entre Parquet historique et flux temps réel Pub/Sub).
+* **Finance & PDF :** `1,2 M` de lignes comptables agrégées, `250` vrais fichiers PDF d'offres promotionnelles sur GCS, `6` PDF réglementaires CFO (`ANC`, `ALM`, `ILAAP`, `Comité des Risques`, `UE 2024/886`, `ACPR 2024-R-01`), et un référentiel d'`offres_epargne` pour la Démo #4.
 
 ### B. Anomalies `RAW` obligatoires (pour le tacle de Jojo & la Démo #2)
 1. **Doublons techniques de flux (`SI paiements`) :** ~`3,4 %` d'événements en doublon sur `end_to_end_id` (retries réseau) + présence de statuts rejetés/en attente (`RJCT`, `PDNG` = `8,1 %` des messages).
@@ -159,7 +161,7 @@ Pour que les 4 démos racontent une seule et même histoire cohérente sans jama
 * **Résultat « FAKE » du `BQ Agent` avant `Knowledge Catalog` :** **`+42,80 M€`** (obtenu systématiquement lorsqu'un SQL naïf somme les montants comptables bruts non signés sans appliquer le sens Débit/Crédit, inclut les virements internes compte-à-livret `58*` et ignore le coût ALM ainsi que les PDF).
 * **Résultat « CERTIFIÉ » après `Knowledge Catalog` :** **`-38,42 M€`** d'écart net de PNB par rapport au budget, décomposé exactement en :
   * **`-24,12 M€`** de coût de refinancement trésorerie ALM (`2,42 Md€` remplacés sur 90 jours au taux €STR ~`398 bps`),
-  * **`-14,30 M€`** de primes de bienvenue, gratuités et taux boostés engagés dans les **250 avenants PDF** d'agence.
+  * **`-14,30 M€`** de primes de bienvenue, gratuités et taux boostés engagés dans les **250 avenants PDF** d'agence (en dépassement du plafond Comité des Risques de `9,00 M€`).
 
 ### D. Assets « Connaissance Legacy » & Personas Digital (pour les Démos #3 et #4)
 * **Kit legacy pour Démo #3 :**
@@ -167,7 +169,7 @@ Pour que les 4 démos racontent une seule et même histoire cohérente sans jama
   * `legacy_catalogs/kpi_finance_excel_glossary.json` (incomplet).
   * `interviews_metier/` : transcriptions/vidéos courtes de 2 experts (Directeur ALM Trésorerie & Responsable Pilotage Réseau) énonçant les vraies règles de gestion.
 * **Client témoin pour l'app mobile Android en Démo #4 :**
-  * Historique de virements sortants vers néobanque les mois `M-2` et `M-1`, salaire reçu le 1er du mois `M` (`+1 850 €`), hausse détectée de `+4 €` sur un abonnement streaming (`15,99 € -> 19,99 €`), remboursement santé (`+42 €`), et **excédent prévisionnel fin de mois = `+300 €`** déclenchant la recommandation `Agent Conseil Offres` (*Livret Boost Maison 4 %*) exécutable en 1-clic par l'`Agent Action` dans `AlloyDB`.
+  * Historique de virements sortants vers néobanque les mois `M-2` et `M-1`, salaire reçu le 1er du mois `M` (`+1 850 €`), hausse détectée de `+4 €` sur un abonnement streaming (`15,99 € -> 19,99 €`), remboursement santé (`+42 €`), et **excédent prévisionnel fin de mois = `+300 €`** déclenchant la recommandation `Agent Conseil Offres` (*Livret Boost Maison*) exécutable en 1-clic par l'`Agent Action` dans `AlloyDB`.
 
 ---
 
@@ -179,20 +181,21 @@ agentic-data-cloud-day-paris-2026/
 ├── DESIGN_AND_CONTEXT.md              # Ce document (contexte de référence AGY)
 ├── AGENTS.md                          # Instructions directes pour les agents Antigravity
 ├── docs/
-│   └── assets/
-│       └── architecture_cible_data_cloud.png
-├── 00_data_generator/                 # Générateur déterministe (seed=2026) des silos Couche 0
+│   ├── DEMO_QUESTIONS_AND_FLOW.md     # Fil conducteur conversationnel & skills DAK par étape
+│   └── MAINFRAME_BIGQUERY_SCHEMA.md   # Documentation des 72 colonnes BigLake Iceberg Mainframe
+├── 00_data_generator/                 # Générateurs déterministes (seed=2026) des silos Couche 0
+│   ├── shared_universe.py
 │   ├── generate_mainframe_cfonb.py
 │   ├── generate_aws_crm_s3.py
-│   ├── generate_finance_sap_alm.py
-│   ├── generate_payments_stream.py
-│   └── generate_promo_pdfs.py
-├── 01_demo1_raw_aggregation/          # Connexions BigLake AWS, Iceberg RAW & init dbt
+│   ├── generate_payments_stream.py    # Archive 18 mois (6,2 M lignes Parquet Nested STRUCT)
+│   ├── stream_payments_pubsub.py      # Moulinette live Pub/Sub ISO 20022 Nested STRUCT
+│   └── generate_promo_pdfs.py         # 250 PDF avenants agences + 6 PDF réglementaires CFO
+├── 01_demo1_raw_aggregation/          # Jobs Spark EBCDIC/Iceberg, DDL Nested Pub/Sub, Audit PII & vues PDF
 ├── 02_demo2_silver_dbt_dq/            # Projet dbt (RAW -> SILVER), scans DQ & Data Products KC
 ├── 03_demo3_kc_semantics_cfo/         # Exports legacy, vidéos interviews, enrichissement KC & BQ Agents
 ├── 04_demo4_scale_mobile_adk/         # Modèles BQML, alloydb_sync, agents ADK & app mobile Android
-└── scripts/
-    └── reset_demo_state.sh            # Remise à zéro instantanée entre deux répétitions
+├── stage_ui/                          # Interface scénique Antigravity pilotée par public/demo_config.yaml
+└── scripts/                           # Orchestration & replay idempotents (Spark, Pub/Sub+CLS, Discovery PDF)
 ```
 
 ### Règles de génération de code pour les agents `Antigravity`

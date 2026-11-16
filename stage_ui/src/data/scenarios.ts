@@ -1,5 +1,5 @@
 import { parse } from 'yaml';
-import rawDemoConfigYaml from '../../public/demo_config.yaml?raw';
+import rawDemoConfigYaml from 'virtual:demo-config-yaml';
 import { AnimationSpeed, DemoScenario, DemoWorkspace } from '../types';
 
 export interface StageUiSettings {

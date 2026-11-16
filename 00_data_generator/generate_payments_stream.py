@@ -432,13 +432,108 @@ def main() -> None:
     assert clean_leak_cents == TOTAL_LEAK_90D_CENTS, f"Fuite clean attendue {TOTAL_LEAK_90D_CENTS}, obtenu {clean_leak_cents}"
     assert young_1_5_cents == YOUNG_1_TO_5_LEAK_90D_CENTS, f"Fuite jeunes attendue {YOUNG_1_TO_5_LEAK_90D_CENTS}, obtenu {young_1_5_cents}"
 
-    # Écriture en 4 shards Parquet ZSTD (~30 Mo chacun) pour lecture parallèle ultra-rapide BigLake
-    shard_size = (df.height + 3) // 4
+    # Projection finale en schéma 100 % Nested (STRUCT ISO 20022 identique aux BigQuery Subscriptions Pub/Sub)
+    cust_names_df = universe["customers"].select([
+        "customer_id",
+        (pl.col("first_name") + pl.lit(" ") + pl.col("last_name")).alias("full_name"),
+    ])
+
+    nested_events_df = (
+        df.join(cust_names_df, on="customer_id", how="left")
+        .with_columns([
+            pl.when(pl.col("payment_scheme").str.starts_with("SCT_INST"))
+            .then(pl.lit("CLRG_RT1_INST"))
+            .otherwise(pl.lit("CLRG_STEP2"))
+            .alias("settlement_method"),
+            pl.when(pl.col("status_reason") == "")
+            .then(None)
+            .otherwise(pl.col("status_reason"))
+            .alias("status_reason_code"),
+            pl.when(pl.col("creditor_bic").str.starts_with("REVOLT"))
+            .then(pl.lit("LT603250000000") + pl.col("debtor_account_id").str.slice(3))
+            .when(pl.col("creditor_bic").is_in(neo_bics_list))
+            .then(pl.lit("DE895001051700") + pl.col("debtor_account_id").str.slice(3))
+            .otherwise(pl.lit("FR76300040089200") + pl.col("debtor_account_id").str.slice(3) + pl.lit("44"))
+            .alias("creditor_iban"),
+            pl.when(pl.col("creditor_bic").is_in(neo_bics_list))
+            .then(pl.col("full_name"))
+            .otherwise(pl.col("remittance_info"))
+            .alias("creditor_name"),
+        ])
+        .select([
+            pl.struct([
+                pl.lit("iso20022.pacs.008.001.08").alias("schema_version"),
+                pl.col("event_id"),
+                pl.col("end_to_end_id"),
+                pl.col("execution_ts"),
+            ]).alias("header"),
+            pl.struct([
+                pl.col("settlement_method"),
+                pl.col("payment_scheme"),
+                pl.col("tx_status"),
+                pl.col("status_reason_code"),
+                pl.col("retry_attempt").cast(pl.Int64),
+            ]).alias("settlement"),
+            pl.struct([
+                pl.col("amount_cents"),
+                pl.col("amount_eur").cast(pl.Decimal(15, 2)),
+                pl.col("currency"),
+            ]).alias("instructed_amount"),
+            pl.struct([
+                pl.col("customer_id"),
+                pl.col("debtor_account_id").alias("account_id"),
+                pl.col("full_name"),
+                pl.col("debtor_iban").alias("iban"),
+                pl.lit(BANK_BIC).alias("agent_bic"),
+                pl.col("guichet_code_5").alias("branch_guichet"),
+            ]).alias("debtor"),
+            pl.struct([
+                pl.col("creditor_name").alias("name"),
+                pl.col("creditor_iban").alias("iban"),
+                pl.col("creditor_bic").alias("agent_bic"),
+            ]).alias("creditor"),
+            pl.struct([
+                pl.col("remittance_info").alias("unstructured_info"),
+            ]).alias("remittance"),
+        ])
+    )
+
+    # Écriture en 4 shards Parquet ZSTD (~35 Mo chacun) pour lecture parallèle ultra-rapide BigLake
+    shard_size = (nested_events_df.height + 3) // 4
     for idx_s in range(4):
-        shard = df.slice(idx_s * shard_size, shard_size)
+        shard = nested_events_df.slice(idx_s * shard_size, shard_size)
         shard.write_parquet(events_dir / f"part-{idx_s:05d}.parquet", compression="zstd")
 
-    iban_df = generate_iban_beneficiary_table(rng, leak_90d_df, accounts_df)
+    iban_flat_df = generate_iban_beneficiary_table(rng, leak_90d_df, accounts_df)
+    iban_df = (
+        iban_flat_df.join(cust_names_df, on="customer_id", how="left")
+        .join(accounts_df.select(["account_id", "iban"]), on="account_id", how="left")
+        .select([
+            pl.struct([
+                pl.lit("iban.enrollment.v2").alias("schema_version"),
+                pl.col("iban_event_id").alias("event_id"),
+                pl.col("added_date").cast(pl.Datetime("us")).alias("event_ts"),
+                pl.col("retry_attempt").cast(pl.Int64),
+            ]).alias("header"),
+            pl.struct([
+                pl.col("customer_id"),
+                pl.col("account_id"),
+                pl.col("full_name"),
+                pl.col("iban").alias("debtor_iban"),
+                pl.col("guichet_code_5").alias("branch_guichet"),
+            ]).alias("account_holder"),
+            pl.struct([
+                pl.col("beneficiary_iban").alias("iban"),
+                pl.col("beneficiary_bic").alias("agent_bic"),
+                (pl.lit("Compte ") + pl.col("beneficiary_bic").str.slice(0, 6) + pl.lit(" ") + pl.col("full_name")).alias("custom_label"),
+            ]).alias("beneficiary"),
+            pl.struct([
+                pl.col("channel"),
+                pl.col("auth_status").alias("sca_strong_auth_status"),
+                pl.lit("90.63.140.10").alias("device_ip"),
+            ]).alias("security_context"),
+        ])
+    )
     iban_df.write_parquet(iban_dir / "part-00000.parquet", compression="zstd")
 
     stats = {

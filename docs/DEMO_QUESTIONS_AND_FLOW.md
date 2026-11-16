@@ -12,15 +12,17 @@
 | :--- | :--- | :--- | :--- |
 | **Démo #1 — Étape 1**<br>*Transfert Mainframe → GCS `RAW`* | `data-agent-kit` (`get_active_gcp_connection`) | `gcp-data-pipelines`<br>`discover-assets`<br>`accidental-data-loss-prevention`<br>`enforcing-resource-attribution` | Vérifie le bucket `RAW` existant, détecte le double fichier d'octobre (`RUN01` en `ABEND_S0C7` vs `RUN02_RERUN`) + les `.ebcdic` / `.cpy` et transfère en binaire strict avec label `datacloud.antigravity`. |
 | **Démo #1 — Étape 2**<br>*Parsing Spark → BigLake Iceberg* | `bigquery` (`get_dataset_info`, `list_table_ids`)<br>`notebooks` *(si `.ipynb`)* | `gcp-spark` *(+ `biglake_iceberg.md`)*<br>`discover-assets`<br>`enforcing-resource-attribution` | Lit les Copybooks `.cpy`, filtre `RC=0000` (écarte `RUN01`), décode `EBCDIC CP500 + COMP-3`, recolle `CFONB 04+05` et écrit en **BigLake Managed Iceberg** (`raw_bank`). |
-| **Démo #1 — Étape 3**<br>*AWS Borderless & PDF Object Table* | `bigquery` (`execute_sql`) | `federate-lakehouse-catalog` | Fédère `AWS Glue / S3` sans copie et crée l'**Object Table** sur les 250 PDF. |
-| **Démo #1 — Étape 4**<br>*Init `dbt` & Doc `Knowledge Catalog`* | `bigquery` | `dbt-bigquery`<br>`curate-context` | Initialise `dbt_project.yml` et `_raw_sources.yml` + synchronisation technique initiale dans `Knowledge Catalog`. |
+| **Démo #1 — Étape 3**<br>*AWS Borderless (`AWS Glue / S3`)* | `bigquery` (`execute_sql`) | `federate-lakehouse-catalog` | Fédère le catalogue Iceberg `AWS Glue / S3` dans BigQuery sans aucune copie. |
+| **Démo #1 — Étape 4**<br>*Streaming `Pub/Sub` → `BQ` (`STRUCT`) & `CLS`* | `bigquery`<br>`data-agent-kit` (`render_chart`) | `discover-assets`<br>`gcp-data-pipelines`<br>`enforcing-resource-attribution`<br>`bq-visual-audit` | Branche les 2 BigQuery Subscriptions sans serveur en **`100 % Nested STRUCT`** (`--use-table-schema`), audite les PII in-database (`10` feuilles dont santé RGPD Art. 9) et applique **3 Data Policies `CLS`**. |
+| **Démo #1 — Étape 5**<br>*Discovery GCS PDF (`Object Tables`)* | `bigquery`<br>`data-agent-kit` (`render_chart`) | `discover-assets`<br>`gcp-data-pipelines`<br>`accidental-data-loss-prevention`<br>`bq-visual-audit` | Exécute `Dataplex Cloud Storage Discovery` sur les `250 + 6` PDF et publie les 2 vues gouvernées (`raw_bank`). |
+| **Démo #1 — Étape 6**<br>*Init `dbt` & Doc `Knowledge Catalog`* | `bigquery` | `dbt-bigquery`<br>`curate-context` | Initialise `dbt_project.yml` et `_raw_sources.yml` + synchronisation technique initiale dans `Knowledge Catalog`. |
 | **Démo #2 (3 étapes)**<br>*Industrialisation `SILVER` & DQ* | `bigquery` (`execute_sql`, `get_table_info`) | `data-autocleaning`<br>`dbt-bigquery`<br>`discover-assets` | Profile les anomalies `RAW`, fait arbitrer les règles de nettoyage/réconciliation et génère les 5 Data Products `dbt` testés. |
 | **Démo #3 (2 étapes)**<br>*Sémantique `KC` & Pilotage CFO* | `bigquery`<br>`data-agent-kit` (`render_chart`) | `curate-context` (`kcmd` / OKF)<br>`discover-assets`<br>`bigquery-ai-ml` | Réconcilie les catalogues legacy + interviews `.mp4`, publie le contexte certifié dans `KC` et corrige l'écart PNB de `+42,80 M€` à `-38,42 M€`. |
 | **Démo #4 (2 étapes)**<br>*Scale Digital : `BQML` & `AlloyDB`* | `bigquery`<br>`data-agent-kit` | `bigquery-ai-ml`<br>`ml-best-practices`<br>`cloud-databases-onboarding` | Génère les prévisions `AI.FORECAST` / propension dans BigQuery et expose les insights en `< 15 ms` via `alloydb_sync` aux 3 agents `ADK`. |
 
 ---
 
-## Workspace Démo #1 — `01_demo1_raw_aggregation` (4 Conversations d'étapes)
+## Workspace Démo #1 — `01_demo1_raw_aggregation` (6 Conversations d'étapes)
 
 ### Conversation Étape 1 — Transfert Mainframe du mois passé vers GCS `RAW`
 
@@ -63,8 +65,15 @@
 ### Conversation Étape 3 — Fédération AWS S3 (`Borderless Lakehouse` / Catalogue `AWS Glue`)
 * Exposition sans copie des tables Iceberg `AWS Glue / S3` (`federate-lakehouse-catalog`).
 
-### Conversation Étape 4 — Streaming Temps Réel `Pub/Sub` → `BigQuery` & Sécurité `CLS` (`IBAN` / `PII`)
-* Historisation sans serveur via BigQuery Subscriptions (`raw_sepa_payments_pubsub_stream`, `raw_iban_events_pubsub_stream`), audit `PII` et masquage `CLS`.
+### Conversation Étape 4 — Streaming Temps Réel `Pub/Sub` → `BigQuery` (`100 % Nested STRUCT`) & Sécurité `CLS` (`IBAN` / `PII`)
+* **Skills `DAK` mobilisés :** `discover-assets`, `gcp-data-pipelines`, `enforcing-resource-attribution`, `bq-visual-audit`.
+* **Chip 1 — Découverte Pub/Sub & 3 questions d'arbitrage interactives (`askQuestions` `1/3..3/3`) :**
+  1. **Schéma `100 % Nested STRUCT` (`--use-table-schema`)** vs `data JSON` opaque (interdisant le CLS par sous-champ).
+  2. **Préservation du bruit `RAW` (`~3,4 %` retries `end_to_end_id`, `~8,1 %` `RJCT`/`PDNG`)** + routage vers `sepa-payments-dlq-topic`.
+  3. **Isolement de `sepa-payments-alloydb-ops-sub`** réservée au temps réel `< 15 ms` vers AlloyDB (`Démo #4`).
+* **Chip 2 — Déploiement sans serveur & `bq-visual-audit` :** création de [`02_create_documented_pubsub_nested_tables.sql`](../01_demo1_raw_aggregation/sql/02_create_documented_pubsub_nested_tables.sql) (`55/55` chemins `STRUCT` documentés) via [`setup_pubsub_queues.sh`](../scripts/setup_pubsub_queues.sh), ingestion temps réel (`502` paiements + `32` ajouts IBAN, `0` DLQ).
+* **Chip 3 — Audit hybride `PII` in-database (`0` donnée brute extraite) & 3 questions `CLS` (`askQuestions` `1/3..3/3`) :** exécution de [`03_audit_pii_nested_pubsub.sql`](../01_demo1_raw_aggregation/sql/03_audit_pii_nested_pubsub.sql) détectant **10 sous-champs `STRUCT` sensibles** (`4` IBAN, `4` noms/IP, et **`25,5 %` de motifs médicaux RGPD Art. 9** dans `remittance.unstructured_info` comme `CPAM SANTE`).
+* **Chip 4 — Application chirurgicale des Policy Tags `CLS` :** déploiement de la taxonomie `hexagone-cls-payments-pii` et des 3 Data Policies (`LAST_FOUR_CHARACTERS`, `SHA256`, `ALWAYS_NULL`) via [`apply_pubsub_cls_policy_tags.py`](../scripts/apply_pubsub_cls_policy_tags.py) et script de replay [`run_demo1_pubsub_bq_cls.sh`](../scripts/run_demo1_pubsub_bq_cls.sh).
 
 ### Conversation Étape 5 — Découverte automatique GCS PDF via `Dataplex Cloud Storage Discovery` (`Object Tables`)
 * **Skills `DAK` mobilisés :** `discover-assets`, `gcp-data-pipelines`, `accidental-data-loss-prevention`, `enforcing-resource-attribution`.

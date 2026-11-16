@@ -123,6 +123,13 @@ export interface VisualCheckBlock {
   footerNote?: string;
 }
 
+export interface AskQuestionItem {
+  id: string;
+  question: string;
+  isMultiSelect?: boolean;
+  options: string[];
+}
+
 export interface PromptTurn {
   id: string;
   chipLabel: string;
@@ -139,6 +146,7 @@ export interface PromptTurn {
   sectionHeading: string;
   items: EditorialSectionItem[];
   visualCheck?: VisualCheckBlock;
+  askQuestions?: AskQuestionItem[];
   traces: ExecutionStepTrace[];
   filesChanged: FileDiffItem[];
   terminalLogs: string[];
