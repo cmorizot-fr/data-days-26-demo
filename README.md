@@ -27,6 +27,17 @@ Ce repository embarque un skill personnalisé Antigravity dans [`.agents/skills/
   1. Dans le menu **`Customizations`** (`Marketplace` & `Installed`), la fiche **`bq-visual-audit` (`Workspace Skill · Always Active`)** est consultable à côté du plugin **Data Agent Kit**.
   2. Dans le **Chat**, **7 étapes** affichent une carte interactive `VisualCheckCard` (tuiles KPI en luminance de surface, barres de répartition/waterfall et, sur l'étape **Discovery GCS PDF**, **4 vignettes réelles de PDF cliquables avec zoom plein écran**). Cliquer sur le badge `bq-visual-audit · render_chart` d'une carte ouvre directement la définition du skill.
 
+## 🧩 Skill Workspace : Ajouter une étape à la démo (`stage-ui-step-authoring`)
+
+Pour faire apparaître de nouvelles données, de nouveaux modèles `dbt` ou de nouveaux Data Products dans l'interface scénique, demandez simplement à `AGY` d'ajouter l'étape : il applique le skill [`.agents/skills/stage-ui-step-authoring/SKILL.md`](./.agents/skills/stage-ui-step-authoring/SKILL.md).
+- **Principe :** l'UI raconte ce qui s'est réellement passé — chiffres, fichiers, traces et logs issus d'exécutions réelles.
+- **Conventions :** noms d'étapes fonctionnels et numérotés, 2 à 3 questions d'arbitrage avec l'option `(Recommended)` en tête, code affiché généré depuis le repo.
+- **Outils :**
+  ```bash
+  uv run --frozen python .agents/skills/stage-ui-step-authoring/scripts/render_file_block.py <fichier>   # bloc de code réel pour filesChanged
+  node .agents/skills/stage-ui-step-authoring/scripts/check_demo_config.mjs                            # validation du scénario
+  ```
+
 ---
 
 ## 🖥️ Déployer en local l'interface scénique (`stage_ui`)
@@ -155,7 +166,8 @@ uv run python 00_data_generator/stream_payments_pubsub.py --witness-live
 ├── AGENTS.md                                 # Règles strictes pour Antigravity (AGY) & Data Agent Kit (DAK)
 ├── .agents/
 │   └── skills/
-│       └── bq-visual-audit/SKILL.md          # Skill Workspace de contrôle visuel post-création BigQuery
+│       ├── bq-visual-audit/SKILL.md          # Skill Workspace de contrôle visuel post-création BigQuery
+│       └── stage-ui-step-authoring/          # Skill Workspace d'ajout d'étapes dans l'UI de démo (+ scripts/)
 ├── docs/
 │   ├── DEMO_QUESTIONS_AND_FLOW.md            # Script conversationnel détaillé & skills DAK par étape
 │   ├── MAINFRAME_BIGQUERY_SCHEMA.md          # Dictionnaire des 4 tables BigLake Iceberg & 72 colonnes
@@ -207,4 +219,5 @@ uv run python 00_data_generator/stream_payments_pubsub.py --witness-live
 - **[`docs/DEMO_QUESTIONS_AND_FLOW.md`](./docs/DEMO_QUESTIONS_AND_FLOW.md)** : déroulé pas-à-pas sur scène, questions d'arbitrage posées par `AGY` et cartographie des skills `DAK` mobilisés.
 - **[`docs/MAINFRAME_BIGQUERY_SCHEMA.md`](./docs/MAINFRAME_BIGQUERY_SCHEMA.md)** : dictionnaire complet du dataset `raw_bank`, des 4 tables **BigLake Managed Iceberg** (`cbk_*`) et de leurs `72` colonnes documentées.
 - **[`.agents/skills/bq-visual-audit/SKILL.md`](./.agents/skills/bq-visual-audit/SKILL.md)** : protocole du skill de contrôle visuel post-création BigQuery (`render_chart` + aperçu documentaire `ObjectRef`).
+- **[`.agents/skills/stage-ui-step-authoring/SKILL.md`](./.agents/skills/stage-ui-step-authoring/SKILL.md)** : méthode et outils pour ajouter une étape de démo dans `stage_ui` à partir du réel (validateur `check_demo_config.mjs`).
 - **[`AGENTS.md`](./AGENTS.md)** : garde-fous techniques, UX et conventions que tout agent IA intervenant sur ce dépôt doit respecter.
