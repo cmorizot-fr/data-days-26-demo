@@ -97,14 +97,16 @@ flowchart BT
 * **Persona :** L'équipe Data qui industrialise la passage de `RAW` à `SILVER` avec des garanties de qualité.
 * **État initial :** Données `RAW` accessibles mais truffées d'anomalies réelles (doublons de retry sur le flux paiements, dates mainframe `00000000`, codes agences `NULL`, statuts techniques `RJCT`/`PDNG` mélangés aux virements exécutés `ACSC`).
 * **Actions réalisées dans `AGY` :**
-  1. Exécution d'un **agent Data Quality Scan** qui profile les tables `RAW` et remonte les anomalies concrètes.
-  2. Itération assistée dans `AGY` pour générer les modèles **`dbt` (`SILVER`)** intégrant nativement les tests `dbt` et les règles de **Data Quality** BigQuery/KC (dépliage des `STRUCT` paiements, dédoublonnage `end_to_end_id`, filtrage `ACSC`).
-  3. Publication des **5 data products élémentaires** propres dans `Knowledge Catalog` :
-     * `dp_accounts_balances` *(Comptes & soldes valorisés J+1)*
-     * `dp_payment_flows` *(Flux paiements SEPA Instant, cartes & ajouts d'IBAN dédoublonnés)*
-     * `dp_customers_interactions` *(Clients, RDV agences & verbatims call center via Borderless AWS)*
-     * `dp_finance_gl_alm` *(Écritures comptables, budget & refinancement trésorerie)*
-     * `dp_contracts_promos` *(Contrats & offres promotionnelles PDF)*
+  1. **Conception des Data Products** avec `AGY` : revue du découpage (par domaine métier & usage, plus par système source), choix des noms techniques en anglais et de l'architecture de fraîcheur (`dbt` planifié dans BigQuery, ajustement temps réel dans `AlloyDB`). Le résultat est consigné dans [`data_products_catalog.yaml`](./02_demo2_silver_dbt_dq/kc_products/data_products_catalog.yaml).
+  2. **Définition des règles de Data Quality** avec l'Agentic Data Cloud : le profil Dataplex révèle les anomalies de forme, l'API Dataplex `generateDataQualityRules` en déduit les règles techniques, Knowledge Catalog apporte les règles métier (contrats des Data Products) et l'agent ajoute les règles de cohérence inter-silos. Un **agent Data Quality Scan** applique ensuite ces règles sur `RAW` et remonte les anomalies concrètes.
+  3. Itération assistée dans `AGY` pour générer les modèles **`dbt` (`SILVER`)** intégrant nativement les tests `dbt` et les règles de **Data Quality** BigQuery/KC (dépliage des `STRUCT` paiements, dédoublonnage `end_to_end_id`, filtrage `ACSC`).
+  4. Publication des **5 Data Products `SILVER`** dans `Knowledge Catalog` :
+     * `dp_customer_360` *(référentiel client & comptes : `customers`, `accounts` — 80 000 clients, 95 000 comptes, solde J-1)*
+     * `dp_customer_timeline` *(vie du client : `customer_movements` catégorisés et dédoublonnés, `beneficiaries` — fait apparaître la fuite de `2,42 Md€` vers les néobanques)*
+     * `dp_customer_relationship` *(interactions CRM : `interactions` — 320 000 RDV et appels, texte sensible masqué)*
+     * `dp_finance_pnb` *(grand livre SAP, budget & TCI ALM : `gl_entries`)*
+     * `dp_commercial_commitments` *(contrats promotionnels PDF extraits par IA : `promo_contracts` — `-14,30 M€`)*
+  * Les 2 Data Products **`GOLD`** sont construits ensuite : `dp_certified_pnb` (Démo #3, `-38,42 M€`) et `dp_budget_insight` (Démo #4, prévision de fin de mois par client).
 * **Briques Google Cloud démontrées :** `Knowledge Catalog Data Products`, `Auto Data Quality`, intégration `dbt` + `DAK`.
 * **Transition vers Démo #3 :** *« Jojo Fiero » : fier de ses Data Products 100 % propres au scan DQ, Jojo crée un premier `BQ Agent` et file répondre aux questions du CFO...*
 
@@ -150,6 +152,8 @@ Pour que les 4 démos racontent une seule et même histoire cohérente sans jama
 * **Clients (`CRM AWS S3`) :** `80 000` clients particuliers répartis sur `8 régions` et `450 agences`, `0` clôture de compte sur le trimestre, `+15 000` ouvertures récentes, `320 000` notes de RDV agence & verbatims d'appels call center.
 * **Comptes & opérations (`Core banking` + `SI paiements`) :** `95 000` comptes courants/livrets, `~5,5 M` d'écritures valorisées batch et `~6,2 M` d'événements dans le flux paiements sur 18 mois (schéma `100 % Nested STRUCT` ISO 20022 aligné entre Parquet historique et flux temps réel Pub/Sub).
 * **Finance & PDF :** `1,2 M` de lignes comptables agrégées (`raw_bank.raw_sap_gl_alm`), `250` vrais fichiers PDF d'offres promotionnelles sur GCS, `6` PDF réglementaires CFO (`ANC`, `ALM`, `ILAAP`, `Comité des Risques`, `UE 2024/886`, `ACPR 2024-R-01`), et un référentiel d'`offres_epargne` pour la Démo #4.
+
+* **Vie du client cohérente entre silos :** un journal unique (`customer_ledger.py`) décrit la vie de chaque client — revenu mensuel stable (1er-5 du mois, retraite le 9), prélèvements fixes (loyer, EDF saisonnier, box, assurance, impôts, streaming `15,99 €` → `19,99 €` au 01/11/2026), remboursements santé, dépenses carte et épargne programmée. Le Mainframe CFONB et le flux SEPA en sont deux vues : `0` écart au rapprochement.
 
 ### B. Anomalies `RAW` obligatoires (pour le tacle de Jojo & la Démo #2)
 1. **Doublons techniques de flux (`SI paiements`) :** ~`3,4 %` d'événements en doublon sur `end_to_end_id` (retries réseau) + présence de statuts rejetés/en attente (`RJCT`, `PDNG` = `8,1 %` des messages).

@@ -422,7 +422,7 @@ export const App: React.FC = () => {
                           title={ws.folderName}
                           className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-[13px] transition-colors cursor-pointer ${
                             isActiveWs
-                              ? 'text-[#111318] font-semibold hover:bg-[#EFEFF3]'
+                              ? 'text-[#111318] font-medium hover:bg-[#EFEFF3]'
                               : 'text-[#3C4043] font-medium hover:bg-[#EFEFF3]'
                           }`}
                         >

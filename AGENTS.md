@@ -18,6 +18,7 @@ Toute modification du générateur de données (`00_data_generator/`) doit prés
   * `~3,4 %` de doublons `end_to_end_id` + `8,1 %` de statuts `RJCT` / `PDNG` dans le flux paiements.
   * `~1,2 %` de dates `00000000` / `99999999` et codes agences non normalisés dans le Mainframe CFONB.
   * `~650` comptes orphelins entre AWS S3 et Mainframe.
+* **Cohérence Mainframe ↔ Paiements :** toute opération réglée (`ACSC`) d'un compte présent dans le Mainframe J-1 existe à l'identique dans `cbk_cfonb_movements` et dans le flux SEPA (même `end_to_end_id`, date et montant ; carte rapprochée par compte/date/montant). Les deux générateurs lisent le journal partagé `00_data_generator/customer_ledger.py` ; contrôle F de `validate_corebanking.py` = `0` écart.
 * **Fuite dépôts à vue (90 j) :** exactement `2 420 000 000,00 €` de virements sortants `ACSC` vers des BIC néobanques/courtiers, dont `68,0 %` chez les `18-32 ans` entre le 1er et le 5 du mois.
 * **Écart PNB CFO :**
   * Requête naïve (`SILVER` sans sémantique `KC`) : **`+42 800 000,00 €`**.
@@ -28,6 +29,8 @@ Toute modification du générateur de données (`00_data_generator/`) doit prés
 * **Python :** Utiliser `uv` pour la gestion des dépendances (`pyproject.toml`). Privilégier `polars`, `pyarrow` et `duckdb` pour la génération et la validation locale rapide.
 * **Scripts & Secrets :** Ne jamais committer de `.env` ni de clés GCP/AWS. Utiliser `.env.example` comme référence.
 * **Orchestration de la génération & du nettoyage (`scripts/`) :** Tout nouveau générateur ajouté dans `00_data_generator/` doit obligatoirement être branché dans [`scripts/generate_all_data.sh`](./scripts/generate_all_data.sh) (qui lance toutes les générations et synchronise vers GCS) et pris en compte par [`scripts/clean_all_data.sh`](./scripts/clean_all_data.sh) (qui nettoie proprement toutes les données générées en local et/ou sur GCS).
+* **Nommage technique en anglais :** Data Products, datasets, tables, colonnes et modèles `dbt` sont toujours nommés en **anglais** (`snake_case`). Les textes destinés au public (UI de démo, descriptions métier, glossaires) restent en français.
+* **Catalogue des Data Products :** le découpage de référence (par domaine métier & usage, jamais par système source) est consigné dans [`02_demo2_silver_dbt_dq/kc_products/data_products_catalog.yaml`](./02_demo2_silver_dbt_dq/kc_products/data_products_catalog.yaml) : 5 SILVER (`dp_customer_360`, `dp_customer_timeline`, `dp_customer_relationship`, `dp_finance_pnb`, `dp_commercial_commitments`) + 2 GOLD (`dp_budget_insight`, `dp_certified_pnb`). Toute création ou renommage de Data Product doit d'abord mettre à jour ce fichier.
 
 ## 4. Spécificités du `Flow 1` (`Démo #1`) & Posture Interactive `AGY` + `DAK`
 Le script conversationnel complet et les skills `Data Agent Kit (DAK)` associés à chaque étape sont consignés dans `docs/DEMO_QUESTIONS_AND_FLOW.md`.
@@ -44,7 +47,7 @@ Organisation de l'interface (`stage_ui` & démo) : **1 Workspace par Démo** (`0
    * **Conversation Étape 4 — *Streaming Temps Réel `Pub/Sub` → `BigQuery` (`100 % Nested STRUCT`) & Sécurité `CLS` (`IBAN` / `PII`)* :**
      * **Outils & Skills `DAK` à mobiliser :** `discover-assets`, `gcp-data-pipelines`, `enforcing-resource-attribution`, `bq-visual-audit`.
      * **Arbitrage #1 (avant création des souscriptions) :** rejeter le `data JSON` opaque par défaut (qui interdit le CLS par sous-champ) au profit de 2 tables **`100 % Nested STRUCT`** documentées (`55/55` chemins dans `COLUMN_FIELD_PATHS`) alimentées sans serveur via `--use-table-schema --drop-unknown-fields --write-metadata` + `sepa-payments-dlq-topic`, tout en préservant en `RAW` le bruit technique (`~3,4 %` retries, `~8,1 %` `RJCT`/`PDNG`) et la file opérationnelle `sepa-payments-alloydb-ops-sub`.
-     * **Arbitrage #2 (après audit PII hybride in-database, zéro donnée brute extraite vers le LLM) :** exposer la découverte des **10 sous-champs `STRUCT` sensibles** (4 `IBAN`, 4 `noms/IP`, et **`25,5 %` de motifs santé/logement RGPD Art. 9** dans `remittance.unstructured_info` comme `CPAM SANTE`), puis faire valider la taxonomie `CLS` à 3 niveaux (`LAST_FOUR_CHARACTERS` sur IBAN, `SHA256` sur noms/IP, `ALWAYS_NULL` sur texte libre).
+     * **Arbitrage #2 (après audit PII hybride in-database, zéro donnée brute extraite vers le LLM) :** exposer la découverte des **10 sous-champs `STRUCT` sensibles** (4 `IBAN`, 4 `noms/IP`, et **`12,9 %` de motifs santé/logement RGPD Art. 9** dans `remittance.unstructured_info` comme `CPAM SANTE`), puis faire valider la taxonomie `CLS` à 3 niveaux (`LAST_FOUR_CHARACTERS` sur IBAN, `SHA256` sur noms/IP, `ALWAYS_NULL` sur texte libre).
    * **Conversation Étape 5 — *Discovery GCS PDF (`Dataplex Cloud Storage Discovery` → `Object Tables`)* :** exposition sans DDL des `250` PDF d'agences et `6` PDF réglementaires CFO (`raw_promo_contracts_pdf`, `raw_cfo_regulatory_pdf`).
    * **Conversation Étape 6 — *Init `dbt` (`dbt-bigquery`) & Doc technique `Knowledge Catalog` (`curate-context`)* :** génération de `dbt_project.yml` et `_raw_sources.yml`.
 2. **Règle d'or sur scène (ne jamais décider en silence + module interactif `AskQuestionTray`) :**

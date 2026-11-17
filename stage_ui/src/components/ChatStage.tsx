@@ -590,25 +590,22 @@ const VoiceSparkleIcon: React.FC = () => (
   </svg>
 );
 
+/** The question tray shows plain text only: no bold, no inline code chips. */
+const stripInlineMarkup = (text: string): string => text.replace(/\*\*/g, '').replace(/`/g, '');
+
 const AskQuestionGlyph: React.FC = () => (
-  <span className="relative inline-flex items-center justify-center w-5 h-5 shrink-0 text-[#5F6368]">
-    <svg viewBox="0 0 20 20" fill="none" className="w-[18px] h-[18px]">
-      <path
-        d="M14.8 4.2A7.5 7.5 0 1 0 17.5 10"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-      <path
-        d="M8.35 8.1a1.75 1.75 0 1 1 2.55 1.55c-.55.3-.9.72-.9 1.35v.2"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-      <circle cx="10" cy="13.8" r="0.85" fill="currentColor" />
-    </svg>
-    <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-[#1A73E8]" />
-  </span>
+  <svg viewBox="0 0 20 20" fill="none" className="w-[19px] h-[19px] shrink-0 text-[#5F6368]">
+    <circle cx="9.5" cy="10.5" r="7.4" stroke="currentColor" strokeWidth="1.35" />
+    <path
+      d="M7.5 8.7a2.05 2.05 0 1 1 3.1 1.75c-.65.4-1.05.85-1.05 1.6"
+      stroke="currentColor"
+      strokeWidth="1.35"
+      strokeLinecap="round"
+    />
+    <circle cx="9.55" cy="14.1" r="0.8" fill="currentColor" />
+    <circle cx="16.1" cy="3.9" r="3.3" fill="#FFFFFF" />
+    <circle cx="16.1" cy="3.9" r="2.1" fill="#1A73E8" />
+  </svg>
 );
 
 /**
@@ -647,17 +644,19 @@ const AskQuestionTray: React.FC<{
   const otherOptionIdx = q.options.length;
   const chosenIdx = selectedChoices[q.id] ?? 0;
   const otherVal = otherTexts[q.id] ?? '';
+  // Rows stay visually neutral (as in the original) until the speaker explicitly picks one.
+  const hasExplicitChoice = selectedChoices[q.id] !== undefined;
 
   return (
-    <div className="mb-3 rounded-[24px] bg-white px-5 py-4 shadow-[0_4px_24px_rgba(15,23,42,0.07)] animate-fade-slide-up select-none">
-      {/* Header Row: Question Icon + Bold Question Title + Pagination / Collapse / Close */}
+    <div className="mb-2.5 rounded-[22px] bg-white px-4 pt-3.5 pb-2.5 shadow-[0_1px_3px_rgba(15,23,42,0.07),0_6px_20px_rgba(15,23,42,0.05)] animate-fade-slide-up select-none">
+      {/* Header Row: Question Icon + Question Title + Pagination / Collapse / Close */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-2.5 min-w-0">
-          <div className="mt-0.5">
+          <div className="mt-[1px]">
             <AskQuestionGlyph />
           </div>
-          <div className="text-[15px] font-semibold text-[#111318] leading-snug">
-            {renderAntigravityInlineText(q.question)}
+          <div className="text-[15px] font-medium text-[#111318] leading-snug">
+            {stripInlineMarkup(q.question)}
           </div>
         </div>
 
@@ -673,7 +672,7 @@ const AskQuestionTray: React.FC<{
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
               </button>
-              <span className="text-[13px] font-medium text-[#3C4043] tabular-nums">
+              <span className="text-[14px] font-normal text-[#3C4043] tabular-nums">
                 {safeIdx + 1}/{questions.length}
               </span>
               <button
@@ -712,33 +711,23 @@ const AskQuestionTray: React.FC<{
 
       {/* Options Body */}
       {!collapsed && (
-        <div className="mt-3 space-y-1">
+        <div className="mt-2.5 -mx-1.5">
           {q.options.map((optText, oIdx) => {
-            const isSelected = chosenIdx === oIdx;
+            const isSelected = hasExplicitChoice && chosenIdx === oIdx;
             return (
               <button
                 key={oIdx}
                 type="button"
                 onClick={() => onSelectChoice(q.id, oIdx)}
-                className={`w-full flex items-center gap-3 px-2.5 py-2 rounded-xl text-left transition-colors cursor-pointer ${
-                  isSelected ? 'bg-[#F1F3F5]' : 'hover:bg-[#F8F9FA]'
+                className={`w-full flex items-center gap-3 px-1.5 py-[7px] rounded-lg text-left transition-colors cursor-pointer ${
+                  isSelected ? 'bg-[#F1F3F5]' : 'hover:bg-[#F6F7F9]'
                 }`}
               >
-                <span
-                  className={`w-5 h-5 rounded-[6px] text-[12px] font-semibold flex items-center justify-center shrink-0 transition-colors ${
-                    isSelected
-                      ? 'bg-[#202124] text-white'
-                      : 'bg-[#F1F3F5] text-[#5F6368]'
-                  }`}
-                >
+                <span className="w-[19px] h-[19px] rounded-[5px] bg-[#F1F3F5] text-[12px] font-medium text-[#3C4043] flex items-center justify-center shrink-0">
                   {oIdx + 1}
                 </span>
-                <span
-                  className={`text-[14.5px] leading-snug ${
-                    isSelected ? 'text-[#111318] font-medium' : 'text-[#202124]'
-                  }`}
-                >
-                  {renderAntigravityInlineText(optText)}
+                <span className="text-[15px] font-normal text-[#3C4043] leading-snug">
+                  {stripInlineMarkup(optText)}
                 </span>
               </button>
             );
@@ -747,18 +736,10 @@ const AskQuestionTray: React.FC<{
           {/* Bottom Row: Option N+1 "Other (write your answer)" + Mic / Skip / Continue ↵ */}
           <div
             onClick={() => onSelectChoice(q.id, otherOptionIdx)}
-            className={`flex items-center justify-between gap-3 px-2.5 py-1.5 rounded-xl transition-colors ${
-              chosenIdx === otherOptionIdx ? 'bg-[#F1F3F5]' : 'hover:bg-[#F8F9FA]'
-            }`}
+            className="flex items-center justify-between gap-3 px-1.5 py-[3px] rounded-lg"
           >
             <div className="flex items-center gap-3 flex-1 min-w-0">
-              <span
-                className={`w-5 h-5 rounded-[6px] text-[12px] font-semibold flex items-center justify-center shrink-0 transition-colors ${
-                  chosenIdx === otherOptionIdx
-                    ? 'bg-[#202124] text-white'
-                    : 'bg-[#F1F3F5] text-[#5F6368]'
-                }`}
-              >
+              <span className="w-[19px] h-[19px] rounded-[5px] bg-[#F1F3F5] text-[12px] font-medium text-[#3C4043] flex items-center justify-center shrink-0">
                 {otherOptionIdx + 1}
               </span>
               <input
@@ -776,26 +757,26 @@ const AskQuestionTray: React.FC<{
                   }
                 }}
                 placeholder="Other (write your answer)"
-                className="w-full bg-transparent text-[14.5px] text-[#202124] placeholder:text-[#70757A] focus:outline-none"
+                className="w-full bg-transparent text-[15px] font-normal text-[#3C4043] placeholder:text-[#80868B] focus:outline-none"
               />
             </div>
 
             <div
               onClick={(e) => e.stopPropagation()}
-              className="flex items-center gap-2.5 shrink-0"
+              className="flex items-center gap-3 shrink-0"
             >
               <button
                 type="button"
-                className="w-7 h-7 rounded-full hover:bg-[#EAEEF3] flex items-center justify-center text-[#5F6368] cursor-pointer"
+                className="w-7 h-7 rounded-full hover:bg-[#F1F3F5] flex items-center justify-center text-[#3C4043] cursor-pointer"
                 title="Dictée vocale"
               >
-                <Mic className="w-3.5 h-3.5" />
+                <Mic className="w-4 h-4" strokeWidth={1.75} />
               </button>
 
               <button
                 type="button"
                 onClick={onSkip}
-                className="px-2 py-1 rounded-lg hover:bg-[#EAEEF3] text-[13.5px] font-medium text-[#5F6368] hover:text-[#111318] transition-colors cursor-pointer"
+                className="px-2 py-1 rounded-lg hover:bg-[#F1F3F5] text-[15px] font-normal text-[#5F6368] transition-colors cursor-pointer"
               >
                 Skip
               </button>
@@ -803,10 +784,10 @@ const AskQuestionTray: React.FC<{
               <button
                 type="button"
                 onClick={onContinue}
-                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-[#8AB4F8] hover:bg-[#669DF6] text-white text-[13.5px] font-medium transition-colors cursor-pointer"
+                className="inline-flex items-center gap-2 pl-3.5 pr-3 py-[5px] rounded-full bg-[#A3C1EE] hover:bg-[#8FB3EA] text-white text-[15px] font-medium transition-colors cursor-pointer"
               >
                 <span>Continue</span>
-                <CornerDownLeft className="w-3.5 h-3.5" />
+                <CornerDownLeft className="w-3.5 h-3.5" strokeWidth={2} />
               </button>
             </div>
           </div>

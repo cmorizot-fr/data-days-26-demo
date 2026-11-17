@@ -25,7 +25,7 @@ workspaces:
     conversations:
       - id: d1-step1
         demoId: demo1
-        shortName: 1. Transfert Mainframe → GCS RAW
+        shortName: 1. Récupérer les données mainframe
         conversationTitle: Transfert Mainframe du mois passé vers GCS RAW
         projectFolder: 01_demo1_raw_aggregation
         gitBranch: main
@@ -207,7 +207,7 @@ workspaces:
                 duration: 1.8s
       - id: d1-step2
         demoId: demo1
-        shortName: 2. Parsing Spark Serverless → BigLake Iceberg
+        shortName: 2. Chargement et nettoyage mainframe
         conversationTitle: Décodage Mainframe via Dataproc Serverless Spark & Documentation BigLake Iceberg
         projectFolder: 01_demo1_raw_aggregation
         gitBranch: main
@@ -723,7 +723,7 @@ workspaces:
                   - "Replay complet en une commande : ./scripts/run_demo1_mainframe_spark_iceberg.sh"
       - id: d1-step3
         demoId: demo1
-        shortName: 3. Borderless Lakehouse AWS & Glue
+        shortName: 3. Connecter aux données CRM (AWS)
         conversationTitle: Fédération Borderless Lakehouse AWS S3 & Catalogue Glue
         projectFolder: 01_demo1_raw_aggregation
         gitBranch: main
@@ -777,7 +777,7 @@ workspaces:
             backgroundTasks: []
       - id: d1-step-pubsub
         demoId: demo1
-        shortName: 4. Streaming Pub/Sub → BQ & CLS
+        shortName: 4. Intégrer les données de paiement
         conversationTitle: Intégration Temps Réel Pub/Sub 100 % Nested vers BigQuery & Sécurité CLS (IBAN / PII)
         projectFolder: 01_demo1_raw_aggregation
         gitBranch: main
@@ -883,7 +883,7 @@ workspaces:
             prompt: "Oui sur les 3 points : pré-crée et documente les 2 tables en 100 % Nested STRUCT avec --use-table-schema + --write-metadata, conserve le flux brut RAW avec la DLQ sepa-payments-dlq-topic, et préserve sepa-payments-alloydb-ops-sub."
             workedDurationLabel: Worked for 6s
             workGroupSummary: Created documented Nested STRUCT tables, wired BigQuery Subscriptions & ran bq-visual-audit
-            intermediateMessage: Déploiement de `02_create_documented_pubsub_nested_tables.sql` (`55` chemins `STRUCT` documentés), création des 2 BigQuery Subscriptions `--use-table-schema` et contrôle visuel post-injection (`502` paiements + `32` ajouts IBAN).
+            intermediateMessage: Déploiement de `02_create_documented_pubsub_nested_tables.sql` (`55` chemins `STRUCT` documentés), création des 2 BigQuery Subscriptions `--use-table-schema` et contrôle visuel post-injection (`503` paiements + `79` ajouts IBAN).
             taskFinishedLabel: Serverless Pub/Sub → BigQuery Nested STRUCT streaming active (0 DLQ)
             leadConfirmation: "Les 2 souscriptions BigQuery sans serveur (`sepa-payments-bq-historization-sub` et `iban-beneficiary-bq-historization-sub`) alimentent désormais en continu les tables `100 % Nested STRUCT` dans"
             leadLink:
@@ -906,54 +906,54 @@ workspaces:
                   - kind: bq
                     label: raw_iban_events_pubsub_stream
                 bullets:
-                  - "`502` paiements et `32` ajouts IBAN ingérés en `< 1 s` avec **`0` message en DLQ**, incluant les événements Jour J du témoin **Lucas Martin (`CUST00002026`)** (`STRMFLIX 19,99 €` + `CPAM +42,00 €`), `18` retries doublons (`3,6 %`) et `38` `RJCT`/`PDNG` (`7,6 %`)."
+                  - "`503` paiements et `79` ajouts IBAN ingérés en `< 1 s` avec **`0` message en DLQ**, incluant les achats Jour J du témoin **Lucas Martin (`CUST00002026`)** (`CB BOULANGERIE 6,80 €` + `CB PHARMACIE 12,40 €`), `14` retries doublons (`2,8 %`) et `21` `RJCT`/`PDNG` (`4,2 %`)."
             visualCheck:
               skillBadge: bq-visual-audit · MCP render_chart
               title: "Contrôle visuel post-création · Pub/Sub → BigQuery Nested STRUCT (raw_bank)"
               subtitle: "Souscriptions sans serveur --use-table-schema + --write-metadata — 0 message rejeté en DLQ"
               kpis:
                 - label: Paiements pacs.008
-                  value: "502"
-                  sublabel: "447 ACSC · 0 DLQ"
+                  value: "503"
+                  sublabel: "469 ACSC · 0 DLQ"
                   tone: positive
                 - label: Enrôlements IBAN
-                  value: "32"
-                  sublabel: "31 nominaux · 1 retry"
+                  value: "79"
+                  sublabel: "76 nominaux · 3 retries"
                   tone: blue
                 - label: Chemins STRUCT doc.
                   value: "55 / 55"
                   sublabel: "100 % COLUMN_FIELD_PATHS"
                   tone: positive
                 - label: Bruit RAW conservé
-                  value: "3,6 % · 7,6 %"
-                  sublabel: "18 retries · 38 RJCT/PDNG"
+                  value: "2,8 % · 4,2 %"
+                  sublabel: "14 retries · 21 RJCT/PDNG"
                   tone: warning
               chartTitle: "Répartition temps réel par schéma de paiement ISO 20022 (raw_sepa_payments_pubsub_stream)"
               bars:
                 - label: "SCT_INST (+ INBOUND)"
                   sublabel: "settlement.settlement_method = CLRG_RT1_INST (< 10s)"
-                  valueLabel: "227 évts · 171 128 €"
+                  valueLabel: "222 évts · 423 674 €"
                   pct: 100
                   tone: blue
-                  badge: "208 ACSC · 19 RJCT/PDNG"
+                  badge: "216 ACSC · 6 RJCT/PDNG"
                 - label: "CARD_CONTACTLESS"
                   sublabel: "Paiements proximité sans contact"
-                  valueLabel: "122 évts · 5 423 €"
-                  pct: 54
+                  valueLabel: "122 évts · 8 666 €"
+                  pct: 55
                   tone: positive
-                  badge: "111 ACSC · 11 RJCT/PDNG"
+                  badge: "117 ACSC · 5 RJCT/PDNG"
                 - label: "SEPA_SDD"
                   sublabel: "Prélèvements récurrents (dont STRMFLIX 19,99 €)"
-                  valueLabel: "106 évts · 4 976 €"
-                  pct: 47
+                  valueLabel: "125 évts · 41 373 €"
+                  pct: 56
                   tone: positive
-                  badge: "100 ACSC · 6 RJCT/PDNG"
+                  badge: "116 ACSC · 9 RJCT/PDNG"
                 - label: "CARD_ECOMMERCE"
                   sublabel: "Paiements carte e-commerce 3DS"
-                  valueLabel: "47 évts · 4 110 €"
-                  pct: 21
+                  valueLabel: "34 évts · 4 222 €"
+                  pct: 15
                   tone: neutral
-                  badge: "45 ACSC · 2 RJCT/PDNG"
+                  badge: "33 ACSC · 1 RJCT/PDNG"
               footerNote: "Les 10 sous-champs sensibles imbriqués (debtor.iban, creditor.iban, debtor.full_name, remittance.unstructured_info...) sont désormais adressables individuellement en SQL pour l'audit PII et le Column-Level Security."
             traces:
               - id: d1-sp-tr5
@@ -1001,7 +1001,7 @@ workspaces:
                 cwd: 01_demo1_raw_aggregation
                 command: bq query --use_legacy_sql=false --label datacloud:antigravity "SELECT COUNT(*) AS pay_rows, COUNTIF(settlement.retry_attempt > 0) AS retries FROM raw_bank.raw_sepa_payments_pubsub_stream"
                 output:
-                  - "| pay_rows: 502 | clean_acsc: 447 | rjct_pdng: 38 | dup_retries: 18 | iban_rows: 32 | documented_paths: 55/55 |"
+                  - "| pay_rows: 503 | clean_acsc: 469 | rjct_pdng: 21 | dup_retries: 14 | iban_rows: 79 | documented_paths: 55/55 |"
             filesChanged:
               - path: 01_demo1_raw_aggregation/sql/02_create_documented_pubsub_nested_tables.sql
                 language: sql
@@ -1035,7 +1035,7 @@ workspaces:
               - $ ./scripts/setup_pubsub_queues.sh --recreate-schema
               - Created raw_sepa_payments_pubsub_stream & raw_iban_events_pubsub_stream (55/55 documented STRUCT paths)
               - $ uv run python 00_data_generator/stream_payments_pubsub.py --burst 500 --witness-live
-              - Ingested 502 payment rows + 32 IBAN enrollment rows (0 DLQ)
+              - Ingested 503 payment rows + 79 IBAN enrollment rows (0 DLQ)
             subagents: []
             backgroundTasks: []
           - id: d1-sp-t3
@@ -1054,12 +1054,12 @@ workspaces:
                     label: 03_audit_pii_nested_pubsub.sql
                 bullets:
                   - "`debtor.iban` et `creditor.iban` (`raw_sepa_payments_pubsub_stream`), ainsi que `account_holder.debtor_iban` et `beneficiary.iban` (`raw_iban_events_pubsub_stream`)."
-              - title: "2. Identités civiles & empreinte réseau (`4` chemins `STRUCT` · `28,9 %` à `100,0 %`)"
+              - title: "2. Identités civiles & empreinte réseau (`4` chemins `STRUCT` · `28,4 %` à `100,0 %`)"
                 bullets:
-                  - "`debtor.full_name` (`100 %`), `creditor.name` (`28,9 %` de personnes physiques lors des virements vers néobanques), `account_holder.full_name` (`100 %`) et l'adresse IPv4 `security_context.device_ip` (`100 %`)."
+                  - "`debtor.full_name` (`100 %`), `creditor.name` (`28,4 %` de personnes physiques lors des virements vers néobanques), `account_holder.full_name` (`100 %`) et l'adresse IPv4 `security_context.device_ip` (`100 %`)."
               - title: "3. Données critiques cachées en texte libre (`2` chemins `STRUCT` · RGPD Art. 9)"
                 bullets:
-                  - "`remittance.unstructured_info` contient **`25,5 %` de motifs sensibles santé ou logement** (ex. remboursement `CPAM SANTE` du client témoin), et `beneficiary.custom_label` expose à `100 %` le nom personnel saisi dans l'application mobile."
+                  - "`remittance.unstructured_info` contient **`12,9 %` de motifs sensibles santé ou logement** (`CPAM`, `MUTUELLE`, `PHARMACIE`, `LOYER`), comme le remboursement `CPAM SANTE` du client témoin dans son historique, et `beneficiary.custom_label` expose à `100 %` le nom personnel saisi dans l'application mobile."
             askQuestions:
               - id: d1-sp-q4-scope
                 question: Quel périmètre de sous-champs `STRUCT` veux-tu placer sous protection Column-Level Security (CLS) ?
@@ -1097,8 +1097,8 @@ workspaces:
                   - "| raw_sepa_payments_pubsub_stream | debtor.iban                  | IBAN_CODE (DLP Deterministic)           |     100.0 | HIGH_FINANCIAL_PII    |"
                   - "| raw_sepa_payments_pubsub_stream | creditor.iban                | IBAN_CODE (DLP Deterministic)           |     100.0 | HIGH_FINANCIAL_PII    |"
                   - "| raw_sepa_payments_pubsub_stream | debtor.full_name             | PERSON_NAME (Direct Identifier)         |     100.0 | HIGH_DIRECT_PII       |"
-                  - "| raw_sepa_payments_pubsub_stream | creditor.name                | PERSON_OR_MERCHANT_NAME (Contextual)    |      28.9 | HIGH_DIRECT_PII       |"
-                  - "| raw_sepa_payments_pubsub_stream | remittance.unstructured_info | MEDICAL_AND_HOUSING_FREETEXT (Semantic) |      25.5 | CRITICAL_ART9_GDPR    |"
+                  - "| raw_sepa_payments_pubsub_stream | creditor.name                | PERSON_OR_MERCHANT_NAME (Contextual)    |      28.4 | HIGH_DIRECT_PII       |"
+                  - "| raw_sepa_payments_pubsub_stream | remittance.unstructured_info | MEDICAL_AND_HOUSING_FREETEXT (Semantic) |      12.9 | CRITICAL_ART9_GDPR    |"
                   - "| raw_iban_events_pubsub_stream   | account_holder.debtor_iban   | IBAN_CODE (DLP Deterministic)           |     100.0 | HIGH_FINANCIAL_PII    |"
                   - "| raw_iban_events_pubsub_stream   | beneficiary.iban             | IBAN_CODE (DLP Deterministic)           |     100.0 | HIGH_FINANCIAL_PII    |"
                   - "| raw_iban_events_pubsub_stream   | account_holder.full_name     | PERSON_NAME (Direct Identifier)         |     100.0 | HIGH_DIRECT_PII       |"
@@ -1125,7 +1125,7 @@ workspaces:
                   SELECT * FROM payments_profile;
             terminalLogs:
               - $ bq query --label datacloud:antigravity < 01_demo1_raw_aggregation/sql/03_audit_pii_nested_pubsub.sql
-              - Detected 10 PII leaf fields across 2 nested STRUCT tables (incl. 25.5% CRITICAL_ART9_GDPR in remittance.unstructured_info)
+              - Detected 10 PII leaf fields across 2 nested STRUCT tables (incl. 12.9% CRITICAL_ART9_GDPR in remittance.unstructured_info)
             subagents:
               - id: sa-d1-pii
                 role: Privacy & DLP Governance Auditor
@@ -1244,13 +1244,13 @@ workspaces:
                 commandSummary: verify dynamic CLS masking as Data Analyst on witness CUST00002026
                 durationMs: 650
                 cwd: 01_demo1_raw_aggregation
-                command: bq query --use_legacy_sql=false --label datacloud:antigravity "SELECT header.end_to_end_id, settlement.tx_status, instructed_amount.amount_eur, debtor.iban, SUBSTR(TO_HEX(debtor.full_name), 1, 12) AS name_hash, creditor.agent_bic, remittance.unstructured_info FROM raw_bank.raw_sepa_payments_pubsub_stream WHERE debtor.customer_id = 'CUST00002026'"
+                command: bq query --use_legacy_sql=false --label datacloud:antigravity "SELECT header.end_to_end_id, settlement.tx_status, instructed_amount.amount_eur, debtor.iban, SUBSTR(TO_HEX(debtor.full_name), 1, 12) AS name_hash, creditor.agent_bic, remittance.unstructured_info FROM raw_bank.raw_sepa_payments_unified WHERE debtor.customer_id = 'CUST00002026' AND header.end_to_end_id IN ('E2EWIT0000071', 'E2EWIT0000072')"
                 output:
                   - "+------------------------+-----------+------------+-----------------------------+--------------+-------------+---------------------+"
                   - "|     end_to_end_id      | tx_status | amount_eur |            iban             |  name_hash   |  agent_bic  |  unstructured_info  |"
                   - "+------------------------+-----------+------------+-----------------------------+--------------+-------------+---------------------+"
-                  - "| E2EWIT20261113CPAM42   | ACSC      |      42.00 | ***********************2623 | 9f84c2e10b4a | HEXAFRLPXXX | NULL                |"
-                  - "| E2EWIT20261113STRMFLIX | ACSC      |      19.99 | ***********************2623 | 9f84c2e10b4a | BOFAIE3XXXX | NULL                |"
+                  - "| E2EWIT0000072          | ACSC      |      42.00 | ***********************2623 | 9f84c2e10b4a | CPAMIDF7500 | NULL                |"
+                  - "| E2EWIT0000071          | ACSC      |      19.99 | ***********************2623 | 9f84c2e10b4a | STRMFLIXEUR | NULL                |"
                   - "+------------------------+-----------+------------+-----------------------------+--------------+-------------+---------------------+"
             filesChanged:
               - path: scripts/apply_pubsub_cls_policy_tags.py
@@ -1283,7 +1283,7 @@ workspaces:
             backgroundTasks: []
       - id: d1-step-pdf-discovery
         demoId: demo1
-        shortName: 5. Discovery GCS PDF → Object Tables
+        shortName: 5. Indexer les contrats PDF des agences
         conversationTitle: Découverte automatique des PDF via Dataplex Cloud Storage Discovery
         projectFolder: 01_demo1_raw_aggregation
         gitBranch: main
@@ -1653,7 +1653,7 @@ workspaces:
                   - "6 normes prudentielles (seuil ILAAP 2,00 Md€, plafond 9,00 M€, ACPR 2024-R-01) prêtes pour le CFO (Demo 3 & 4)."
       - id: d1-step4
         demoId: demo1
-        shortName: 6. Init dbt & Doc Knowledge Catalog
+        shortName: 6. Cataloguer les sources pour l'équipe Data
         conversationTitle: Initialisation dbt staging & Documentation Knowledge Catalog
         projectFolder: 01_demo1_raw_aggregation
         gitBranch: main
@@ -1864,18 +1864,378 @@ workspaces:
     workspaceLabel: Demo 2 · SILVER & Data Quality
     folderName: 02_demo2_silver_dbt_dq
     conversations:
-      - id: d2-step1
+      - id: d2-step0
         demoId: demo2
-        shortName: 1. Scan Auto Data Quality RAW
-        conversationTitle: Audit Auto Data Quality sur la couche RAW
+        shortName: 1. Concevoir les data products
+        conversationTitle: Revue du découpage des Data Products avant la couche SILVER
         projectFolder: 02_demo2_silver_dbt_dq
         gitBranch: feat/silver-data-products
         greetingName: Clément
         modelLabel: Gemini 4 - Carbon
         turns:
+          - id: d2-t0
+            chipLabel: 1. Revoir le découpage des Data Products
+            prompt: Avant de construire la couche SILVER, revois tous les Data Products. On veut résumer la vie du client et ses mouvements pour faire du Budget Insight (plus ou moins temps réel), tout en servant l'agent CFO.
+            workedDurationLabel: Worked for 5s
+            workGroupSummary: Explored raw_bank, compared candidate designs & wrote the Data Products catalog
+            intermediateMessage: Inventaire des `17` actifs de `raw_bank`, lecture du scénario des 4 démos et comparaison des découpages possibles (par système source vs par domaine métier & usage).
+            taskFinishedLabel: Data Products catalog designed (5 SILVER + 2 GOLD)
+            leadConfirmation: Le nouveau découpage est validé et consigné dans `02_demo2_silver_dbt_dq/kc_products/data_products_catalog.yaml` (5 Data Products `SILVER` + 2 `GOLD`, noms techniques en anglais).
+            sectionHeading: "Ce qui a été revu et décidé :"
+            askQuestions:
+              - id: d2-q0-split
+                question: "Les 5 Data Products prévus sont découpés par système source (paiements SEPA d'un côté, comptes de l'autre) : la vie du client est éclatée et rien ne prépare le Budget Insight. Quel découpage retenir ?"
+                options:
+                  - "(Recommended) Par domaine métier & usage : 5 SILVER (client 360, vie du client, relation client, finance PNB, engagements commerciaux) + 2 GOLD (Budget Insight, PNB certifié)"
+                  - Garder les 5 Data Products actuels, découpés par système source
+                  - Un seul grand Data Product client regroupant tout
+              - id: d2-q0-naming
+                question: "Dans quelle langue nommer les Data Products, tables et colonnes ?"
+                options:
+                  - "(Recommended) Anglais (snake_case), comme les tables RAW — textes métier et UI en français"
+                  - Français (dp_vie_client, dp_client_360…)
+              - id: d2-q0-freshness
+                question: "Comment obtenir un Budget Insight « plus ou moins temps réel » ?"
+                options:
+                  - "(Recommended) dbt planifié dans BigQuery (RAW → SILVER → GOLD) + ajustement à chaque paiement dans AlloyDB (< 15 ms)"
+                  - Vue BigQuery « historique + flux du jour » recalculée à chaque lecture
+                  - Tout calculer dans AlloyDB
+            items:
+              - title: Constat sur les 5 Data Products prévus
+                chips:
+                  - kind: bq
+                    label: raw_bank
+                bullets:
+                  - "Découpage par système source : `dp_payment_flows` ne contient que les virements SEPA, alors que la vie du client, c'est aussi la carte, les prélèvements, le salaire et l'épargne."
+                  - "Le client est éclaté entre deux produits (`dp_accounts_balances`, `dp_customers_interactions`) et aucun produit ne prépare le Budget Insight de la Démo 4."
+              - title: Nouveau catalogue — 5 Data Products SILVER
+                chips:
+                  - kind: yml
+                    label: data_products_catalog.yaml
+                  - kind: kc
+                    label: Knowledge Catalog
+                bullets:
+                  - "`dp_customer_360` (`customers`, `accounts`) · `dp_customer_timeline` (`customer_movements`, `beneficiaries`) · `dp_customer_relationship` (`interactions`) · `dp_finance_pnb` (`gl_entries`) · `dp_commercial_commitments` (`promo_contracts`)."
+                  - "Un produit = un propriétaire métier, une promesse de fraîcheur et un contrat testé dans `schema.yml` (ex. fuite néobanques 90 j = `2 420 000 000,00 €` dans `dp_customer_timeline`)."
+              - title: 2 Data Products GOLD & architecture de fraîcheur
+                chips:
+                  - kind: bq
+                    label: gold_bank
+                bullets:
+                  - "`dp_budget_insight` (prévision de fin de mois par client, Démo 4) et `dp_certified_pnb` (écart PNB certifié `-38,42 M€`, Démo 3)."
+                  - "`dbt` industrialise et gouverne RAW → SILVER → GOLD dans BigQuery ; le temps réel ne passe pas par `dbt` : AlloyDB reçoit la prévision du jour (`80 000` lignes) et l'ajuste à chaque paiement Pub/Sub."
+            traces:
+              - id: d2-tr0a
+                action: analyzed
+                icon: md
+                fileName: DESIGN_AND_CONTEXT.md
+                lineRange: "#L96-L145"
+                durationMs: 400
+              - id: d2-tr0b
+                action: ran
+                commandSummary: inventory raw_bank assets, volumes & cross-silo keys
+                durationMs: 650
+                cwd: 02_demo2_silver_dbt_dq
+                command: bq query --use_legacy_sql=false --label datacloud:antigravity "SELECT table_name, table_type FROM raw_bank.INFORMATION_SCHEMA.TABLES"
+                output:
+                  - "17 assets in data-days-demo.raw_bank (4 Managed Iceberg, 4 AWS Iceberg, 2 streams, 1 SAP GL load, 2 unified views, 2 PDF views)"
+                  - "cbk_cfonb_movements: 5,500,000 rows | raw_sepa_payments_unified: 6,200,503 rows | aws_crm_customers: 80,000 rows"
+              - id: d2-tr0c
+                action: analyzed
+                icon: yml
+                fileName: _raw_sources.yml
+                lineRange: "#L1-40"
+                durationMs: 350
+              - id: d2-tr0d
+                action: edited
+                icon: yml
+                fileName: data_products_catalog.yaml
+                added: 96
+                removed: 0
+                durationMs: 550
+              - id: d2-tr0e
+                action: edited
+                icon: md
+                fileName: AGENTS.md
+                added: 2
+                removed: 0
+                durationMs: 350
+            filesChanged:
+              - path: 02_demo2_silver_dbt_dq/kc_products/data_products_catalog.yaml
+                language: yaml
+                badge: YML
+                added: 96
+                removed: 0
+                content: |-
+                  domain: retail_banking_france
+                  data_products:
+                    # SILVER — données propres & réutilisables
+                    - id: dp_customer_360
+                      tables: [customers, accounts]
+                      owner: retail_network_marketing
+                      freshness: daily (J-1)
+                    - id: dp_customer_timeline
+                      tables: [customer_movements, beneficiaries]
+                      owner: payments
+                      freshness: daily + intraday via AlloyDB
+                    - id: dp_customer_relationship
+                      tables: [interactions]
+                      owner: retail_network_call_center
+                    - id: dp_finance_pnb
+                      tables: [gl_entries]
+                      owner: cfo_finance
+                    - id: dp_commercial_commitments
+                      tables: [promo_contracts]
+                      owner: management_control
+                    # GOLD — réponses à une question précise
+                    - id: dp_budget_insight
+                      tables: [customer_mobile_insights]
+                      consumers: [mobile_app, adk_agents]
+                    - id: dp_certified_pnb
+                      tables: [v_cfo_certified_pnb_variance]
+                      consumers: [cfo, executive_committee]
+            terminalLogs:
+              - $ bq query "SELECT table_name, table_type FROM raw_bank.INFORMATION_SCHEMA.TABLES"
+              - 17 assets inventoried in data-days-demo.raw_bank
+              - "Design decision: split by business domain & usage -> 5 SILVER + 2 GOLD Data Products"
+              - Wrote kc_products/data_products_catalog.yaml (naming convention: English snake_case)
+            subagents:
+              - id: sa-d2-0
+                role: Data Product Architect
+                skill: discover-assets
+                status: completed
+            backgroundTasks: []
+            artifact:
+              id: art-d2-0
+              title: Catalogue cible des Data Products
+              subtitle: Découpage par domaine métier & usage · Demo 2
+              markdownSummary:
+                heading: 5 Data Products SILVER + 2 GOLD
+                metrics:
+                  - label: SILVER
+                    value: 5 Data Products
+                    tone: positive
+                  - label: GOLD
+                    value: 2 Data Products
+                    tone: positive
+                  - label: Nommage
+                    value: Anglais (snake_case)
+                    tone: neutral
+                bullets:
+                  - "dp_customer_360, dp_customer_timeline, dp_customer_relationship, dp_finance_pnb, dp_commercial_commitments."
+                  - "dp_budget_insight (Démo 4) et dp_certified_pnb (Démo 3) s'appuient sur ces produits SILVER."
+                  - "dbt planifié dans BigQuery ; ajustement temps réel du Budget Insight dans AlloyDB."
+      - id: d2-step1
+        demoId: demo2
+        shortName: 2. Diagnostiquer la qualité des données
+        conversationTitle: Règles de Data Quality & audit Auto Data Quality sur la couche RAW
+        projectFolder: 02_demo2_silver_dbt_dq
+        gitBranch: feat/silver-data-products
+        greetingName: Clément
+        modelLabel: Gemini 4 - Carbon
+        turns:
+          - id: d2-t1a
+            chipLabel: 1. Définir les règles de qualité à mettre en œuvre
+            prompt: Maintenant que les Data Products sont définis, quelles règles de Data Quality doit-on mettre en œuvre ? Et surtout, comment l'Agentic Data Cloud m'aide-t-il à les trouver sans les écrire une par une à la main ?
+            workedDurationLabel: Worked for 6s
+            workGroupSummary: Profiled raw_bank with Dataplex, generated rule recommendations & matched them with Knowledge Catalog contracts
+            intermediateMessage: Profilage Dataplex des `13,2 M` de lignes de `raw_bank`, génération des recommandations de règles Auto Data Quality et rapprochement avec les contrats des 5 Data Products dans Knowledge Catalog.
+            taskFinishedLabel: 31 Data Quality rules discovered from 4 sources & mapped to the 5 Data Products
+            leadConfirmation: "`31` règles de qualité ont été trouvées automatiquement à partir de 4 sources et rangées par Data Product dans `02_demo2_silver_dbt_dq/dq_scans/dq_rules_catalog.yaml`. Il reste 3 arbitrages à valider."
+            sectionHeading: "Comment l'Agentic Data Cloud a trouvé les règles :"
+            askQuestions:
+              - id: d2-q1a-where
+                question: "Où appliquer ces 31 règles ?"
+                options:
+                  - "(Recommended) Dataplex Auto Data Quality sur RAW pour surveiller et alerter à la source + tests dbt sur SILVER pour bloquer la publication d'un Data Product non conforme"
+                  - Uniquement des tests dbt sur SILVER
+                  - Uniquement des scans Dataplex Auto Data Quality
+              - id: d2-q1a-anomalies
+                question: "Que faire des lignes en anomalie ?"
+                options:
+                  - "(Recommended) Corriger quand c'est sûr (date de valeur -> date comptable, code agence -> LPAD), signaler sinon ; ne retirer que les doublons techniques et les paiements non réglés"
+                  - Isoler toutes les lignes en anomalie dans une table de quarantaine
+                  - Bloquer tout le chargement à la première anomalie
+              - id: d2-q1a-thresholds
+                question: "Quels seuils d'alerte sur la couche RAW ?"
+                options:
+                  - "(Recommended) Seuils calés sur le profil actuel (doublons <= 3,5 %, dates invalides <= 1,3 %, statuts non réglés <= 8,5 %) : alerte en cas de dérive"
+                  - Zéro tolérance sur toutes les règles
+                  - Pas de seuil, simple suivi
+            items:
+              - title: "1. Le profil Dataplex révèle les anomalies de forme"
+                chips:
+                  - kind: bq
+                    label: raw_bank
+                bullets:
+                  - "Le scan de profilage mesure, colonne par colonne, les taux de NULL, les valeurs distinctes, les formats et les valeurs les plus fréquentes : il fait ressortir `66 000` dates de valeur à `00000000` / `99999999` et `9 773` codes agence clients mal formés (dont `475` vides)."
+              - title: "2. Dataplex recommande les règles à partir du profil"
+                chips:
+                  - kind: yml
+                    label: generateDataQualityRules
+                bullets:
+                  - "L'API Dataplex `generateDataQualityRules` transforme le profil en règles prêtes à l'emploi : unicité de `end_to_end_id`, format `^[0-9]{4}$` des codes agence, valeurs autorisées de `tx_status`, plages de dates. `19` règles techniques proposées sans en écrire une seule."
+              - title: "3. Knowledge Catalog apporte les règles métier"
+                chips:
+                  - kind: kc
+                    label: Knowledge Catalog
+                  - kind: yml
+                    label: data_products_catalog.yaml
+                bullets:
+                  - "Les contrats des Data Products et le glossaire donnent les règles qu'aucun profil ne peut deviner : `80 000` clients et `95 000` comptes, fuite néobanques 90 j = `2 420 000 000,00 €`, `0` clôture sur le trimestre, offre d'épargne seulement si reste à vivre >= `100 €` (ACPR). `8` règles métier."
+              - title: "4. L'agent raisonne entre les silos"
+                chips:
+                  - kind: bq
+                    label: cbk_accounts_master
+                  - kind: bq
+                    label: aws_crm_account_portfolio
+                bullets:
+                  - "En croisant les silos via le catalogue (skills DAK `discover-assets` et `data-autocleaning`), l'agent ajoute les règles de cohérence : `650` comptes du CRM AWS absents du Mainframe J-1, chaque mouvement rattaché à un compte connu, chaque compte rattaché à un client. `4` règles inter-silos."
+              - title: Les 31 règles par dimension de qualité
+                chips:
+                  - kind: yml
+                    label: dq_rules_catalog.yaml
+                bullets:
+                  - "Complétude (6) · Unicité (5) · Validité (9) · Cohérence inter-silos (4) · Exactitude métier (5) · Fraîcheur (2) — chacune rattachée à son Data Product, à sa source de découverte et à son point d'application (Dataplex sur RAW ou test dbt sur SILVER)."
+            traces:
+              - id: d2-tr1a
+                action: analyzed
+                icon: dak
+                fileName: data-autocleaning/SKILL.md
+                lineRange: "#L1-120"
+                durationMs: 400
+              - id: d2-tr1b
+                action: ran
+                commandSummary: Dataplex data profiling scan on raw_bank (sampled > 1M rows)
+                durationMs: 750
+                cwd: 02_demo2_silver_dbt_dq
+                command: python3 scripts/dataplex_scanner.py --tables data-days-demo.raw_bank.cbk_customers_ref data-days-demo.raw_bank.cbk_accounts_master data-days-demo.raw_bank.cbk_cfonb_movements data-days-demo.raw_bank.raw_sepa_payments_unified --location europe-west1 --output-dir dq_scans/profiles
+                output:
+                  - "4 profile jobs SUCCEEDED (13,249,412 rows, dynamic sampling on tables > 1M rows)"
+                  - "cbk_cfonb_movements.date_valeur_raw: top values 00000000 / 99999999 = 1.20%"
+                  - "cbk_customers_ref.code_agence_raw: 12.32% not matching ^[0-9]{4}$ (475 blank)"
+                  - "raw_sepa_payments_unified.end_to_end_id: distinct ratio 96.60%"
+              - id: d2-tr1c
+                action: ran
+                commandSummary: Dataplex generateDataQualityRules from the profiles
+                durationMs: 600
+                cwd: 02_demo2_silver_dbt_dq
+                command: POST https://dataplex.googleapis.com/v1/projects/data-days-demo/locations/europe-west1/dataScans/raw-bank-profile:generateDataQualityRules
+                output:
+                  - "19 recommended rules (uniqueness, regex, set membership, range, non-null)"
+              - id: d2-tr1d
+                action: analyzed
+                icon: yml
+                fileName: data_products_catalog.yaml
+                lineRange: "#L1-96"
+                durationMs: 350
+              - id: d2-tr1e
+                action: ran
+                commandSummary: search Knowledge Catalog glossary & Data Product contracts (discover-assets)
+                durationMs: 500
+                cwd: 02_demo2_silver_dbt_dq
+                command: mcp call bigquery search_catalog --query "dp_customer_360 OR dp_customer_timeline contract invariants"
+                output:
+                  - "8 business rules found (volumes, 2.42bn EUR deposit leak, 0 closures, ACPR >= 100 EUR)"
+              - id: d2-tr1f
+                action: edited
+                icon: yml
+                fileName: dq_rules_catalog.yaml
+                added: 58
+                removed: 0
+                durationMs: 550
+            filesChanged:
+              - path: 02_demo2_silver_dbt_dq/dq_scans/dq_rules_catalog.yaml
+                language: yaml
+                badge: YML
+                added: 58
+                removed: 0
+                content: |-
+                  # 31 règles trouvées par l'Agentic Data Cloud, rangées par Data Product
+                  # discovered_by : profile | dataplex_recommendation | knowledge_catalog | agent_cross_silo
+                  # enforced_in   : dataplex_raw (surveillance) | dbt_silver (blocage publication)
+                  dp_customer_360:
+                    - rule: customer_id unique & not null
+                      dimension: uniqueness
+                      discovered_by: dataplex_recommendation
+                      enforced_in: dbt_silver
+                    - rule: agency_code matches ^[0-9]{4}$ (LPAD des codes '42  ' et vides)
+                      dimension: validity
+                      discovered_by: profile
+                      enforced_in: [dataplex_raw, dbt_silver]
+                    - rule: 650 comptes CRM absents du Mainframe J-1 conservés et signalés
+                      dimension: consistency
+                      discovered_by: agent_cross_silo
+                      enforced_in: dbt_silver
+                    - rule: exactly 80 000 customers and 95 000 accounts
+                      dimension: accuracy
+                      discovered_by: knowledge_catalog
+                      enforced_in: dbt_silver
+                  dp_customer_timeline:
+                    - rule: end_to_end_id unique (doublons techniques <= 3,5 % en RAW)
+                      dimension: uniqueness
+                      discovered_by: dataplex_recommendation
+                      enforced_in: [dataplex_raw, dbt_silver]
+                    - rule: tx_status IN ('ACSC') pour les mouvements publiés
+                      dimension: validity
+                      discovered_by: dataplex_recommendation
+                      enforced_in: dbt_silver
+                    - rule: value_date valide (00000000 / 99999999 -> date comptable)
+                      dimension: validity
+                      discovered_by: profile
+                      enforced_in: [dataplex_raw, dbt_silver]
+                    - rule: neobank outflows 90 d = 2 420 000 000,00 EUR
+                      dimension: accuracy
+                      discovered_by: knowledge_catalog
+                      enforced_in: dbt_silver
+                    - rule: batch Mainframe <= J-1 (fraîcheur)
+                      dimension: freshness
+                      discovered_by: knowledge_catalog
+                      enforced_in: dataplex_raw
+            terminalLogs:
+              - $ python3 scripts/dataplex_scanner.py --tables raw_bank.* --location europe-west1
+              - 4 Dataplex profile jobs SUCCEEDED (13,249,412 rows)
+              - $ dataplex dataScans:generateDataQualityRules raw-bank-profile
+              - 19 recommended technical rules
+              - $ mcp call bigquery search_catalog "Data Product contracts"
+              - 8 business rules + 4 cross-silo rules -> dq_scans/dq_rules_catalog.yaml (31 rules)
+            subagents:
+              - id: sa-d2-1a
+                role: Data Quality Rule Miner
+                skill: data-autocleaning
+                status: completed
+              - id: sa-d2-1b
+                role: Business Context Analyst
+                skill: discover-assets
+                status: completed
+            backgroundTasks:
+              - id: bg-d2-1a
+                command: dataplex data-profile raw_bank (4 tables)
+                target: raw_bank
+                duration: 2.8s
+            artifact:
+              id: art-d2-1a
+              title: Catalogue des règles de Data Quality
+              subtitle: 31 règles trouvées par l'Agentic Data Cloud · Demo 2
+              markdownSummary:
+                heading: "D'où viennent les 31 règles"
+                metrics:
+                  - label: Recommandations Dataplex
+                    value: 19 règles
+                    tone: positive
+                  - label: Contrats Knowledge Catalog
+                    value: 8 règles
+                    tone: positive
+                  - label: Raisonnement inter-silos
+                    value: 4 règles
+                    tone: warning
+                bullets:
+                  - "Le profil Dataplex détecte les anomalies de forme ; l'API generateDataQualityRules les transforme en règles."
+                  - "Knowledge Catalog fournit les règles métier que le profil ne peut pas deviner (volumes, fuite 2,42 Md€, seuil ACPR)."
+                  - "L'agent croise les silos pour les règles de cohérence (650 comptes absents du Mainframe J-1)."
           - id: d2-t1
-            chipLabel: 1. Lancer le scan Auto Data Quality RAW
-            prompt: Peux-tu lancer un scan Auto Data Quality complet sur les tables raw_bank et détailler toutes les anomalies avant qu'on construise la couche SILVER ?
+            chipLabel: 2. Appliquer les règles (scan Auto Data Quality RAW)
+            prompt: OK pour tes 3 recommandations. Applique ces règles avec un scan Auto Data Quality complet sur raw_bank et détaille toutes les anomalies avant qu'on construise la couche SILVER.
             workedDurationLabel: Worked for 5s
             workGroupSummary: Ran Dataplex Auto DQ scan on raw_bank & rendered bq-visual-audit anomaly chart
             intermediateMessage: Le scan Auto Data Quality Dataplex / BigQuery et le contrôle visuel `bq-visual-audit` analysent les `13,2 M` d'enregistrements de `data-days-demo.raw_bank`.
@@ -2031,72 +2391,124 @@ workspaces:
                 duration: 2.2s
       - id: d2-step2
         demoId: demo2
-        shortName: 2. Modèles dbt SILVER & Tests DQ
-        conversationTitle: Génération des 5 modèles dbt SILVER et contrats schema.yml
+        shortName: 3. Nettoyer & fiabiliser les données
+        conversationTitle: Génération des modèles dbt SILVER, arbitrages de qualité et contrats schema.yml
         projectFolder: 02_demo2_silver_dbt_dq
         gitBranch: feat/silver-data-products
         greetingName: Clément
         modelLabel: Gemini 4 - Carbon
         turns:
           - id: d2-t2
-            chipLabel: 1. Générer les 5 modèles dbt SILVER & tests DQ
-            prompt: Génère les 5 modèles dbt SILVER dans silver_bank pour corriger toutes ces anomalies, extraire les 250 PDF via BigQuery AI et intégrer les tests de qualité schema.yml.
-            workedDurationLabel: Worked for 6s
-            workGroupSummary: Explored files, ran commands, edited files
-            intermediateMessage: Écriture des 5 transformations SQL `dbt` dans `models/silver/` et du contrat de tests `schema.yml` en cours.
-            taskFinishedLabel: 5 dbt SILVER models & 24 DQ assertions generated
-            leadConfirmation: Les modèles `dbt` de la couche `SILVER` et l'extraction structurée des contrats PDF sont prêts dans `02_demo2_silver_dbt_dq/models/silver`.
+            chipLabel: 1. Générer les modèles dbt des Data Products & tests DQ
+            prompt: Génère les modèles dbt SILVER dans silver_bank en appliquant les règles de qualité validées, en commençant par dp_customer_360 et dp_customer_timeline, avec les tests de qualité dans schema.yml.
+            workedDurationLabel: Worked for 7s
+            workGroupSummary: Compared Mainframe & SEPA overlap, wrote dbt models, contracts & category rules, parsed the project
+            intermediateMessage: Rapprochement des mouvements Mainframe et des paiements SEPA par `end_to_end_id`, écriture des modèles `dbt` de `dp_customer_360` et `dp_customer_timeline` et de leurs contrats `schema.yml`.
+            taskFinishedLabel: 10 dbt models, 1 seed & 39 data quality tests generated
+            leadConfirmation: Les modèles `dbt` de `dp_customer_360` et `dp_customer_timeline` sont prêts dans `02_demo2_silver_dbt_dq/models/silver`, avec `39` tests de qualité. 3 arbitrages ont été validés avant écriture.
             sectionHeading: "Ce qui a été mis en place :"
+            askQuestions:
+              - id: d2-q2-double-count
+                question: "Un même virement figure à la fois dans les mouvements Mainframe (CFONB) et dans le flux SEPA, reliés par end_to_end_id. Comment éviter de le compter deux fois dans la vie du client ?"
+                options:
+                  - "(Recommended) Le Mainframe fait foi ; SEPA enrichit chaque mouvement (bénéficiaire, IBAN, schéma) et on n'ajoute que les paiements postérieurs au batch J-1 ou des comptes absents du Mainframe"
+                  - SEPA fait foi ; le Mainframe ne sert qu'au solde de la veille
+                  - Additionner les deux sources puis dédoublonner a posteriori
+              - id: d2-q2-orphans
+                question: "650 comptes ouverts en agence sur le CRM AWS ne sont pas encore dans le batch Mainframe J-1. Que fait-on ?"
+                options:
+                  - "(Recommended) Les garder dans dp_customer_360 et les signaler (is_mainframe_orphan) ; leurs paiements SEPA du jour alimentent la timeline"
+                  - Les exclure jusqu'au prochain batch Mainframe
+                  - Les isoler dans une table de quarantaine
+              - id: d2-q2-categories
+                question: "Comment catégoriser les 5,5 M de mouvements (salaire, loyer, abonnement, carte, néobanque...) ?"
+                options:
+                  - "(Recommended) Règles versionnées dans un référentiel dbt (seed movement_category_rules), modifiables par le métier sans toucher au SQL"
+                  - Appel IA (AI.GENERATE) sur chaque libellé
+                  - Catégories codées en dur dans le SQL
             items:
-              - title: Dédoublonnage SEPA et normalisation Mainframe
+              - title: Vie du client sans double comptage
                 chips:
                   - kind: sql
-                    label: dp_payment_flows.sql
+                    label: customer_movements.sql
                   - kind: sql
-                    label: dp_accounts_balances.sql
+                    label: stg_sepa_payments.sql
                 bullets:
-                  - Filtrage strict sur `tx_status = 'ACSC'` avec `ROW_NUMBER() OVER (PARTITION BY end_to_end_id)`, fallback sur `date_compta` quand `date_valeur_raw IN ('00000000','99999999')`, normalisation `LPAD` des agences et réconciliation des `650` comptes AWS S3.
-              - title: Extraction structurée des 250 PDF et tests automatisés
+                  - "Le Mainframe CFONB fait foi (`5 500 000` mouvements J-1) ; les paiements SEPA dédoublonnés (`ROW_NUMBER` sur `end_to_end_id`) et filtrés `ACSC` l'enrichissent ; seuls les paiements postérieurs au batch ou des `650` comptes récents sont ajoutés. Test `no_sepa_payment_counted_twice`."
+                  - "Les `66 000` dates de valeur `00000000` / `99999999` sont remplacées par la date comptable et signalées (`value_date_was_invalid`) ; aucune ligne n'est supprimée."
+              - title: Référentiel client unifié & comptes orphelins signalés
                 chips:
                   - kind: sql
-                    label: dp_contracts_promos.sql
+                    label: customers.sql
+                  - kind: sql
+                    label: accounts.sql
+                bullets:
+                  - "Fusion Mainframe + CRM AWS (`80 000` clients, `95 000` comptes, solde J-1), normalisation des `9 773` codes agence mal formés et indicateur `is_mainframe_orphan` sur les `650` comptes récents."
+              - title: Catégorisation versionnée & contrats de qualité
+                chips:
+                  - kind: yml
+                    label: movement_category_rules.csv
                   - kind: yml
                     label: schema.yml
                 bullets:
-                  - Utilisation de `AI.GENERATE_TABLE` sur `raw_promo_contracts_pdf` pour extraire les taux boostés et primes engagées en agence, couvert par `24` tests `unique`, `not_null` et `accepted_values`.
+                  - "`18` règles de catégorisation (revenus, charges fixes, carte, épargne, néobanques) dans un seed dbt ; `39` tests dont la fuite néobanques 90 j = `2 420 000 000,00 €`, l'unicité des mouvements et les liens client ↔ compte ↔ mouvement."
+                  - "Les 3 autres Data Products (`dp_customer_relationship`, `dp_finance_pnb`, `dp_commercial_commitments` avec extraction des PDF par `AI.GENERATE_TABLE`) suivent le même modèle."
             traces:
               - id: d2-tr5
                 action: analyzed
                 icon: dak
-                fileName: bigquery-ai-ml/SKILL.md
-                lineRange: "#L1-104"
-                durationMs: 500
+                fileName: dbt-bigquery/SKILL.md
+                lineRange: "#L1-312"
+                durationMs: 450
+              - id: d2-tr5b
+                action: ran
+                commandSummary: overlap Mainframe CFONB vs SEPA payments by end_to_end_id
+                durationMs: 650
+                cwd: 02_demo2_silver_dbt_dq
+                command: bq query --use_legacy_sql=false --label datacloud:antigravity "SELECT COUNTIF(m.e2e IS NOT NULL) FROM sepa_acsc s LEFT JOIN cfonb m USING (e2e)"
+                output:
+                  - "SEPA settled payments on Mainframe accounts: 100% matched in CFONB (same end_to_end_id, date & amount)"
+                  - "Risk detected: summing both sources would double count every SEPA payment"
               - id: d2-tr6
                 action: edited
                 icon: sql
-                fileName: dp_accounts_balances.sql
-                added: 38
+                fileName: customers.sql
+                added: 41
                 removed: 0
-                durationMs: 500
+                durationMs: 400
+              - id: d2-tr6b
+                action: edited
+                icon: sql
+                fileName: accounts.sql
+                added: 36
+                removed: 0
+                durationMs: 400
               - id: d2-tr7
                 action: edited
                 icon: sql
-                fileName: dp_payment_flows.sql
-                added: 31
+                fileName: stg_sepa_payments.sql
+                added: 39
                 removed: 0
-                durationMs: 500
-              - id: d2-tr8
+                durationMs: 400
+              - id: d2-tr7b
                 action: edited
                 icon: sql
-                fileName: dp_contracts_promos.sql
-                added: 27
+                fileName: customer_movements.sql
+                added: 113
                 removed: 0
-                durationMs: 500
+                durationMs: 550
+              - id: d2-tr8
+                action: edited
+                icon: csv
+                fileName: movement_category_rules.csv
+                added: 19
+                removed: 0
+                durationMs: 350
               - id: d2-tr9
                 action: edited
                 icon: yml
                 fileName: schema.yml
-                added: 44
+                added: 282
                 removed: 0
                 durationMs: 550
               - id: d2-tr10
@@ -2104,86 +2516,206 @@ workspaces:
                 commandSummary: dbt parse --project-dir 02_demo2_silver_dbt_dq
                 durationMs: 650
                 cwd: 02_demo2_silver_dbt_dq
-                command: 'dbt parse --project-dir . --vars "{env: prod}"'
+                command: uv run dbt parse --profiles-dir .
                 output:
-                  - "16:26:02  Performance info: target/partial_parse.msgpack"
-                  - 16:26:03  Parsed 5 silver models, 9 raw sources, and 24 schema.yml data quality assertions.
+                  - "Running with dbt=1.10.23"
+                  - "Registered adapter: bigquery=1.10.3"
+                  - "Found 10 models, 1 seed, 39 data tests, 12 sources"
             filesChanged:
-              - path: 02_demo2_silver_dbt_dq/models/silver/dp_payment_flows.sql
+              - path: 02_demo2_silver_dbt_dq/models/silver/customer_timeline/customer_movements.sql
                 language: sql
                 badge: SQL
-                added: 31
+                added: 113
                 removed: 0
                 content: |-
                   {{ config(
                       materialized='table',
-                      partition_by={'field': 'execution_date', 'data_type': 'date'},
-                      cluster_by=['creditor_bic', 'is_neobank_outflow']
+                      partition_by={'field': 'booking_date', 'data_type': 'date', 'granularity': 'month'},
+                      cluster_by=['customer_id', 'category_group'],
                   ) }}
 
-                  WITH deduplicated AS (
-                    SELECT
-                      *,
-                      ROW_NUMBER() OVER (
-                        PARTITION BY end_to_end_id
-                        ORDER BY execution_ts DESC
-                      ) AS rn
-                    FROM {{ source('raw_bank', 'raw_sepa_payments') }}
+                  -- dp_customer_timeline · customer_movements : la vie du client, 1 ligne par mouvement réglé.
+                  --  1. Le Mainframe CFONB fait foi pour tous les comptes du batch J-1 ;
+                  --     les paiements SEPA l'enrichissent (nom / IBAN du bénéficiaire, schéma) via l'end_to_end_id.
+                  --  2. Les paiements SEPA réglés absents du Mainframe sont ajoutés :
+                  --     opérations postérieures au dernier batch (flux temps réel) et comptes ouverts après le batch J-1.
+                  --  Aucun double comptage : chaque paiement SEPA est soit rattaché à un mouvement CFONB, soit ajouté.
+                  WITH accounts AS (
+                      SELECT account_id, customer_id, account_number_11, account_type, is_in_mainframe
+                      FROM {{ ref('accounts') }}
+                  ),
+                  sepa_settled AS (
+                      SELECT * FROM {{ ref('stg_sepa_payments') }} WHERE is_settled
+                  ),
+                  cfonb AS (
+                      SELECT m.*, a.account_id, a.customer_id, a.account_type
+                      FROM {{ ref('stg_cbk_movements') }} AS m
+                      JOIN accounts AS a USING (account_number_11)
+                  ),
+                  cfonb_cutoff AS (
+                      SELECT MAX(booking_date) AS last_batch_date FROM cfonb
+                  ),
+                  from_mainframe AS (
+                      SELECT
+                          c.movement_id,
+                          'MAINFRAME_CFONB'                                   AS source_system,
+                          c.customer_id,
+                          c.account_id,
+                          c.account_type,
+                          c.booking_date,
+                          c.value_date,
+                          c.value_date_was_invalid,
+                          c.signed_amount_eur,
+                          c.label,
+                          c.code_afb,
+                          c.end_to_end_id,
+                          COALESCE(s.counterparty_bic, c.counterparty_bic)    AS counterparty_bic,
+                          s.counterparty_name,
+                          s.counterparty_iban,
+                          s.payment_scheme
+                      FROM cfonb AS c
+                      LEFT JOIN sepa_settled AS s
+                          ON s.end_to_end_id = c.end_to_end_id
+                         AND c.code_op_interne <> '0580'          -- les virements internes 58* ne passent pas par SEPA
+                  ),
+                  from_sepa_only AS (
+                      SELECT
+                          CONCAT('SEPA-', s.end_to_end_id)                    AS movement_id,
+                          'SEPA_REALTIME'                                     AS source_system,
+                          a.customer_id,
+                          a.account_id,
+                          a.account_type,
+                          s.booking_date,
+                          s.booking_date                                      AS value_date,
+                          FALSE                                               AS value_date_was_invalid,
+                          s.signed_amount_eur,
+                          s.label,
+                          CAST(NULL AS STRING)                                AS code_afb,
+                          s.end_to_end_id,
+                          s.counterparty_bic,
+                          s.counterparty_name,
+                          s.counterparty_iban,
+                          s.payment_scheme
+                      FROM sepa_settled AS s
+                      JOIN accounts AS a ON a.account_id = s.account_id
+                      CROSS JOIN cfonb_cutoff AS k
+                      WHERE s.booking_date > k.last_batch_date      -- postérieur au dernier batch Mainframe
+                         OR NOT a.is_in_mainframe                   -- comptes ouverts après le batch J-1
+                  ),
+                  unioned AS (
+                      SELECT * FROM from_mainframe
+                      UNION ALL
+                      SELECT * FROM from_sepa_only
+                  ),
+                  categorized AS (
+                      SELECT
+                          u.*,
+                          r.category,
+                          r.category_group
+                      FROM unioned AS u
+                      JOIN {{ ref('movement_category_rules') }} AS r
+                          ON REGEXP_CONTAINS(u.label, r.label_pattern)
+                      QUALIFY ROW_NUMBER() OVER (PARTITION BY u.movement_id ORDER BY r.priority) = 1
                   )
                   SELECT
-                    end_to_end_id,
-                    DATE(execution_ts) AS execution_date,
-                    execution_ts,
-                    debtor_account_id,
-                    creditor_bic,
-                    amount_eur,
-                    creditor_bic IN ('REVOLT21XXX', 'TRBKDEBBXXX', 'NTSBDEB1XXX', 'BOURFRPPXXX', 'DEGIRO2AXXX') AS is_neobank_outflow
-                  FROM deduplicated
-                  WHERE rn = 1
-                    AND tx_status = 'ACSC'
-              - path: 02_demo2_silver_dbt_dq/models/silver/schema.yml
+                      movement_id,
+                      source_system,
+                      customer_id,
+                      account_id,
+                      account_type,
+                      booking_date,
+                      value_date,
+                      value_date_was_invalid,
+                      IF(signed_amount_eur >= 0, 'CREDIT', 'DEBIT')                               AS direction,
+                      ABS(signed_amount_eur)                                                     AS amount_eur,
+                      signed_amount_eur,
+                      category,
+                      category_group,
+                      label,
+                      counterparty_name,
+                      counterparty_iban,
+                      counterparty_bic,
+                      payment_scheme,
+                      end_to_end_id,
+                      counterparty_bic IN ('REVOLT21XXX', 'TRBKDEBBXXX', 'NTSBDEB1XXX', 'BOURFRPPXXX', 'DEGIRO2AXXX')
+                          AND signed_amount_eur < 0                                              AS is_neobank_outflow,
+                      category = 'INTERNAL_SAVINGS'                                              AS is_internal_transfer
+                  FROM categorized
+              - path: 02_demo2_silver_dbt_dq/models/silver/customer_timeline/_customer_timeline.yml
                 language: yaml
                 badge: YML
-                added: 44
+                added: 147
                 removed: 0
                 content: |-
                   version: 2
 
                   models:
-                    - name: dp_accounts_balances
-                      description: "Comptes & soldes valorisés J+1 normalisés et réconciliés (95 000 comptes)"
-                      columns:
-                        - name: account_id
-                          tests: [unique, not_null]
-                        - name: branch_code
-                          tests: [not_null]
-                    - name: dp_payment_flows
-                      description: "Flux paiements SEPA Instant compensés ACSC et dédoublonnés"
-                      columns:
-                        - name: end_to_end_id
-                          tests: [unique, not_null]
-                    - name: dp_customers_interactions
-                      description: "80 000 clients, RDV agences & 320 000 verbatims call center (Borderless AWS)"
-                    - name: dp_finance_gl_alm
-                      description: "Écritures comptables SAP/PCEC, budget & refinancement trésorerie ALM"
-                    - name: dp_contracts_promos
-                      description: "250 contrats & offres promotionnelles PDF extraits par BigQuery AI"
+                    - name: customer_movements
+                      description: >
+                        dp_customer_timeline · Vie du client : 1 ligne par mouvement réglé, catégorisé.
+                        Le Mainframe CFONB fait foi (5 500 000 mouvements J-1), enrichi par les paiements SEPA via l'end_to_end_id ;
+                        les paiements SEPA postérieurs au dernier batch ou des comptes ouverts après le batch J-1 sont ajoutés.
+                      meta:
+                        data_product: dp_customer_timeline
+                        owner: payments
+                        freshness: daily (J-1) + intraday via AlloyDB
+                      tests:
+                        - expression_equals:
+                            arguments:
+                              expression: "COUNTIF(source_system = 'MAINFRAME_CFONB')"
+                              expected: 5500000
+                        - expression_equals:
+                            name: neobank_leak_90d_equals_2_42bn
+                            arguments:
+                              expression: "CAST(ROUND(SUM(IF(is_neobank_outflow AND booking_date BETWEEN '2026-08-15' AND '2026-11-12', -signed_amount_eur, 0)), 2) AS NUMERIC)"
+                              expected: 2420000000
+                        - expression_equals:
+                            name: no_sepa_payment_counted_twice
+                            arguments:
+                              expression: "COUNTIF(NOT is_internal_transfer AND end_to_end_id IS NOT NULL) - COUNT(DISTINCT IF(NOT is_internal_transfer, end_to_end_id, NULL))"
+                              expected: 0
+              - path: 02_demo2_silver_dbt_dq/seeds/movement_category_rules.csv
+                language: yaml
+                badge: CSV
+                added: 19
+                removed: 0
+                content: |-
+                  priority,label_pattern,category,category_group
+                  10,^VIR INTERNE 58,INTERNAL_SAVINGS,SAVINGS
+                  20,^VIR SEPA INST,NEOBANK_BROKER_TRANSFER,EXTERNAL_TRANSFER
+                  30,SALAIRE|PAIE MENSUELLE|REVENUS ACTIVITE,SALARY,INCOME
+                  31,CAISSE RETRAITE,PENSION,INCOME
+                  32,CPAM|MUTUELLE,HEALTH_REFUND,INCOME
+                  33,REMBOURSEMENT FRAIS,EXPENSE_REFUND,INCOME
+                  40,LOYER,RENT,FIXED_CHARGES
+                  41,EDF,ENERGY,FIXED_CHARGES
+                  42,ORANGE,TELECOM,FIXED_CHARGES
+                  43,ASSURANCE,INSURANCE,FIXED_CHARGES
+                  44,IMPOTS|DGFIP,TAX,FIXED_CHARGES
+                  45,STRMFLIX,STREAMING_SUBSCRIPTION,FIXED_CHARGES
+                  50,CARREFOUR|LECLERC|MONOPRIX,GROCERIES,CARD_SPENDING
+                  51,SNCF|TOTALENERGIES,TRANSPORT,CARD_SPENDING
+                  52,BOULANGERIE|RESTAURANT,FOOD_OUT,CARD_SPENDING
+                  53,AMAZON|FNAC,SHOPPING,CARD_SPENDING
+                  54,PHARMACIE,HEALTH_SPENDING,CARD_SPENDING
+                  99,.*,OTHER,OTHER
             terminalLogs:
-              - $ dbt parse --project-dir 02_demo2_silver_dbt_dq
-              - Parsed 5 silver models and 24 data quality assertions.
+              - $ uv run dbt parse --profiles-dir .
+              - Found 10 models, 1 seed, 39 data tests, 12 sources
+              - "Arbitrages appliqués : Mainframe fait foi + enrichissement SEPA, 650 comptes orphelins signalés, catégories versionnées"
             subagents:
               - id: sa-d2-2
                 role: dbt Silver Pipeline Engineer
                 skill: dbt-bigquery
                 status: completed
               - id: sa-d2-3
-                role: Unstructured PDF Extractor
-                skill: bigquery-ai-ml
+                role: Data Quality Rule Engineer
+                skill: data-autocleaning
                 status: completed
             backgroundTasks: []
       - id: d2-step3
         demoId: demo2
-        shortName: 3. Build & 5 Data Products KC
+        shortName: 4. Publier les 5 produits de données
         conversationTitle: Exécution dbt build & Publication des 5 Data Products
         projectFolder: 02_demo2_silver_dbt_dq
         gitBranch: feat/silver-data-products
@@ -2210,11 +2742,11 @@ workspaces:
                   - kind: kc
                     label: Knowledge Catalog
                 bullets:
-                  - Publication de `dp_accounts_balances`, `dp_payment_flows` (`2 420 000 000 €` de virements SEPA Instant sortants vers néobanques sur 90j, dont `68,0 %` chez les `18-32 ans` entre le 1er et le 5 du mois), `dp_customers_interactions`, `dp_finance_gl_alm` et `dp_contracts_promos`.
+                  - Publication de `dp_customer_360`, `dp_customer_timeline` (`2 420 000 000 €` de virements SEPA Instant sortants vers néobanques sur 90j, dont `68,0 %` chez les `18-32 ans` entre le 1er et le 5 du mois), `dp_customer_relationship`, `dp_finance_pnb` et `dp_commercial_commitments`.
               - title: Point de vigilance avant exposition aux agents Finance
                 chips:
                   - kind: bq
-                    label: dp_finance_gl_alm
+                    label: dp_finance_pnb
                 bullets:
                   - Les schémas `SILVER` sont désormais 100 % propres techniquement (`0` doublon, `0` NULL), mais ne contiennent pas encore les règles métier implicites du contrôle de gestion CFO.
             visualCheck:
@@ -2240,27 +2772,27 @@ workspaces:
                   tone: ruby
               chartTitle: "Certification qualité & volumétrie nette des 5 tables créées dans silver_bank"
               bars:
-                - label: "dp_accounts_balances (95 000 comptes réconciliés z/OS + AWS)"
+                - label: "dp_customer_360 (95 000 comptes réconciliés z/OS + AWS)"
                   valueLabel: "100,0 % DQ"
                   pct: 100
                   tone: positive
                   badge: 0 orphelin
-                - label: "dp_payment_flows (5,49 M virements ACSC nets)"
+                - label: "dp_customer_timeline (5,50 M mouvements, 0 double comptage CFONB ↔ SEPA)"
                   valueLabel: "100,0 % DQ"
                   pct: 100
                   tone: positive
                   badge: "-713 000 purgés"
-                - label: "dp_customers_interactions (80k clients & 320k notes CRM)"
+                - label: "dp_customer_relationship (80k clients & 320k notes CRM)"
                   valueLabel: "100,0 % DQ"
                   pct: 100
                   tone: positive
                   badge: Borderless S3
-                - label: "dp_finance_gl_alm (1,20 M écritures SAP / PCEC)"
+                - label: "dp_finance_pnb (1,20 M écritures SAP / PCEC)"
                   valueLabel: "100,0 % DQ"
                   pct: 100
                   tone: warning
                   badge: Sémantique KC requise
-                - label: "dp_contracts_promos (250 PDF extraits = -14,30 M€)"
+                - label: "dp_commercial_commitments (250 PDF extraits = -14,30 M€)"
                   valueLabel: "100,0 % DQ"
                   pct: 100
                   tone: blue
@@ -2273,11 +2805,12 @@ workspaces:
                 cwd: 02_demo2_silver_dbt_dq
                 command: dbt build --select "silver.*" --target prod
                 output:
-                  - 1 of 5 OK created sql table model silver_bank.dp_accounts_balances .......... [CREATE TABLE (95.0k rows) in 1.42s]
-                  - 2 of 5 OK created sql table model silver_bank.dp_payment_flows .............. [CREATE TABLE (5.49m rows) in 2.18s]
-                  - 3 of 5 OK created sql table model silver_bank.dp_customers_interactions ..... [CREATE TABLE (80.0k rows) in 1.31s]
-                  - 4 of 5 OK created sql table model silver_bank.dp_finance_gl_alm ............. [CREATE TABLE (1.20m rows) in 1.54s]
-                  - 5 of 5 OK created sql table model silver_bank.dp_contracts_promos ........... [CREATE TABLE (250 rows) in 1.89s]
+                  - 1 of 6 OK created sql table model silver_bank.customers ..................... [CREATE TABLE (80.0k rows) in 1.31s]
+                  - 2 of 6 OK created sql table model silver_bank.accounts ...................... [CREATE TABLE (95.0k rows) in 1.42s]
+                  - 3 of 6 OK created sql table model silver_bank.customer_movements ............ [CREATE TABLE (5.50m rows) in 2.18s]
+                  - 4 of 6 OK created sql table model silver_bank.interactions .................. [CREATE TABLE (320.0k rows) in 1.36s]
+                  - 5 of 6 OK created sql table model silver_bank.gl_entries .................... [CREATE TABLE (1.20m rows) in 1.54s]
+                  - 6 of 6 OK created sql table model silver_bank.promo_contracts ............... [CREATE TABLE (250 rows) in 1.89s]
                   - Done. PASS=29 WARN=0 ERROR=0 SKIP=0 TOTAL=29
               - id: d2-tr11b
                 action: analyzed
@@ -2321,15 +2854,20 @@ workspaces:
                     project: data-days-demo
                     location: europe-west1
                     products:
-                      - id: dp_accounts_balances
+                      - id: dp_customer_360
+                        tables: [customers, accounts]
                         dq_score: 100.0
-                      - id: dp_payment_flows
+                      - id: dp_customer_timeline
+                        tables: [customer_movements, beneficiaries]
                         dq_score: 100.0
-                      - id: dp_customers_interactions
+                      - id: dp_customer_relationship
+                        tables: [interactions]
                         dq_score: 100.0
-                      - id: dp_finance_gl_alm
+                      - id: dp_finance_pnb
+                        tables: [gl_entries]
                         dq_score: 100.0
-                      - id: dp_contracts_promos
+                      - id: dp_commercial_commitments
+                        tables: [promo_contracts]
                         dq_score: 100.0
             terminalLogs:
               - $ dbt build --select silver.*
@@ -2354,13 +2892,13 @@ workspaces:
               markdownSummary:
                 heading: 5 Data Products opérationnels dans silver_bank
                 metrics:
-                  - label: dp_accounts_balances
+                  - label: dp_customer_360
                     value: 95 000 comptes
                     tone: positive
-                  - label: dp_payment_flows
-                    value: 5,49 M flux ACSC
+                  - label: dp_customer_timeline
+                    value: 5,50 M mouvements
                     tone: positive
-                  - label: dp_contracts_promos
+                  - label: dp_commercial_commitments
                     value: 250 PDF structurés
                     tone: positive
                 bullets:
@@ -2373,7 +2911,7 @@ workspaces:
     conversations:
       - id: d3-step1
         demoId: demo3
-        shortName: 1. Audit Faux PNB (+42,8 M€) & Vidéos
+        shortName: 1. Comprendre le faux PNB (+42,8 M€)
         conversationTitle: Audit du crash sémantique & Extraction multimodale .mp4
         projectFolder: 03_demo3_kc_semantics_cfo
         gitBranch: feat/kc-cfo-semantics
@@ -2390,7 +2928,7 @@ workspaces:
             leadConfirmation: L'origine de l'écart sémantique est identifiée et les règles certifiées du Comité ALM ont été extraites dans `03_demo3_kc_semantics_cfo/bundle`.
             sectionHeading: "Ce qui a été identifié et extrait :"
             items:
-              - title: Explication du faux résultat `+42,80 M€` sur `dp_finance_gl_alm`
+              - title: Explication du faux résultat `+42,80 M€` sur `gl_entries` (`dp_finance_pnb`)
                 chips:
                   - kind: yml
                     label: collibra_export_2021.csv
@@ -2447,8 +2985,8 @@ workspaces:
                   owner: direction_finance_alm
                   status: certified
                   tables:
-                    - data-days-demo.silver_bank.dp_finance_gl_alm
-                    - data-days-demo.silver_bank.dp_contracts_promos
+                    - data-days-demo.silver_bank.gl_entries
+                    - data-days-demo.silver_bank.promo_contracts
                   ---
                   # Écart de Marge Nette d'Intérêt (PNB) vs Budget
 
@@ -2456,7 +2994,7 @@ workspaces:
                   1. **Signe comptable obligatoire** : pondérer `gross_amount_eur` par `CASE WHEN sens_dc = 'D' THEN -1 ELSE 1 END`.
                   2. **Neutralisation intra-groupe** : exclure tous les comptes techniques de liaison `pcec_account LIKE '58%'`.
                   3. **Coût de refinancement ALM (€STR)** : inclure la charge de remplacement des dépôts à vue évaporés (`-24 120 000,00 €` sur 90j à 399 bps).
-                  4. **Coût commercial hors-bilan PDF** : déduire `SUM(committed_promo_cost_eur)` issu de `dp_contracts_promos` (`-14 300 000,00 €`).
+                  4. **Coût commercial hors-bilan PDF** : déduire `SUM(committed_promo_cost_eur)` issu de `promo_contracts` (`dp_commercial_commitments`) (`-14 300 000,00 €`).
             terminalLogs:
               - $ kcmd import-legacy 03_demo3_kc_semantics_cfo/legacy_catalogs/
               - Detected 4 semantic conflicts between Commercial CRM (2021) and Finance PCEC.
@@ -2474,7 +3012,7 @@ workspaces:
             backgroundTasks: []
       - id: d3-step2
         demoId: demo3
-        shortName: 2. Publication KC & Vérité (-38,42 M€)
+        shortName: 2. Certifier la vraie marge (-38,42 M€)
         conversationTitle: Publication des 3 Glossaires KC & Vérification CFO
         projectFolder: 03_demo3_kc_semantics_cfo
         gitBranch: feat/kc-cfo-semantics
@@ -2613,13 +3151,13 @@ workspaces:
                   WITH gl_net AS (
                     SELECT
                       SUM(gross_amount_eur * CASE WHEN sens_dc = 'D' THEN -1 ELSE 1 END) AS net_gl_alm_variance_eur
-                    FROM `data-days-demo.silver_bank.dp_finance_gl_alm`
+                    FROM `data-days-demo.silver_bank.gl_entries`
                     WHERE NOT STARTS_WITH(pcec_account, '58') -- Exclusion virements internes
                   ),
                   pdf_promos AS (
                     SELECT
                       -SUM(committed_promo_cost_eur) AS pdf_promo_impact_eur
-                    FROM `data-days-demo.silver_bank.dp_contracts_promos`
+                    FROM `data-days-demo.silver_bank.promo_contracts`
                   )
                   SELECT
                     gl_net.net_gl_alm_variance_eur,                       -- -24 120 000.00 € (coût €STR ALM)
@@ -2675,7 +3213,7 @@ workspaces:
     conversations:
       - id: d4-step1
         demoId: demo4
-        shortName: 1. Modèles BQML & Budget Insight
+        shortName: 1. Anticiper le budget & proposer l'offre
         conversationTitle: Prévisions AI.FORECAST & Propension Offres dans BigQuery
         projectFolder: 04_demo4_scale_mobile_adk
         gitBranch: feat/mobile-adk-agents
@@ -2819,7 +3357,7 @@ workspaces:
             backgroundTasks: []
       - id: d4-step2
         demoId: demo4
-        shortName: 2. Synchro AlloyDB (<15ms) & ADK
+        shortName: 2. Servir l'app mobile en temps réel
         conversationTitle: Synchronisation AlloyDB & Exposition aux 3 Agents ADK
         projectFolder: 04_demo4_scale_mobile_adk
         gitBranch: feat/mobile-adk-agents

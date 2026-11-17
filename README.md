@@ -148,6 +148,24 @@ Les pipelines de la **Démo #1** disposent de scripts idempotents prêts à êtr
 uv run python 00_data_generator/stream_payments_pubsub.py --witness-live
 ```
 
+### 4. Historique Paiements 18 mois ↔ Temps réel (vue unifiée certifiée)
+```bash
+# Expose sans copie l'archive Parquet (6,2 M lignes) en tables BigLake, crée les vues
+# raw_sepa_payments_unified / raw_iban_events_unified, rejoue le temps réel + CLS sur les 4 tables,
+# puis certifie 12 contrôles (continuité, fuite 2,42 Md€, rapprochement Mainframe CFONB, IBAN) :
+./scripts/run_demo1_payments_history_unified.sh --recreate-schema --burst 500
+
+# Contrôle local de cohérence historique <-> temps réel (sans GCP) :
+uv run python 00_data_generator/validate_payments_coherence.py
+```
+
+### 5. SaaS CRM en Apache Iceberg sur GCS (simulation AWS Glue / S3)
+```bash
+# Publie les 4 tables CRM en vraies tables Iceberg (PyIceberg) sous gs://<bucket>/RAW/AWS_SAAS_ICEBERG/,
+# les expose en lecture seule dans raw_bank.aws_crm_* et certifie 14 contrôles (dont 650 orphelins vs Mainframe) :
+./scripts/run_demo1_aws_crm_iceberg.sh
+```
+
 ### 6. Grand livre SAP / PCEC & dépôts ALM → `raw_bank.raw_sap_gl_alm` (chargement direct, hors scène)
 ```bash
 # bq load --replace du Parquet synchronisé sur GCS, documentation des 17 colonnes
@@ -179,6 +197,7 @@ uv run python 00_data_generator/stream_payments_pubsub.py --witness-live
 │   └── src/                                  # Composants ChatStage, AskQuestionTray, VisualCheckCard
 ├── 00_data_generator/                        # Générateurs déterministes multi-silos (seed=2026)
 │   ├── shared_universe.py                    # Univers partagé (80k clients, 95k comptes, 450 agences)
+│   ├── customer_ledger.py                    # Journal partagé de la vie client (source unique Mainframe + SEPA)
 │   ├── generate_mainframe_cfonb.py           # Mainframe EBCDIC CP500 + COMP-3 & relevés CFONB 120
 │   ├── generate_aws_crm_s3.py                # CRM AWS S3 Parquet & 650 comptes récents J0
 │   ├── generate_payments_stream.py           # Archive 18 mois Parquet 100 % Nested STRUCT (6,2 M lignes)

@@ -71,8 +71,8 @@
   1. **Schéma `100 % Nested STRUCT` (`--use-table-schema`)** vs `data JSON` opaque (interdisant le CLS par sous-champ).
   2. **Préservation du bruit `RAW` (`~3,4 %` retries `end_to_end_id`, `~8,1 %` `RJCT`/`PDNG`)** + routage vers `sepa-payments-dlq-topic`.
   3. **Isolement de `sepa-payments-alloydb-ops-sub`** réservée au temps réel `< 15 ms` vers AlloyDB (`Démo #4`).
-* **Chip 2 — Déploiement sans serveur & `bq-visual-audit` :** création de [`02_create_documented_pubsub_nested_tables.sql`](../01_demo1_raw_aggregation/sql/02_create_documented_pubsub_nested_tables.sql) (`55/55` chemins `STRUCT` documentés) via [`setup_pubsub_queues.sh`](../scripts/setup_pubsub_queues.sh), ingestion temps réel (`502` paiements + `32` ajouts IBAN, `0` DLQ).
-* **Chip 3 — Audit hybride `PII` in-database (`0` donnée brute extraite) & 3 questions `CLS` (`askQuestions` `1/3..3/3`) :** exécution de [`03_audit_pii_nested_pubsub.sql`](../01_demo1_raw_aggregation/sql/03_audit_pii_nested_pubsub.sql) détectant **10 sous-champs `STRUCT` sensibles** (`4` IBAN, `4` noms/IP, et **`25,5 %` de motifs médicaux RGPD Art. 9** dans `remittance.unstructured_info` comme `CPAM SANTE`).
+* **Chip 2 — Déploiement sans serveur & `bq-visual-audit` :** création de [`02_create_documented_pubsub_nested_tables.sql`](../01_demo1_raw_aggregation/sql/02_create_documented_pubsub_nested_tables.sql) (`55/55` chemins `STRUCT` documentés) via [`setup_pubsub_queues.sh`](../scripts/setup_pubsub_queues.sh), ingestion temps réel (`503` paiements + `79` ajouts IBAN, `0` DLQ).
+* **Chip 3 — Audit hybride `PII` in-database (`0` donnée brute extraite) & 3 questions `CLS` (`askQuestions` `1/3..3/3`) :** exécution de [`03_audit_pii_nested_pubsub.sql`](../01_demo1_raw_aggregation/sql/03_audit_pii_nested_pubsub.sql) détectant **10 sous-champs `STRUCT` sensibles** (`4` IBAN, `4` noms/IP, et **`12,9 %` de motifs santé/logement RGPD Art. 9** dans `remittance.unstructured_info` comme `CPAM SANTE`).
 * **Chip 4 — Application chirurgicale des Policy Tags `CLS` :** déploiement de la taxonomie `hexagone-cls-payments-pii` et des 3 Data Policies (`LAST_FOUR_CHARACTERS`, `SHA256`, `ALWAYS_NULL`) via [`apply_pubsub_cls_policy_tags.py`](../scripts/apply_pubsub_cls_policy_tags.py) et script de replay [`run_demo1_pubsub_bq_cls.sh`](../scripts/run_demo1_pubsub_bq_cls.sh).
 
 ### Conversation Étape 5 — Découverte automatique GCS PDF via `Dataplex Cloud Storage Discovery` (`Object Tables`)
@@ -95,13 +95,14 @@
 
 ## Workspaces Démos #2, #3 & #4
 
-* **Workspace `02_demo2_silver_dbt_dq` (3 conversations)** :
-  1. `1. Scan Auto Data Quality RAW` (`3,4 %` doublons, `8,1 %` `RJCT`/`PDNG`, `1,2 %` dates `00000000`, `650` orphelins AWS)
-  2. `2. Modèles dbt SILVER & Tests DQ` (5 modèles + extraction PDF `AI.GENERATE_TABLE` + `24` tests `schema.yml`)
-  3. `3. Build & 5 Data Products KC` (publication à `100 %` DQ PASS)
+* **Workspace `02_demo2_silver_dbt_dq` (4 conversations)** :
+  1. `1. Concevoir les data products` (revue du découpage par domaine métier & usage, 3 questions d'arbitrage : découpage, nommage anglais, fraîcheur `dbt` + `AlloyDB` → [`data_products_catalog.yaml`](../02_demo2_silver_dbt_dq/kc_products/data_products_catalog.yaml) : 5 SILVER + 2 GOLD)
+  2. `2. Diagnostiquer la qualité des données` : (a) **trouver les règles de qualité** avec l'Agentic Data Cloud — profil Dataplex, recommandations `generateDataQualityRules`, contrats Knowledge Catalog et raisonnement inter-silos de l'agent → `31` règles dans `dq_scans/dq_rules_catalog.yaml` + 3 arbitrages (où appliquer, traitement des anomalies, seuils) ; (b) les appliquer par un scan Auto Data Quality RAW (`3,4 %` doublons, `8,1 %` `RJCT`/`PDNG`, `1,2 %` dates `00000000`, `650` orphelins AWS)
+  3. `3. Nettoyer & fiabiliser les données` : 3 arbitrages de qualité avant écriture (Mainframe fait foi + enrichissement SEPA sans double comptage, 650 comptes orphelins conservés et signalés, catégorisation par règles versionnées en seed) puis vrais modèles `dbt` de `dp_customer_360` et `dp_customer_timeline` (10 modèles, 1 seed, 39 tests `schema.yml`)
+  4. `4. Publier les 5 produits de données` (`dp_customer_360`, `dp_customer_timeline`, `dp_customer_relationship`, `dp_finance_pnb`, `dp_commercial_commitments` à `100 %` DQ PASS)
 * **Workspace `03_demo3_kc_semantics_cfo` (2 conversations)** :
-  1. `1. Audit Faux PNB (+42,8 M€) & Vidéos` (réconciliation catalogues legacy + interviews `.mp4`)
-  2. `2. Publication KC & Vérité (-38,42 M€)` (`curate-context` OKF v0.2, 3 glossaires, `-24,12 M€` ALM + `-14,30 M€` PDF)
+  1. `1. Comprendre le faux PNB (+42,8 M€)` (réconciliation catalogues legacy + interviews `.mp4`)
+  2. `2. Certifier la vraie marge (-38,42 M€)` (`curate-context` OKF v0.2, 3 glossaires, `-24,12 M€` ALM + `-14,30 M€` PDF)
 * **Workspace `04_demo4_scale_mobile_adk` (2 conversations)** :
-  1. `1. Modèles BQML & Budget Insight` (`AI.FORECAST` reste à vivre `+300,00 €` & détection hausse `+4,00 €` Lucas Martin)
-  2. `2. Synchro AlloyDB (<15ms) & ADK` (`alloydb_sync` `< 15 ms` + 3 agents mobiles `ADK`)
+  1. `1. Anticiper le budget & proposer l'offre` (`AI.FORECAST` reste à vivre `+300,00 €` & détection hausse `+4,00 €` Lucas Martin)
+  2. `2. Servir l'app mobile en temps réel` (`alloydb_sync` `< 15 ms` + 3 agents mobiles `ADK`)
