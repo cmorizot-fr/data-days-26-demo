@@ -34,6 +34,8 @@ stage_ui/dist/
 02_demo2_silver_dbt_dq/**/dbt_packages/
 02_demo2_silver_dbt_dq/**/logs/
 profiles.yml
+# Exception : profil dbt du projet sans secret (ADC ou jeton éphémère via DBT_BQ_TOKEN)
+!02_demo2_silver_dbt_dq/profiles.yml
 
 # Terraform / Infra
 .terraform/

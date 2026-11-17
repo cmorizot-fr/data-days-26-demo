@@ -1,5 +1,3 @@
-# Copier en profiles.yml (ignoré par Git) : cp profiles.example.yml profiles.yml
-# Aucun secret : authentification ADC (gcloud auth application-default login) ou jeton gcloud éphémère.
 data_days_demo_bq:
   target: prod
   outputs:
