@@ -10,22 +10,46 @@ Produit dans `00_data_generator/output/RAW/PAYMENTS/` (synchronisé vers `gs://.
        - Exactement 2 420 000 000,00 € de virements sortants `ACSC` dédoublonnés vers néobanques
          sur 90 jours, dont 68,00 % (1 645 600 000,00 €) chez les 18-32 ans entre le 1er et le 5 du mois.
   2. iban_beneficiary_events/part-00000.parquet : ajouts d'IBAN bénéficiaires (avec ~3,4 % doublons API).
+
+Schéma : 100 % Nested STRUCT strictement identique aux tables BigQuery alimentées en temps réel
+par Pub/Sub (`raw_sepa_payments_pubsub_stream`, `raw_iban_events_pubsub_stream`).
+
+Cohérence historique ↔ temps réel : toutes les contreparties, IBAN externes, libellés et attributs
+digitaux proviennent du contrat partagé `payments_contract.py`, également utilisé par
+`stream_payments_pubsub.py`. Convention de sens : `debtor` = compte Banque Hexagone concerné,
+`creditor` = contrepartie externe ; `settlement.payment_scheme = *_INBOUND` désigne un crédit reçu.
 """
 
 from __future__ import annotations
 
 import argparse
-import calendar
 import json
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 import numpy as np
 import polars as pl
 
-from shared_universe import (
+from payments_contract import (
     BANK_BIC,
+    COUNTERPARTIES,
+    COUNTERPARTY_WEIGHTS,
+    IBAN_ENROLLMENT_SCHEMA_VERSION,
+    NEOBANK_BICS,
+    NEOBANK_LABELS,
+    OUTBOUND_COUNTERPARTIES,
+    OUTBOUND_WEIGHTS,
+    PACS008_SCHEMA_VERSION,
+    WITNESS_COUNTERPARTIES,
+    beneficiary_custom_label,
+    customer_channel,
+    customer_device_ip,
+    customer_sca_status,
+    neobank_beneficiary_iban,
+)
+from customer_ledger import build_or_load_ledger
+from shared_universe import (
     DEMO_SEED,
     HISTORY_START_DATE,
     NEOBANK_DESTINATIONS,
@@ -44,54 +68,88 @@ EXACT_DUP_RETRY_EVENTS: int = 210_800    # 3,4000 % de 6 200 000
 EXACT_NON_SETTLED_EVENTS: int = 502_200  # 8,1000 % de 6 200 000 (341 000 RJCT + 161 200 PDNG)
 EXACT_UNIQUE_ACSC_EVENTS: int = TOTAL_RAW_EVENTS - EXACT_DUP_RETRY_EVENTS - EXACT_NON_SETTLED_EVENTS  # 5 487 000
 
+SELF_NAME_MARKER = "__SELF__"  # Résolu en nom du titulaire (virement vers son propre compte néobanque)
+
+_CP_NAMES = np.array([c.name for c in COUNTERPARTIES], dtype="U40")
+_CP_BICS = np.array([c.bic for c in COUNTERPARTIES], dtype="U12")
+_CP_IBANS = np.array([c.iban for c in COUNTERPARTIES], dtype="U34")
+_CP_SCHEMES = np.array([c.scheme for c in COUNTERPARTIES], dtype="U16")
+_CP_LABELS = np.array([c.label for c in COUNTERPARTIES], dtype="U40")
+_CP_LO = np.array([c.min_cents for c in COUNTERPARTIES], dtype=np.int64)
+_CP_HI = np.array([c.max_cents for c in COUNTERPARTIES], dtype=np.int64)
+
+_OUT_NAMES = np.array([c.name for c in OUTBOUND_COUNTERPARTIES], dtype="U40")
+_OUT_BICS = np.array([c.bic for c in OUTBOUND_COUNTERPARTIES], dtype="U12")
+_OUT_IBANS = np.array([c.iban for c in OUTBOUND_COUNTERPARTIES], dtype="U34")
+_OUT_SCHEMES = np.array([c.scheme for c in OUTBOUND_COUNTERPARTIES], dtype="U16")
+_OUT_LABELS = np.array([c.label for c in OUTBOUND_COUNTERPARTIES], dtype="U40")
+_OUT_LO = np.array([c.min_cents for c in OUTBOUND_COUNTERPARTIES], dtype=np.int64)
+_OUT_HI = np.array([c.max_cents for c in OUTBOUND_COUNTERPARTIES], dtype=np.int64)
+
+
+def _uniform_between(rng: np.random.Generator, lo: np.ndarray, hi: np.ndarray) -> np.ndarray:
+    """Tirage entier uniforme vectorisé dans [lo, hi] (bornes par ligne)."""
+    return lo + np.floor(rng.random(len(lo)) * (hi - lo + 1)).astype(np.int64)
+
+
+def _neobank_ibans(acc_idx: np.ndarray, bics: np.ndarray) -> np.ndarray:
+    return np.array(
+        [neobank_beneficiary_iban(int(a), str(b)) for a, b in zip(acc_idx, bics)],
+        dtype="U34",
+    )
+
 
 def build_witness_payment_rows(iban_witness: str, guichet_5: str) -> dict[str, np.ndarray]:
-    """Construit les événements paiements sur 18 mois de Lucas Martin (CUST00002026 / ACC00002026)."""
-    rows: list[tuple[str, str, str, str, int, str]] = []
+    """Événements paiements sur 18 mois de Lucas Martin (miroir exact du Mainframe CFONB : mêmes E2E, BIC, montants)."""
+    rows: list[tuple[str, str, str, int]] = []  # (date, e2e, label, amount_cents)
     seq = 1
     months_18 = [(2025, m) for m in range(6, 13)] + [(2026, m) for m in range(1, 12)]
     for y, m in months_18:
         ym = f"{y:04d}-{m:02d}"
         if (y, m) < (2026, 11):
             ops = [
-                (f"{ym}-01", f"E2EWIT{seq:07d}", "SCT_INBOUND", "EMPLOYEURFR", 185_000, "VIR SALAIRE TECHCORP SAS"),
-                (f"{ym}-05", f"E2EWIT{seq+1:07d}", "SEPA_SDD", "MANDATLOYER", 72_000, "PRLV LOYER FONCIERE PARIS"),
-                (f"{ym}-08", f"E2EWIT{seq+2:07d}", "SEPA_SDD", "STRMFLIXEUR", 1_599, "PRLV SEPA STRMFLIX ABO"),
-                (f"{ym}-11", f"E2EWITCB{seq:06d}", "CARD_CONTACTLESS", "BNPAFRPPXXX", 15_000, "CB CARREFOUR CITY PARIS"),
-                (f"{ym}-12", f"E2EWIT{seq+3:07d}", "SEPA_SDD", "EDFPROXIMIT", 6_401, "PRLV EDF ENERGIE"),
-                (f"{ym}-18", f"E2EWITCB{seq+1:06d}", "CARD_CONTACTLESS", "SOGEFRPPXXX", 22_000, "CB MONOPRIX OPERA PARIS"),
-                (f"{ym}-24", f"E2EWITCB{seq+2:06d}", "CARD_CONTACTLESS", "CMCIFRPPXXX", 19_000, "CB FNAC SAINT LAZARE"),
-                (f"{ym}-28", f"E2EWITCB{seq+3:06d}", "CARD_ECOMMERCE", "CMCIFRPPXXX", 22_800, "CB SNCF VOYAGES"),
+                (f"{ym}-01", f"E2EWIT{seq:07d}", "VIR SALAIRE TECHCORP SAS", 185_000),
+                (f"{ym}-05", f"E2EWIT{seq+1:07d}", "PRLV LOYER FONCIERE PARIS", 72_000),
+                (f"{ym}-08", f"E2EWIT{seq+2:07d}", "PRLV SEPA STRMFLIX ABO", 1_599),
+                (f"{ym}-11", f"E2EWITCB{seq:06d}", "CB CARREFOUR CITY PARIS", 15_000),
+                (f"{ym}-12", f"E2EWIT{seq+3:07d}", "PRLV EDF ENERGIE", 6_401),
+                (f"{ym}-18", f"E2EWITCB{seq+1:06d}", "CB MONOPRIX OPERA PARIS", 22_000),
+                (f"{ym}-24", f"E2EWITCB{seq+2:06d}", "CB FNAC SAINT LAZARE", 19_000),
+                (f"{ym}-28", f"E2EWITCB{seq+3:06d}", "CB SNCF VOYAGES", 22_800),
             ]
             seq += 4
         else:
             ops = [
-                ("2026-11-01", f"E2EWIT{seq:07d}", "SCT_INBOUND", "EMPLOYEURFR", 185_000, "VIR SALAIRE TECHCORP SAS"),
-                ("2026-11-05", f"E2EWIT{seq+1:07d}", "SEPA_SDD", "MANDATLOYER", 72_000, "PRLV LOYER FONCIERE PARIS"),
-                ("2026-11-08", f"E2EWIT{seq+2:07d}", "SEPA_SDD", "STRMFLIXEUR", 1_999, "PRLV SEPA STRMFLIX ABO"),
-                ("2026-11-10", f"E2EWIT{seq+3:07d}", "SCT_INBOUND", "CPAMIDF7500", 4_200, "VIR CPAM REMBOURSEMENT SANTE"),
-                ("2026-11-11", f"E2EWITCB{seq:06d}", "CARD_CONTACTLESS", "BNPAFRPPXXX", 15_000, "CB CARREFOUR CITY PARIS"),
-                ("2026-11-12", f"E2EWIT{seq+4:07d}", "SEPA_SDD", "EDFPROXIMIT", 6_401, "PRLV EDF ENERGIE"),
+                ("2026-11-01", f"E2EWIT{seq:07d}", "VIR SALAIRE TECHCORP SAS", 185_000),
+                ("2026-11-05", f"E2EWIT{seq+1:07d}", "PRLV LOYER FONCIERE PARIS", 72_000),
+                ("2026-11-08", f"E2EWIT{seq+2:07d}", "PRLV SEPA STRMFLIX ABO", 1_999),
+                ("2026-11-10", f"E2EWIT{seq+3:07d}", "VIR CPAM REMBOURSEMENT SANTE", 4_200),
+                ("2026-11-11", f"E2EWITCB{seq:06d}", "CB CARREFOUR CITY PARIS", 15_000),
+                ("2026-11-12", f"E2EWIT{seq+4:07d}", "PRLV EDF ENERGIE", 6_401),
             ]
             seq += 5
         rows.extend(ops)
 
     n = len(rows)
+    cps = [WITNESS_COUNTERPARTIES[r[2]] for r in rows]
     return {
         "end_to_end_id": np.array([r[1] for r in rows], dtype="U28"),
         "date_iso": np.array([r[0] for r in rows], dtype="U10"),
         "sec_of_day": np.full(n, 32_400, dtype=np.int32),
+        "acc_idx": np.full(n, WITNESS_CUST_IDX, dtype=np.int32),
         "customer_id": np.full(n, WITNESS_CUST_ID, dtype="U12"),
         "debtor_account_id": np.full(n, WITNESS_ACC_ID, dtype="U11"),
         "debtor_iban": np.full(n, iban_witness, dtype="U27"),
         "guichet_code_5": np.full(n, guichet_5, dtype="U5"),
-        "creditor_bic": np.array([r[3] for r in rows], dtype="U12"),
-        "payment_scheme": np.array([r[2] for r in rows], dtype="U16"),
+        "creditor_bic": np.array([c.bic for c in cps], dtype="U12"),
+        "creditor_name": np.array([c.name for c in cps], dtype="U40"),
+        "creditor_iban": np.array([c.iban for c in cps], dtype="U34"),
+        "payment_scheme": np.array([c.scheme for c in cps], dtype="U16"),
         "tx_status": np.full(n, "ACSC", dtype="U4"),
         "status_reason": np.full(n, "", dtype="U4"),
-        "amount_cents": np.array([r[4] for r in rows], dtype=np.int64),
+        "amount_cents": np.array([r[3] for r in rows], dtype=np.int64),
         "retry_attempt": np.zeros(n, dtype=np.int8),
-        "remittance_info": np.array([r[5] for r in rows], dtype="U36"),
+        "remittance_info": np.array([r[2] for r in rows], dtype="U40"),
     }
 
 
@@ -99,57 +157,87 @@ def generate_iban_beneficiary_table(
     rng: np.random.Generator,
     leak_df: pl.DataFrame,
     accounts_df: pl.DataFrame,
+    customers_df: pl.DataFrame,
 ) -> pl.DataFrame:
-    """Génère la table des ajouts d'IBAN bénéficiaires (avec ~3,4 % de doublons d'appels API)."""
-    acc_iban_map = accounts_df.select(["account_id", "iban", "guichet_code_5"])
+    """Enrôlements IBAN bénéficiaires (veille du 1er virement néobanque) en 100 % Nested STRUCT, ~3,4 % doublons API."""
     distinct_pairs = (
-        leak_df.select(["customer_id", "account_id", "neobank_bic", "accounting_date"])
-        .group_by(["customer_id", "account_id", "neobank_bic"])
+        leak_df.select(["customer_id", "account_id", "acc_idx", "cust_idx", "neobank_bic", "accounting_date"])
+        .group_by(["customer_id", "account_id", "acc_idx", "cust_idx", "neobank_bic"])
         .agg(pl.col("accounting_date").min().alias("first_leak_date"))
-        .join(acc_iban_map, on="account_id", how="left")
+        .join(accounts_df.select(["account_id", "iban", "guichet_code_5"]), on="account_id", how="left")
+        .join(customers_df.select(["customer_id", "first_name", "last_name"]), on="customer_id", how="left")
+        .sort(["cust_idx", "neobank_bic"])
     )
 
     n_unique = distinct_pairs.height
-    event_ids = [f"IBANEVT{i:08d}" for i in range(1, n_unique + 1)]
-    dates_str = distinct_pairs["first_leak_date"].to_list()
-    added_dates = [
-        (date(int(d[:4]), int(d[4:6]), int(d[6:8])) - timedelta(days=1)).isoformat()
-        for d in dates_str
-    ]
+    acc_idx = distinct_pairs["acc_idx"].to_list()
+    cust_idx = distinct_pairs["cust_idx"].to_list()
     bics = distinct_pairs["neobank_bic"].to_list()
-    ext_ibans = [
-        f"LT6032500{i:011d}" if b.startswith("REVOLT") else f"DE8950010517{i:010d}"
-        for i, b in enumerate(bics, start=1)
+    first_names = distinct_pairs["first_name"].to_list()
+    event_ts = [
+        f"{(date(int(d[:4]), int(d[4:6]), int(d[6:8])) - timedelta(days=1)).isoformat()} "
+        f"{8 + (a * 7) % 13:02d}:{(a * 11) % 60:02d}:{(a * 17) % 60:02d}"
+        for d, a in zip(distinct_pairs["first_leak_date"].to_list(), acc_idx)
     ]
 
-    base_df = distinct_pairs.with_columns([
-        pl.Series("iban_event_id", event_ids),
-        pl.Series("added_date", added_dates).str.strptime(pl.Date, "%Y-%m-%d"),
-        pl.Series("beneficiary_iban", ext_ibans),
-        pl.lit("MOBILE_APP").alias("channel"),
-        pl.lit("VERIFIED_SCA").alias("auth_status"),
-        pl.lit(0, dtype=pl.Int8).alias("retry_attempt"),
-    ]).select([
-        "iban_event_id",
-        "added_date",
-        "customer_id",
-        "account_id",
-        "guichet_code_5",
-        "neobank_bic",
-        "beneficiary_iban",
-        "channel",
-        "auth_status",
-        "retry_attempt",
-    ]).rename({"neobank_bic": "beneficiary_bic"})
+    base_df = pl.DataFrame({
+        "event_id": [f"IBANEVT{i:08d}" for i in range(1, n_unique + 1)],
+        "event_ts": event_ts,
+        "retry_attempt": [0] * n_unique,
+        "customer_id": distinct_pairs["customer_id"],
+        "account_id": distinct_pairs["account_id"],
+        "full_name": (distinct_pairs["first_name"] + " " + distinct_pairs["last_name"]),
+        "debtor_iban": distinct_pairs["iban"],
+        "branch_guichet": distinct_pairs["guichet_code_5"],
+        "beneficiary_iban": [neobank_beneficiary_iban(int(a), b) for a, b in zip(acc_idx, bics)],
+        "beneficiary_bic": bics,
+        "custom_label": [beneficiary_custom_label(f, b) for f, b in zip(first_names, bics)],
+        "channel": [customer_channel(int(c)) for c in cust_idx],
+        "sca_strong_auth_status": [customer_sca_status(int(c)) for c in cust_idx],
+        "device_ip": [customer_device_ip(int(c)) for c in cust_idx],
+    })
 
-    # ~3,4 % de doublons techniques d'API mobile
+    # ~3,4 % de doublons techniques d'API mobile (même enrôlement réémis 4 s plus tard)
     n_dups = int(round(n_unique * 0.0352))
-    dup_df = base_df.head(n_dups).with_columns([
-        (pl.col("iban_event_id") + "_RETRY").alias("iban_event_id"),
-        pl.lit(1, dtype=pl.Int8).alias("retry_attempt"),
-    ])
+    dup_idx = np.sort(rng.choice(n_unique, size=n_dups, replace=False))
+    dup_df = (
+        base_df.with_row_index("_row")
+        .filter(pl.col("_row").is_in(dup_idx.tolist()))
+        .drop("_row")
+        .with_columns([
+            (pl.col("event_id") + "_RETRY").alias("event_id"),
+            pl.lit(1, dtype=pl.Int64).alias("retry_attempt"),
+        ])
+    )
 
-    return pl.concat([base_df, dup_df])
+    flat = pl.concat([base_df, dup_df]).with_columns(
+        pl.col("event_ts").str.strptime(pl.Datetime("us"), "%Y-%m-%d %H:%M:%S").dt.replace_time_zone("UTC")
+    )
+    return flat.select([
+        pl.struct([
+            pl.lit(IBAN_ENROLLMENT_SCHEMA_VERSION).alias("schema_version"),
+            pl.col("event_id"),
+            pl.col("event_ts"),
+            pl.col("retry_attempt").cast(pl.Int64),
+        ]).alias("header"),
+        pl.struct([
+            pl.col("customer_id"),
+            pl.col("account_id"),
+            pl.col("full_name"),
+            pl.col("debtor_iban"),
+            pl.col("branch_guichet"),
+        ]).alias("account_holder"),
+        pl.struct([
+            pl.col("beneficiary_iban").alias("iban"),
+            pl.col("beneficiary_bic").alias("agent_bic"),
+            pl.col("custom_label"),
+        ]).alias("beneficiary"),
+        pl.struct([
+            pl.col("channel"),
+            pl.col("sca_strong_auth_status"),
+            pl.col("device_ip"),
+        ]).alias("security_context"),
+    ])
 
 
 def main() -> None:
@@ -169,6 +257,7 @@ def main() -> None:
     rng = np.random.default_rng(DEMO_SEED + 303)
 
     accounts_df = universe["accounts"]
+    customers_df = universe["customers"]
     leak_90d_df = universe["leak_events_90d"]
 
     out_dir: Path = args.output_dir
@@ -196,7 +285,7 @@ def main() -> None:
         dtype=np.int32,
     )
 
-    # 1. Witness Lucas Martin (140 événements ACSC)
+    # 1. Témoin Lucas Martin (140 événements ACSC, miroir exact du Mainframe)
     w_blocks = build_witness_payment_rows(
         str(ibans_arr[WITNESS_CUST_IDX - 1]),
         str(guichets_arr[WITNESS_CUST_IDX - 1]),
@@ -205,94 +294,68 @@ def main() -> None:
 
     # 2. Les 200 000 virements de fuite SEPA Instant 90j (ACSC -> exactement 2 420 000 000,00 €)
     n_leak_90d = leak_90d_df.height
-    leak_acc_zero = leak_90d_df["acc_idx"].to_numpy() - 1
-    leak_raw_dates = leak_90d_df["accounting_date"].to_numpy()
+    leak_acc_idx = leak_90d_df["acc_idx"].to_numpy().astype(np.int32)
+    leak_bics = leak_90d_df["neobank_bic"].to_numpy().astype("U12")
     leak_dates_iso = np.array(
-        [f"{d[:4]}-{d[4:6]}-{d[6:8]}" for d in leak_raw_dates],
+        [f"{d[:4]}-{d[4:6]}-{d[6:8]}" for d in leak_90d_df["accounting_date"].to_numpy()],
         dtype="U10",
     )
     leak_blocks = {
         "end_to_end_id": leak_90d_df["end_to_end_id"].to_numpy().astype("U28"),
         "date_iso": leak_dates_iso,
         "sec_of_day": rng.integers(25_200, 79_200, size=n_leak_90d, dtype=np.int32),
+        "acc_idx": leak_acc_idx,
         "customer_id": leak_90d_df["customer_id"].to_numpy().astype("U12"),
         "debtor_account_id": leak_90d_df["account_id"].to_numpy().astype("U11"),
-        "debtor_iban": ibans_arr[leak_acc_zero].astype("U27"),
+        "debtor_iban": ibans_arr[leak_acc_idx - 1].astype("U27"),
         "guichet_code_5": leak_90d_df["guichet_code_5"].to_numpy().astype("U5"),
-        "creditor_bic": leak_90d_df["neobank_bic"].to_numpy().astype("U12"),
+        "creditor_bic": leak_bics,
+        "creditor_name": np.full(n_leak_90d, SELF_NAME_MARKER, dtype="U40"),
+        "creditor_iban": _neobank_ibans(leak_acc_idx, leak_bics),
         "payment_scheme": np.full(n_leak_90d, "SCT_INST", dtype="U16"),
         "tx_status": np.full(n_leak_90d, "ACSC", dtype="U4"),
-        "status_reason": np.full(n, "", dtype="U4") if (n := n_leak_90d) else np.array([], dtype="U4"),
+        "status_reason": np.full(n_leak_90d, "", dtype="U4"),
         "amount_cents": leak_90d_df["amount_cents"].to_numpy().astype(np.int64),
         "retry_attempt": np.zeros(n_leak_90d, dtype=np.int8),
-        "remittance_info": leak_90d_df["libelle"].to_numpy().astype("U36"),
+        "remittance_info": leak_90d_df["libelle"].to_numpy().astype("U40"),
     }
 
-    # 3. Fuites néobanques historiques avant le trimestre (< 2026-08-13) : 100 000 événements ACSC
-    n_leak_hist = 100_000
-    pre_cc_zero = np.array([i for i in range(62_000) if (i + 1) != WITNESS_CUST_IDX], dtype=np.int32)
-    hist_chosen_zero = rng.choice(pre_cc_zero, size=n_leak_hist, replace=True)
-    aug12_ord = date(2026, 8, 12).toordinal()
-    hist_ords = rng.integers(ord_start, aug12_ord + 1, size=n_leak_hist)
-    hist_neo_idx = rng.choice(len(NEOBANK_DESTINATIONS), size=n_leak_hist, p=[0.40, 0.30, 0.14, 0.10, 0.06])
-    neo_bic_arr = np.array([b for b, _ in NEOBANK_DESTINATIONS], dtype="U12")
-    neo_lbl_arr = np.array([lbl for _, lbl in NEOBANK_DESTINATIONS], dtype="U36")
-
-    leak_hist_blocks = {
-        "end_to_end_id": np.char.add("E2EHISTLEAK", np.char.zfill(np.arange(1, n_leak_hist + 1).astype("U10"), 8)).astype("U28"),
-        "date_iso": date_iso_lookup[hist_ords - ord_start],
-        "sec_of_day": rng.integers(25_200, 79_200, size=n_leak_hist, dtype=np.int32),
-        "customer_id": cust_ids_arr[hist_chosen_zero].astype("U12"),
-        "debtor_account_id": acc_ids_arr[hist_chosen_zero].astype("U11"),
-        "debtor_iban": ibans_arr[hist_chosen_zero].astype("U27"),
-        "guichet_code_5": guichets_arr[hist_chosen_zero].astype("U5"),
-        "creditor_bic": neo_bic_arr[hist_neo_idx],
-        "payment_scheme": np.full(n_leak_hist, "SCT_INST", dtype="U16"),
-        "tx_status": np.full(n_leak_hist, "ACSC", dtype="U4"),
-        "status_reason": np.full(n_leak_hist, "", dtype="U4"),
-        "amount_cents": rng.integers(15_000, 380_000, size=n_leak_hist, dtype=np.int64),
-        "retry_attempt": np.zeros(n_leak_hist, dtype=np.int8),
-        "remittance_info": neo_lbl_arr[hist_neo_idx],
-    }
-
-    # 4. Opérations courantes compensées ACSC (incluant des flux sur les 650 comptes récents AWS !)
-    n_regular_acsc = EXACT_UNIQUE_ACSC_EVENTS - (n_witness + n_leak_90d + n_leak_hist)
+    # 3-4. Journal partagé `customer_ledger.py` : fuites néobanques historiques + vie courante réglée ACSC
+    #      (salaires, prélèvements, santé, carte, dont les 650 comptes récents AWS). Mêmes opérations que le
+    #      Mainframe CFONB pour tous les comptes présents dans le batch J-1.
+    ledger = build_or_load_ledger().filter(pl.col("in_sepa"))
     cc_pool_zero = np.array([i for i in range(80_000) if (i + 1) != WITNESS_CUST_IDX], dtype=np.int32)
-    reg_zero = rng.choice(cc_pool_zero, size=n_regular_acsc, replace=True)
-    # Garantir que chacun des 650 comptes orphelins AWS (79350..79999) a au moins 2 opérations SEPA/CB
-    reg_zero[:1300] = np.tile(np.arange(79_350, 80_000, dtype=np.int32), 2)
 
-    reg_min_ords = acc_min_ord[reg_zero]
-    reg_ords = rng.integers(reg_min_ords, ord_end + 1)
+    def _ledger_blocks(part: pl.DataFrame) -> dict[str, np.ndarray]:
+        zero = part["acc_idx"].to_numpy().astype(np.int32) - 1
+        n = part.height
+        return {
+            "end_to_end_id": part["e2e_id"].to_numpy().astype("U28"),
+            "date_iso": np.array([f"{d[:4]}-{d[4:6]}-{d[6:8]}" for d in part["op_date"].to_list()], dtype="U10"),
+            "sec_of_day": part["sec_of_day"].to_numpy().astype(np.int32),
+            "acc_idx": (zero + 1).astype(np.int32),
+            "customer_id": cust_ids_arr[zero].astype("U12"),
+            "debtor_account_id": acc_ids_arr[zero].astype("U11"),
+            "debtor_iban": ibans_arr[zero].astype("U27"),
+            "guichet_code_5": guichets_arr[zero].astype("U5"),
+            "creditor_bic": part["creditor_bic"].to_numpy().astype("U12"),
+            "creditor_name": part["creditor_name"].to_numpy().astype("U40"),
+            "creditor_iban": part["creditor_iban"].to_numpy().astype("U34"),
+            "payment_scheme": part["payment_scheme"].to_numpy().astype("U16"),
+            "tx_status": np.full(n, "ACSC", dtype="U4"),
+            "status_reason": np.full(n, "", dtype="U4"),
+            "amount_cents": part["amount_cents"].to_numpy().astype(np.int64),
+            "retry_attempt": np.zeros(n, dtype=np.int8),
+            "remittance_info": part["label"].to_numpy().astype("U40"),
+        }
 
-    merchant_bics = np.array(["BNPAFRPPXXX", "SOGEFRPPXXX", "CMCIFRPPXXX", "AGRIFRPPXXX", "CEPAFRPPXXX", "EMPLOYEURFR"], dtype="U12")
-    merchant_schemes = np.array(["CARD_CONTACTLESS", "CARD_ECOMMERCE", "SEPA_SDD", "SCT_OUTBOUND", "CARD_CONTACTLESS", "SCT_INBOUND"], dtype="U16")
-    merchant_labels = np.array([
-        "PAIEMENT CB COMMERCE PROXIMITE",
-        "PAIEMENT CB ECOMMERCE",
-        "PRLV SEPA FACTURE ENERGIE TELECOM",
-        "VIR SEPA EXTERNE",
-        "PAIEMENT CB SUPERMARCHE",
-        "VIR SEPA SALAIRE ENTREPRISE",
-    ], dtype="U36")
-    m_choice = rng.integers(0, len(merchant_bics), size=n_regular_acsc)
-
-    reg_blocks = {
-        "end_to_end_id": np.char.add("E2EREG2026", np.char.zfill(np.arange(1, n_regular_acsc + 1).astype("U10"), 9)).astype("U28"),
-        "date_iso": date_iso_lookup[reg_ords - ord_start],
-        "sec_of_day": rng.integers(21_600, 82_800, size=n_regular_acsc, dtype=np.int32),
-        "customer_id": cust_ids_arr[reg_zero].astype("U12"),
-        "debtor_account_id": acc_ids_arr[reg_zero].astype("U11"),
-        "debtor_iban": ibans_arr[reg_zero].astype("U27"),
-        "guichet_code_5": guichets_arr[reg_zero].astype("U5"),
-        "creditor_bic": merchant_bics[m_choice],
-        "payment_scheme": merchant_schemes[m_choice],
-        "tx_status": np.full(n_regular_acsc, "ACSC", dtype="U4"),
-        "status_reason": np.full(n_regular_acsc, "", dtype="U4"),
-        "amount_cents": rng.integers(650, 240_000, size=n_regular_acsc, dtype=np.int64),
-        "retry_attempt": np.zeros(n_regular_acsc, dtype=np.int8),
-        "remittance_info": merchant_labels[m_choice],
-    }
+    leak_hist_blocks = _ledger_blocks(ledger.filter(pl.col("family") == "LEAK_HIST"))
+    n_leak_hist = len(leak_hist_blocks["end_to_end_id"])
+    reg_blocks = _ledger_blocks(ledger.filter(pl.col("family") != "LEAK_HIST"))
+    n_regular_acsc = len(reg_blocks["end_to_end_id"])
+    assert n_witness + n_leak_90d + n_leak_hist + n_regular_acsc == EXACT_UNIQUE_ACSC_EVENTS
+    neo_bic_arr = np.array(NEOBANK_BICS, dtype="U12")
+    neo_lbl_arr = np.array([NEOBANK_LABELS[b] for b in NEOBANK_BICS], dtype="U40")
 
     # 5. Les 502 200 événements non compensés RJCT / PDNG (exactement 8,1000 % du total RAW)
     #    Dont 18 000 tentatives vers des BIC néobanques sur les 90j (pour piéger toute requête sans filtre ACSC !)
@@ -306,7 +369,7 @@ def main() -> None:
     ns_ords[:18_000] = rng.integers(q_start_ord, ord_end + 1, size=18_000)
 
     ns_neo_choice = rng.integers(0, len(NEOBANK_DESTINATIONS), size=n_non_settled)
-    ns_mer_choice = rng.integers(0, len(merchant_bics), size=n_non_settled)
+    ns_out_choice = rng.choice(len(OUTBOUND_COUNTERPARTIES), size=n_non_settled, p=OUTBOUND_WEIGHTS)
 
     n_rjct = 341_000
     ns_statuses = np.concatenate([
@@ -318,25 +381,33 @@ def main() -> None:
         np.full(n_non_settled - n_rjct, "AB05", dtype="U4"),
     ])
 
+    ns_bics = np.where(is_neo_ns, neo_bic_arr[ns_neo_choice], _OUT_BICS[ns_out_choice]).astype("U12")
+    ns_creditor_iban = _OUT_IBANS[ns_out_choice].copy()
+    neo_rows = np.flatnonzero(is_neo_ns)
+    ns_creditor_iban[neo_rows] = _neobank_ibans(ns_zero[neo_rows] + 1, ns_bics[neo_rows])
+
     ns_blocks = {
         "end_to_end_id": np.char.add("E2ENS2026", np.char.zfill(np.arange(1, n_non_settled + 1).astype("U10"), 9)).astype("U28"),
         "date_iso": date_iso_lookup[ns_ords - ord_start],
         "sec_of_day": rng.integers(21_600, 82_800, size=n_non_settled, dtype=np.int32),
+        "acc_idx": (ns_zero + 1).astype(np.int32),
         "customer_id": cust_ids_arr[ns_zero].astype("U12"),
         "debtor_account_id": acc_ids_arr[ns_zero].astype("U11"),
         "debtor_iban": ibans_arr[ns_zero].astype("U27"),
         "guichet_code_5": guichets_arr[ns_zero].astype("U5"),
-        "creditor_bic": np.where(is_neo_ns, neo_bic_arr[ns_neo_choice], merchant_bics[ns_mer_choice]),
-        "payment_scheme": np.where(is_neo_ns, "SCT_INST", merchant_schemes[ns_mer_choice]).astype("U16"),
+        "creditor_bic": ns_bics,
+        "creditor_name": np.where(is_neo_ns, SELF_NAME_MARKER, _OUT_NAMES[ns_out_choice]).astype("U40"),
+        "creditor_iban": ns_creditor_iban,
+        "payment_scheme": np.where(is_neo_ns, "SCT_INST", _OUT_SCHEMES[ns_out_choice]).astype("U16"),
         "tx_status": ns_statuses,
         "status_reason": ns_reasons,
         "amount_cents": np.where(
             is_neo_ns,
             rng.integers(50_000, 450_000, size=n_non_settled, dtype=np.int64),
-            rng.integers(1_200, 120_000, size=n_non_settled, dtype=np.int64),
+            _uniform_between(rng, _OUT_LO[ns_out_choice], _OUT_HI[ns_out_choice]),
         ),
         "retry_attempt": np.zeros(n_non_settled, dtype=np.int8),
-        "remittance_info": np.where(is_neo_ns, neo_lbl_arr[ns_neo_choice], merchant_labels[ns_mer_choice]),
+        "remittance_info": np.where(is_neo_ns, neo_lbl_arr[ns_neo_choice], _OUT_LABELS[ns_out_choice]).astype("U40"),
     }
 
     # Assemblage des 5 989 200 événements uniques avant injection des 210 800 retries doublons
@@ -371,6 +442,11 @@ def main() -> None:
 
     event_ids = np.char.add("PEVT", np.char.zfill(np.arange(1, n_final + 1).astype("U10"), 9))
 
+    names_df = customers_df.select([
+        "customer_id",
+        (pl.col("first_name") + pl.lit(" ") + pl.col("last_name")).alias("full_name"),
+    ])
+
     df = pl.DataFrame({
         "event_id": event_ids,
         "end_to_end_id": all_cols["end_to_end_id"],
@@ -381,6 +457,8 @@ def main() -> None:
         "debtor_iban": all_cols["debtor_iban"],
         "guichet_code_5": all_cols["guichet_code_5"],
         "creditor_bic": all_cols["creditor_bic"],
+        "creditor_name": all_cols["creditor_name"],
+        "creditor_iban": all_cols["creditor_iban"],
         "payment_scheme": all_cols["payment_scheme"],
         "tx_status": all_cols["tx_status"],
         "status_reason": all_cols["status_reason"],
@@ -393,18 +471,17 @@ def main() -> None:
         (
             pl.col("execution_date").cast(pl.Datetime("us"))
             + pl.duration(seconds=pl.col("sec_of_day"))
-        ).alias("execution_ts")
-    ).drop("sec_of_day")
+        ).dt.replace_time_zone("UTC").alias("execution_ts")
+    ).drop("sec_of_day").join(names_df, on="customer_id", how="left", maintain_order="left")
 
     # Vérification stricte des invariants RAW et SILVER (après dédoublonnage + filtre ACSC)
     dup_pct = round((df.height - df["end_to_end_id"].n_unique()) * 100.0 / df.height, 4)
     non_settled_pct = round(df.filter(pl.col("tx_status").is_in(["RJCT", "PDNG"])).height * 100.0 / df.height, 4)
 
-    neo_bics_list = [b for b, _ in NEOBANK_DESTINATIONS]
     raw_naive_leak_cents = int(
         df.filter(
             (pl.col("execution_date") >= QUARTER_START_DATE)
-            & (pl.col("creditor_bic").is_in(neo_bics_list))
+            & (pl.col("creditor_bic").is_in(NEOBANK_BICS))
         )["amount_cents"].sum()
     )
 
@@ -412,11 +489,12 @@ def main() -> None:
         df.filter(
             (pl.col("tx_status") == "ACSC")
             & (pl.col("execution_date") >= QUARTER_START_DATE)
-            & (pl.col("creditor_bic").is_in(neo_bics_list))
+            & (pl.col("execution_date") <= SNAPSHOT_DATE)
+            & (pl.col("creditor_bic").is_in(NEOBANK_BICS))
         )
         .sort("execution_ts", descending=True)
         .unique(subset=["end_to_end_id"], keep="first")
-        .join(universe["customers"].select(["customer_id", "age"]), on="customer_id", how="left")
+        .join(customers_df.select(["customer_id", "age"]), on="customer_id", how="left")
     )
 
     clean_leak_cents = int(clean_leak_df["amount_cents"].sum())
@@ -431,16 +509,11 @@ def main() -> None:
     assert non_settled_pct == 8.1, f"Attendu 8.1% RJCT/PDNG, obtenu {non_settled_pct}%"
     assert clean_leak_cents == TOTAL_LEAK_90D_CENTS, f"Fuite clean attendue {TOTAL_LEAK_90D_CENTS}, obtenu {clean_leak_cents}"
     assert young_1_5_cents == YOUNG_1_TO_5_LEAK_90D_CENTS, f"Fuite jeunes attendue {YOUNG_1_TO_5_LEAK_90D_CENTS}, obtenu {young_1_5_cents}"
+    assert df["full_name"].null_count() == 0, "Nom titulaire manquant"
 
     # Projection finale en schéma 100 % Nested (STRUCT ISO 20022 identique aux BigQuery Subscriptions Pub/Sub)
-    cust_names_df = universe["customers"].select([
-        "customer_id",
-        (pl.col("first_name") + pl.lit(" ") + pl.col("last_name")).alias("full_name"),
-    ])
-
     nested_events_df = (
-        df.join(cust_names_df, on="customer_id", how="left")
-        .with_columns([
+        df.with_columns([
             pl.when(pl.col("payment_scheme").str.starts_with("SCT_INST"))
             .then(pl.lit("CLRG_RT1_INST"))
             .otherwise(pl.lit("CLRG_STEP2"))
@@ -449,20 +522,14 @@ def main() -> None:
             .then(None)
             .otherwise(pl.col("status_reason"))
             .alias("status_reason_code"),
-            pl.when(pl.col("creditor_bic").str.starts_with("REVOLT"))
-            .then(pl.lit("LT603250000000") + pl.col("debtor_account_id").str.slice(3))
-            .when(pl.col("creditor_bic").is_in(neo_bics_list))
-            .then(pl.lit("DE895001051700") + pl.col("debtor_account_id").str.slice(3))
-            .otherwise(pl.lit("FR76300040089200") + pl.col("debtor_account_id").str.slice(3) + pl.lit("44"))
-            .alias("creditor_iban"),
-            pl.when(pl.col("creditor_bic").is_in(neo_bics_list))
+            pl.when(pl.col("creditor_name") == SELF_NAME_MARKER)
             .then(pl.col("full_name"))
-            .otherwise(pl.col("remittance_info"))
-            .alias("creditor_name"),
+            .otherwise(pl.col("creditor_name"))
+            .alias("creditor_name_resolved"),
         ])
         .select([
             pl.struct([
-                pl.lit("iso20022.pacs.008.001.08").alias("schema_version"),
+                pl.lit(PACS008_SCHEMA_VERSION).alias("schema_version"),
                 pl.col("event_id"),
                 pl.col("end_to_end_id"),
                 pl.col("execution_ts"),
@@ -488,7 +555,7 @@ def main() -> None:
                 pl.col("guichet_code_5").alias("branch_guichet"),
             ]).alias("debtor"),
             pl.struct([
-                pl.col("creditor_name").alias("name"),
+                pl.col("creditor_name_resolved").alias("name"),
                 pl.col("creditor_iban").alias("iban"),
                 pl.col("creditor_bic").alias("agent_bic"),
             ]).alias("creditor"),
@@ -498,46 +565,23 @@ def main() -> None:
         ])
     )
 
-    # Écriture en 4 shards Parquet ZSTD (~35 Mo chacun) pour lecture parallèle ultra-rapide BigLake
+    # Écriture en 4 shards Parquet ZSTD pour lecture parallèle BigLake (purge préalable des anciens shards)
+    for old in events_dir.glob("part-*.parquet"):
+        old.unlink()
     shard_size = (nested_events_df.height + 3) // 4
     for idx_s in range(4):
         shard = nested_events_df.slice(idx_s * shard_size, shard_size)
         shard.write_parquet(events_dir / f"part-{idx_s:05d}.parquet", compression="zstd")
 
-    iban_flat_df = generate_iban_beneficiary_table(rng, leak_90d_df, accounts_df)
-    iban_df = (
-        iban_flat_df.join(cust_names_df, on="customer_id", how="left")
-        .join(accounts_df.select(["account_id", "iban"]), on="account_id", how="left")
-        .select([
-            pl.struct([
-                pl.lit("iban.enrollment.v2").alias("schema_version"),
-                pl.col("iban_event_id").alias("event_id"),
-                pl.col("added_date").cast(pl.Datetime("us")).alias("event_ts"),
-                pl.col("retry_attempt").cast(pl.Int64),
-            ]).alias("header"),
-            pl.struct([
-                pl.col("customer_id"),
-                pl.col("account_id"),
-                pl.col("full_name"),
-                pl.col("iban").alias("debtor_iban"),
-                pl.col("guichet_code_5").alias("branch_guichet"),
-            ]).alias("account_holder"),
-            pl.struct([
-                pl.col("beneficiary_iban").alias("iban"),
-                pl.col("beneficiary_bic").alias("agent_bic"),
-                (pl.lit("Compte ") + pl.col("beneficiary_bic").str.slice(0, 6) + pl.lit(" ") + pl.col("full_name")).alias("custom_label"),
-            ]).alias("beneficiary"),
-            pl.struct([
-                pl.col("channel"),
-                pl.col("auth_status").alias("sca_strong_auth_status"),
-                pl.lit("90.63.140.10").alias("device_ip"),
-            ]).alias("security_context"),
-        ])
-    )
+    iban_df = generate_iban_beneficiary_table(rng, leak_90d_df, accounts_df, customers_df)
+    for old in iban_dir.glob("part-*.parquet"):
+        old.unlink()
     iban_df.write_parquet(iban_dir / "part-00000.parquet", compression="zstd")
 
+    sensitive_regex = r"(SANTE|CPAM|MUTUELLE|MEDICAL|ORDONNANCE|PHARMACIE|LOYER)"
     stats = {
         "seed": DEMO_SEED,
+        "history_window": [HISTORY_START_DATE.isoformat(), SNAPSHOT_DATE.isoformat()],
         "total_raw_payment_events": df.height,
         "duplicate_end_to_end_id_events": EXACT_DUP_RETRY_EVENTS,
         "duplicate_end_to_end_id_pct": dup_pct,
@@ -547,6 +591,9 @@ def main() -> None:
         "raw_unfiltered_90d_neobank_eur": round(raw_naive_leak_cents / 100.0, 2),
         "clean_dedup_acsc_90d_neobank_eur": round(clean_leak_cents / 100.0, 2),
         "young_18_32_day_1_5_share_pct": round(young_1_5_cents * 100.0 / clean_leak_cents, 2),
+        "sensitive_freetext_share_pct": round(
+            df.filter(pl.col("remittance_info").str.contains(sensitive_regex)).height * 100.0 / df.height, 2
+        ),
         "iban_beneficiary_events": iban_df.height,
     }
     (out_dir / "_manifest_payments_silo.json").write_text(json.dumps(stats, indent=2), encoding="utf-8")

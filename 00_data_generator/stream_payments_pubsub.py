@@ -1,13 +1,19 @@
 """
 Moulinette temps réel Cloud Pub/Sub — Flux Paiements ISO 20022 (pacs.008) & Ajouts d'IBAN.
 
-Émet dans Cloud Pub/Sub (`data-days-demo`) des événements JSON structurés ISO 20022
-100 % cohérents avec le référentiel partagé `shared_universe.py` (mêmes clients, IBAN,
-agences, BIC néobanques et client témoin Lucas Martin `CUST00002026` / `ACC00002026`),
-tout en reproduisant fidèlement le bruit technique RAW :
+Émet dans Cloud Pub/Sub (`data-days-demo`) des événements JSON 100 % Nested STRUCT,
+strictement cohérents avec l'archive historique 18 mois (`generate_payments_stream.py`) :
+les deux générateurs partagent le contrat `payments_contract.py` (mêmes contreparties,
+mêmes BIC, mêmes IBAN externes de néobanques par client, mêmes libellés alignés sur le
+Mainframe CFONB, mêmes attributs digitaux par client).
+
+Continuité temporelle : l'historique s'arrête au snapshot du 12/11/2026 ; le flux temps réel
+est horodaté à l'instant de l'émission (jour J et suivants), sans aucun chevauchement.
+
+Bruit technique RAW reproduit :
   - ~3,4 % de doublons de retry réseau sur `end_to_end_id`
   - ~8,1 % de statuts non compensés (`RJCT` / `PDNG`) à côté des `ACSC`
-  - Concentration des fuites SEPA Instant vers néobanques chez les 18-32 ans
+  - Concentration des virements SEPA Instant vers néobanques chez les 18-32 ans
 
 Exemples d'utilisation :
   # Pré-charger une rafale de 500 messages réalistes dans les files Pub/Sub :
@@ -34,14 +40,29 @@ from datetime import datetime, timezone
 import google.auth
 import numpy as np
 import requests
-from google.auth.transport.requests import AuthorizedSession
 
-from shared_universe import (
+from payments_contract import (
     BANK_BIC,
+    COUNTERPARTIES,
+    COUNTERPARTY_WEIGHTS,
+    IBAN_ENROLLMENT_SCHEMA_VERSION,
+    NEOBANK_BICS,
+    NEOBANK_LABELS,
+    PACS008_SCHEMA_VERSION,
+    REJECT_REASONS,
+    WITNESS_COUNTERPARTIES,
+    beneficiary_custom_label,
+    customer_channel,
+    customer_device_ip,
+    customer_sca_status,
+    neobank_beneficiary_iban,
+    settlement_method_for,
+)
+from shared_universe import (
     DEMO_SEED,
-    NEOBANK_DESTINATIONS,
     WITNESS_ACC_ID,
     WITNESS_CUST_ID,
+    WITNESS_CUST_IDX,
     build_or_load_universe,
 )
 
@@ -49,24 +70,6 @@ DEFAULT_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "data-days-demo")
 DEFAULT_REGION = os.getenv("GCP_REGION", "europe-west1")
 TOPIC_PAYMENTS = "sepa-payments-pacs008-topic"
 TOPIC_IBAN = "iban-beneficiary-events-topic"
-
-MERCHANT_COUNTERPARTIES = [
-    ("CARREFOUR CITY PARIS", "BNPAFRPPXXX", "CARD_CONTACTLESS", 850, 9500, "CB CARREFOUR CITY PARIS"),
-    ("MONOPRIX OPERA", "SOGEFRPPXXX", "CARD_CONTACTLESS", 1200, 11000, "CB MONOPRIX OPERA"),
-    ("SNCF VOYAGES", "CMCIFRPPXXX", "CARD_ECOMMERCE", 2500, 14500, "BILLET TGV INOUI PARIS LYON"),
-    ("EDF ENERGIE", "AGRIFRPPXXX", "SEPA_SDD", 4500, 13000, "PRLV SEPA EDF CONTRAT ELEC"),
-    ("STRMFLIX DIGITAL", "BOFAIE3XXXX", "SEPA_SDD", 1599, 1999, "PRLV SEPA STRMFLIX ABO MENSUEL"),
-    ("PHARMACIE CENTRALE", "CEPAFRPPXXX", "CARD_CONTACTLESS", 600, 4800, "SANTE PHARMACIE ORDONNANCE"),
-    ("CABINET MEDICAL DR ROUSSEAU", "BNPAFRPPXXX", "SCT_INST", 3000, 7500, "HONORAIRES CONSULTATION MEDICALE"),
-    ("FONCIA GESTION LOCATIVE", "SOGEFRPPXXX", "SCT_INST", 68000, 135000, "LOYER MENSUEL APPARTEMENT"),
-]
-
-REJECT_REASONS = [
-    ("RJCT", "AM04", "InsufficientFunds"),
-    ("RJCT", "AM02", "NotAllowedAmountLimitExceeded"),
-    ("RJCT", "AC04", "ClosedAccountNumber"),
-    ("PDNG", "AB05", "TimeoutCreditorAgentSettlementPending"),
-]
 
 
 def build_pacs008_payload(
@@ -89,19 +92,21 @@ def build_pacs008_payload(
     retry_attempt: int,
     remittance_info: str,
 ) -> dict:
-    """Construit un message JSON 100 % Nested (STRUCT BigQuery) inspiré d'ISO 20022 pacs.008.001.08."""
+    """Message JSON 100 % Nested (STRUCT BigQuery) ISO 20022 pacs.008.001.08.
+
+    Convention identique à l'historique : `debtor` = compte Banque Hexagone concerné,
+    `creditor` = contrepartie externe ; `*_INBOUND` = crédit reçu par le client.
+    """
     amount_eur = round(amount_cents / 100.0, 2)
     return {
         "header": {
-            "schema_version": "iso20022.pacs.008.001.08",
+            "schema_version": PACS008_SCHEMA_VERSION,
             "event_id": event_id,
             "end_to_end_id": end_to_end_id,
             "execution_ts": execution_ts,
         },
         "settlement": {
-            "settlement_method": (
-                "CLRG_RT1_INST" if payment_scheme.startswith("SCT_INST") else "CLRG_STEP2"
-            ),
+            "settlement_method": settlement_method_for(payment_scheme),
             "payment_scheme": payment_scheme,
             "tx_status": tx_status,
             "status_reason_code": status_reason_code,
@@ -136,22 +141,20 @@ def build_iban_enrollment_payload(
     event_id: str,
     event_ts: str,
     retry_attempt: int,
+    cust_idx: int,
     customer_id: str,
     account_id: str,
+    first_name: str,
     full_name: str,
     debtor_iban: str,
     branch_guichet: str,
     beneficiary_iban: str,
     beneficiary_bic: str,
-    custom_label: str,
-    channel: str,
-    sca_strong_auth_status: str,
-    device_ip: str,
 ) -> dict:
-    """Construit un événement JSON 100 % Nested (STRUCT BigQuery) d'ajout de bénéficiaire IBAN."""
+    """Événement JSON 100 % Nested (STRUCT BigQuery) d'ajout de bénéficiaire IBAN (attributs digitaux partagés)."""
     return {
         "header": {
-            "schema_version": "iban.enrollment.v2",
+            "schema_version": IBAN_ENROLLMENT_SCHEMA_VERSION,
             "event_id": event_id,
             "event_ts": event_ts,
             "retry_attempt": int(retry_attempt),
@@ -166,14 +169,20 @@ def build_iban_enrollment_payload(
         "beneficiary": {
             "iban": beneficiary_iban,
             "agent_bic": beneficiary_bic,
-            "custom_label": custom_label,
+            "custom_label": beneficiary_custom_label(first_name, beneficiary_bic),
         },
         "security_context": {
-            "channel": channel,
-            "sca_strong_auth_status": sca_strong_auth_status,
-            "device_ip": device_ip,
+            "channel": customer_channel(cust_idx),
+            "sca_strong_auth_status": customer_sca_status(cust_idx),
+            "device_ip": customer_device_ip(cust_idx),
         },
     }
+
+
+def _enrolled_pairs(universe: dict) -> set[tuple[str, str]]:
+    """Couples (client, BIC néobanque) déjà enrôlés dans l'historique (veille du 1er virement 90j)."""
+    leak_df = universe["leak_events_90d"]
+    return set(zip(leak_df["customer_id"].to_list(), leak_df["neobank_bic"].to_list()))
 
 
 def generate_live_event_batch(
@@ -181,12 +190,15 @@ def generate_live_event_batch(
     universe: dict,
     batch_size: int,
     seq_start: int,
+    enrolled_pairs: set[tuple[str, str]] | None = None,
 ) -> tuple[list[dict], list[dict]]:
-    """Génère un lot cohérent d'événements paiements (+ ajouts d'IBAN associés) 100 % Nested."""
+    """Génère un lot cohérent d'événements paiements (+ enrôlements IBAN des nouveaux bénéficiaires)."""
     accounts_df = universe["accounts"]
     customers_df = universe["customers"]
+    enrolled = enrolled_pairs if enrolled_pairs is not None else _enrolled_pairs(universe)
 
-    # On pioche dans les 80 000 comptes courants (incluant les 650 comptes récents AWS !)
+    # Les 80 000 comptes courants (CC_CHQ) sont alignés 1:1 sur les clients (compte i <-> client i),
+    # y compris les 650 comptes récents AWS ; le témoin est réservé aux événements --witness-live.
     cc_df = accounts_df.filter(accounts_df["account_type"] == "CC_CHQ")
     acc_ids = cc_df["account_id"].to_numpy()
     cust_ids = cc_df["customer_id"].to_numpy()
@@ -196,14 +208,16 @@ def generate_live_event_batch(
     first_names = customers_df["first_name"].to_numpy()
     last_names = customers_df["last_name"].to_numpy()
 
-    young_indices = np.flatnonzero((ages >= 18) & (ages <= 32))
-    all_indices = np.arange(len(acc_ids))
-    channels = ["MOBILE_APP_ANDROID", "MOBILE_APP_IOS", "WEB_HOMEBANKING"]
+    not_witness = np.arange(len(acc_ids)) != (WITNESS_CUST_IDX - 1)
+    young_indices = np.flatnonzero((ages >= 18) & (ages <= 32) & not_witness)
+    all_indices = np.flatnonzero(not_witness)
 
     payment_msgs: list[dict] = []
     iban_msgs: list[dict] = []
 
     now_dt = datetime.now(timezone.utc)
+    ts_iso = now_dt.isoformat()
+    e2e_prefix = f"E2ELIVE{now_dt.strftime('%Y%m%d%H%M%S')}"
     seq = seq_start
 
     while len(payment_msgs) < batch_size:
@@ -212,83 +226,64 @@ def generate_live_event_batch(
 
         # 28 % des flux live illustrent les virements SEPA Instant vers néobanques (68 % jeunes 18-32)
         if u_type < 0.28:
-            if float(rng.random()) < 0.68:
-                idx = int(rng.choice(young_indices))
-            else:
-                idx = int(rng.choice(all_indices))
-
+            idx = int(rng.choice(young_indices)) if float(rng.random()) < 0.68 else int(rng.choice(all_indices))
             holder_name = f"{first_names[idx]} {last_names[idx]}"
-            neo_bic, neo_label = NEOBANK_DESTINATIONS[
-                int(rng.choice(len(NEOBANK_DESTINATIONS), p=[0.38, 0.32, 0.14, 0.10, 0.06]))
-            ]
+            neo_bic = NEOBANK_BICS[int(rng.choice(len(NEOBANK_BICS), p=[0.38, 0.32, 0.14, 0.10, 0.06]))]
             payment_scheme = "SCT_INST"
             creditor_name = holder_name
             creditor_bic = neo_bic
-            creditor_iban = (
-                f"LT6032500{idx + 1:011d}"
-                if neo_bic.startswith("REVOLT")
-                else f"DE8950010517{idx + 1:010d}"
-            )
+            creditor_iban = neobank_beneficiary_iban(idx + 1, neo_bic)
             amount_cents = int(rng.integers(20_000, 185_000))
-            remittance = f"{neo_label} {holder_name}"
+            remittance = NEOBANK_LABELS[neo_bic]
 
-            # 1 fois sur 4, on émet aussi l'événement préalable d'ajout de bénéficiaire IBAN dans le topic dédié
-            if float(rng.random()) < 0.25:
-                chosen_ch = channels[int(rng.integers(0, len(channels)))]
-                ip_addr = f"90.{int(rng.integers(10, 120))}.{int(rng.integers(1, 250))}.{int(rng.integers(2, 254))}"
+            # Nouveau bénéficiaire : l'enrôlement IBAN précède obligatoirement le 1er virement
+            pair = (str(cust_ids[idx]), neo_bic)
+            if pair not in enrolled:
+                enrolled.add(pair)
                 iban_evt = build_iban_enrollment_payload(
                     event_id=f"IBAN-{uuid.uuid4().hex[:16].upper()}",
-                    event_ts=now_dt.isoformat(),
+                    event_ts=ts_iso,
                     retry_attempt=0,
+                    cust_idx=idx + 1,
                     customer_id=str(cust_ids[idx]),
                     account_id=str(acc_ids[idx]),
+                    first_name=str(first_names[idx]),
                     full_name=holder_name,
                     debtor_iban=str(ibans[idx]),
                     branch_guichet=str(guichets[idx]),
                     beneficiary_iban=creditor_iban,
-                    beneficiary_bic=creditor_bic,
-                    custom_label=f"Compte {neo_bic[:6]} {first_names[idx].title()}",
-                    channel=chosen_ch,
-                    sca_strong_auth_status="VERIFIED_BIOMETRIC",
-                    device_ip=ip_addr,
+                    beneficiary_bic=neo_bic,
                 )
                 iban_msgs.append(iban_evt)
                 if float(rng.random()) < 0.035:
-                    dup_iban = {
+                    iban_msgs.append({
                         **iban_evt,
                         "header": {
                             **iban_evt["header"],
                             "event_id": f"IBAN-{uuid.uuid4().hex[:16].upper()}",
                             "retry_attempt": 1,
                         },
-                    }
-                    iban_msgs.append(dup_iban)
+                    })
         else:
             idx = int(rng.choice(all_indices))
             holder_name = f"{first_names[idx]} {last_names[idx]}"
-            m_name, m_bic, scheme, min_c, max_c, m_remit = MERCHANT_COUNTERPARTIES[
-                int(rng.integers(0, len(MERCHANT_COUNTERPARTIES)))
-            ]
-            payment_scheme = scheme
-            creditor_name = m_name
-            creditor_bic = m_bic
-            creditor_iban = f"FR763000400892{idx + 1:09d}44"
-            amount_cents = int(rng.integers(min_c, max_c + 1))
-            remittance = f"{m_remit} - {holder_name}" if "LOYER" in m_remit or "SANTE" in m_remit else m_remit
+            cp = COUNTERPARTIES[int(rng.choice(len(COUNTERPARTIES), p=COUNTERPARTY_WEIGHTS))]
+            payment_scheme = cp.scheme
+            creditor_name = cp.name
+            creditor_bic = cp.bic
+            creditor_iban = cp.iban
+            amount_cents = int(rng.integers(cp.min_cents, cp.max_cents + 1))
+            remittance = cp.label
 
-        # Statut : ~8,1 % RJCT / PDNG sur le flux brut
-        u_status = float(rng.random())
-        if u_status < 0.081:
-            st_code, rsn_code, _ = REJECT_REASONS[int(rng.integers(0, len(REJECT_REASONS)))]
+        # Statut : ~8,1 % RJCT / PDNG sur le flux brut (les crédits entrants restent compensés)
+        if float(rng.random()) < 0.081 and not payment_scheme.endswith("_INBOUND"):
+            st_code, rsn_code = REJECT_REASONS[int(rng.integers(0, len(REJECT_REASONS)))]
         else:
             st_code, rsn_code = "ACSC", None
 
-        e2e_id = f"E2ELIVE{now_dt.strftime('%Y%m%d')}{seq:08d}"
-        ts_iso = now_dt.isoformat()
-
         msg = build_pacs008_payload(
             event_id=f"EVT-{uuid.uuid4().hex[:18].upper()}",
-            end_to_end_id=e2e_id,
+            end_to_end_id=f"{e2e_prefix}{seq:06d}",
             execution_ts=ts_iso,
             customer_id=str(cust_ids[idx]),
             debtor_account_id=str(acc_ids[idx]),
@@ -309,84 +304,52 @@ def generate_live_event_batch(
 
         # Injection fidèle de ~3,4 % de doublons techniques (retry réseau sur le même end_to_end_id)
         if len(payment_msgs) < batch_size and float(rng.random()) < 0.0355:
-            dup_msg = {
+            payment_msgs.append({
                 **msg,
-                "header": {
-                    **msg["header"],
-                    "event_id": f"EVT-{uuid.uuid4().hex[:18].upper()}",
-                },
-                "settlement": {
-                    **msg["settlement"],
-                    "retry_attempt": 1,
-                },
-            }
-            payment_msgs.append(dup_msg)
+                "header": {**msg["header"], "event_id": f"EVT-{uuid.uuid4().hex[:18].upper()}"},
+                "settlement": {**msg["settlement"], "retry_attempt": 1},
+            })
 
     return payment_msgs[:batch_size], iban_msgs
 
 
 def build_witness_live_events(universe: dict) -> tuple[list[dict], list[dict]]:
-    """Construit les événements temps réel Jour J de Lucas Martin (CUST00002026) pour la Démo #4."""
+    """Événements Jour J de Lucas Martin (CUST00002026), dans la continuité stricte de son historique.
+
+    L'historique (jusqu'au 12/11) contient déjà le salaire du 01/11, la hausse STRMFLIX 15,99 € -> 19,99 €
+    du 08/11, le remboursement CPAM +42,00 € du 10/11 et son bénéficiaire Revolut enrôlé le 02/09 :
+    le flux temps réel n'émet donc que des opérations nouvelles du jour (aucune réémission, aucun ré-enrôlement).
+    """
     acc_row = universe["accounts"].filter(universe["accounts"]["account_id"] == WITNESS_ACC_ID).row(0, named=True)
-    now_iso = datetime.now(timezone.utc).isoformat()
-
-    p1 = build_pacs008_payload(
-        event_id=f"EVT-WITNESS-{uuid.uuid4().hex[:10].upper()}",
-        end_to_end_id="E2EWIT20261113STRMFLIX",
-        execution_ts=now_iso,
-        customer_id=WITNESS_CUST_ID,
-        debtor_account_id=WITNESS_ACC_ID,
-        debtor_full_name="LUCAS MARTIN",
-        debtor_iban=acc_row["iban"],
-        guichet_code_5=acc_row["guichet_code_5"],
-        creditor_name="STRMFLIX DIGITAL",
-        creditor_bic="BOFAIE3XXXX",
-        creditor_iban="IE29BOFI90001712345678",
-        payment_scheme="SEPA_SDD",
-        tx_status="ACSC",
-        status_reason_code=None,
-        amount_cents=1999,  # 19,99 € (+4 € vs 15,99 € habituel !)
-        retry_attempt=0,
-        remittance_info="PRLV SEPA STRMFLIX ABO MENSUEL",
-    )
-
-    p2 = build_pacs008_payload(
-        event_id=f"EVT-WITNESS-{uuid.uuid4().hex[:10].upper()}",
-        end_to_end_id="E2EWIT20261113CPAM42",
-        execution_ts=now_iso,
-        customer_id=WITNESS_CUST_ID,
-        debtor_account_id=WITNESS_ACC_ID,
-        debtor_full_name="LUCAS MARTIN",
-        debtor_iban=acc_row["iban"],
-        guichet_code_5=acc_row["guichet_code_5"],
-        creditor_name="LUCAS MARTIN",
-        creditor_bic=BANK_BIC,
-        creditor_iban=acc_row["iban"],
-        payment_scheme="SCT_INST_INBOUND",
-        tx_status="ACSC",
-        status_reason_code=None,
-        amount_cents=4200,  # +42,00 € remboursement santé !
-        retry_attempt=0,
-        remittance_info="VIR CPAM REMBOURSEMENT SANTE LUCAS MARTIN",
-    )
-
-    iban_evt = build_iban_enrollment_payload(
-        event_id=f"IBAN-WITNESS-{uuid.uuid4().hex[:10].upper()}",
-        event_ts=now_iso,
-        retry_attempt=0,
-        customer_id=WITNESS_CUST_ID,
-        account_id=WITNESS_ACC_ID,
-        full_name="LUCAS MARTIN",
-        debtor_iban=acc_row["iban"],
-        branch_guichet=acc_row["guichet_code_5"],
-        beneficiary_iban="LT60325000000002026",
-        beneficiary_bic="REVOLT21XXX",
-        custom_label="Lucas Martin Revolut",
-        channel="MOBILE_APP_ANDROID",
-        sca_strong_auth_status="VERIFIED_BIOMETRIC",
-        device_ip="90.63.142.18",
-    )
-    return [p1, p2], [iban_evt]
+    now_dt = datetime.now(timezone.utc)
+    stamp = now_dt.strftime("%Y%m%d")
+    ops = [
+        ("CB BOULANGERIE ARTISANALE", 680, "BOULANGERIE"),
+        ("CB PHARMACIE CENTRALE", 1_240, "PHARMACIE"),
+    ]
+    payment_msgs = []
+    for label, cents, tag in ops:
+        cp = WITNESS_COUNTERPARTIES[label]
+        payment_msgs.append(build_pacs008_payload(
+            event_id=f"EVT-WITNESS-{uuid.uuid4().hex[:10].upper()}",
+            end_to_end_id=f"E2EWITLIVE{stamp}{tag[:6]}",
+            execution_ts=now_dt.isoformat(),
+            customer_id=WITNESS_CUST_ID,
+            debtor_account_id=WITNESS_ACC_ID,
+            debtor_full_name="LUCAS MARTIN",
+            debtor_iban=acc_row["iban"],
+            guichet_code_5=acc_row["guichet_code_5"],
+            creditor_name=cp.name,
+            creditor_bic=cp.bic,
+            creditor_iban=cp.iban,
+            payment_scheme=cp.scheme,
+            tx_status="ACSC",
+            status_reason_code=None,
+            amount_cents=cents,
+            retry_attempt=0,
+            remittance_info=cp.label,
+        ))
+    return payment_msgs, []
 
 
 def get_gcloud_access_token() -> str:
@@ -421,7 +384,7 @@ def rest_publish_batch(
     topic_name: str,
     entries: list[dict],
 ) -> None:
-    """Envoie jusqu'à 900 messages par requête HTTPS REST vers l'endpoint régional Pub/Sub."""
+    """Envoie jusqu'à 500 messages par requête HTTPS REST vers l'endpoint régional Pub/Sub."""
     if not entries:
         return
     url = f"https://{region}-pubsub.googleapis.com/v1/projects/{project_id}/topics/{topic_name}:publish"
@@ -523,9 +486,10 @@ def main() -> None:
 
     universe = build_or_load_universe()
     rng = np.random.default_rng(DEMO_SEED + int(time.time()) % 10_000)
+    enrolled = _enrolled_pairs(universe)
 
     if args.dry_run:
-        p_msgs, i_msgs = generate_live_event_batch(rng, universe, batch_size=3, seq_start=1)
+        p_msgs, i_msgs = generate_live_event_batch(rng, universe, batch_size=40, seq_start=1, enrolled_pairs=enrolled)
         print(json.dumps({"sample_payment": p_msgs[0], "sample_iban": i_msgs[:1]}, indent=2, ensure_ascii=False))
         return
 
@@ -543,7 +507,9 @@ def main() -> None:
 
     if args.burst > 0:
         t0 = time.perf_counter()
-        p_msgs, i_msgs = generate_live_event_batch(rng, universe, batch_size=args.burst, seq_start=1)
+        p_msgs, i_msgs = generate_live_event_batch(
+            rng, universe, batch_size=args.burst, seq_start=0, enrolled_pairs=enrolled
+        )
         stats = publish_messages(session, token, args.project_id, args.region, p_msgs, i_msgs)
         dt = time.perf_counter() - t0
         print(
@@ -558,7 +524,7 @@ def main() -> None:
     )
     start_time = time.monotonic()
     last_token_refresh = start_time
-    seq = 10_000
+    seq = 0
     total_sent = 0
     try:
         while True:
@@ -567,8 +533,10 @@ def main() -> None:
                 token = get_gcloud_access_token()
                 last_token_refresh = tick_start
 
-            p_msgs, i_msgs = generate_live_event_batch(rng, universe, batch_size=args.rate, seq_start=seq)
-            seq += args.rate
+            p_msgs, i_msgs = generate_live_event_batch(
+                rng, universe, batch_size=args.rate, seq_start=seq, enrolled_pairs=enrolled
+            )
+            seq += args.rate * 2
             stats = publish_messages(session, token, args.project_id, args.region, p_msgs, i_msgs)
             total_sent += len(p_msgs)
             print(

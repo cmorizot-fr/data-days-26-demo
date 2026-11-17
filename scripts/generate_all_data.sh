@@ -48,6 +48,8 @@ fi
 # 3. Silo Paiements Temps Réel SEPA Instant ISO 20022 (branché dès création)
 if [[ -f "${ROOT_DIR}/00_data_generator/generate_payments_stream.py" ]]; then
   uv run --project "${ROOT_DIR}" python "${ROOT_DIR}/00_data_generator/generate_payments_stream.py"
+  # Cohérence historique <-> temps réel (contrat partagé payments_contract.py)
+  uv run --project "${ROOT_DIR}" python "${ROOT_DIR}/00_data_generator/validate_payments_coherence.py"
 fi
 
 # 4. Silo Finance SAP / PCEC & ALM (branché dès création)
@@ -76,6 +78,11 @@ if [[ "${SYNC_GCS}" == "true" ]]; then
   if [[ -f "${OUTPUT_RAW_DIR}/FINANCE_SAP_ALM/raw_sap_gl_alm.parquet" ]]; then
     "${ROOT_DIR}/scripts/load_finance_sap_bq.sh"
   fi
+
+  # Silo SaaS CRM publié en vraies tables Apache Iceberg sur GCS (simulation du dépôt AWS Glue / S3)
+  GCS_BUCKET_LANDING="${GCS_BUCKET_LANDING}" uv run --project "${ROOT_DIR}" python \
+    "${ROOT_DIR}/00_data_generator/publish_aws_crm_iceberg.py" \
+    --warehouse "gs://${GCS_BUCKET_LANDING}/RAW/AWS_SAAS_ICEBERG"
 
   if [[ -x "${ROOT_DIR}/scripts/setup_pubsub_queues.sh" ]]; then
     "${ROOT_DIR}/scripts/setup_pubsub_queues.sh"

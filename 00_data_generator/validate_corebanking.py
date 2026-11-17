@@ -24,6 +24,7 @@ import polars as pl
 BASE_DIR: Path = Path(__file__).resolve().parent
 COREBANKING_DIR: Path = BASE_DIR / "output" / "corebanking"
 UNIVERSE_DIR: Path = BASE_DIR / "data" / "universe"
+PAYMENTS_DIR: Path = BASE_DIR / "output" / "RAW" / "PAYMENTS"
 EBCDIC_ENCODING: str = "cp500"
 
 
@@ -386,6 +387,58 @@ def run_validation() -> None:
         90_000,
         30_000,
     )
+
+    # F. Cohérence Mainframe CFONB <-> flux paiements SEPA (journal partagé customer_ledger.py)
+    #    - opérations SEPA (hors carte) : rapprochement exact par EndToEndId (date + montant signé identiques)
+    #    - opérations carte '0310' (sans complément '05') : rapprochement par (compte, date, montant)
+    con.execute(
+        f"""
+        CREATE VIEW sepa_acsc AS
+        SELECT
+            header.end_to_end_id AS e2e,
+            debtor.account_id    AS account_id,
+            strftime(CAST(header.execution_ts AS DATE), '%Y%m%d') AS op_date,
+            CASE WHEN settlement.payment_scheme LIKE '%INBOUND' THEN 1 ELSE -1 END
+                * instructed_amount.amount_cents AS signed_cents,
+            settlement.payment_scheme LIKE 'CARD%' AS is_card
+        FROM read_parquet('{PAYMENTS_DIR}/sepa_payment_events/*.parquet')
+        WHERE settlement.tx_status = 'ACSC'
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY header.end_to_end_id ORDER BY header.execution_ts) = 1
+        """
+    )
+    sepa_not_in_mf, mf_not_in_sepa, card_mismatch = con.execute(
+        """
+        WITH mf AS (
+            SELECT m.*, a.account_id
+            FROM stitched_cfonb m JOIN parsed_accounts a ON m.num_compte_11 = a.num_compte_11
+            WHERE m.record_type = '04'
+        ),
+        sepa_mf AS (
+            SELECT s.* FROM sepa_acsc s JOIN parsed_accounts a ON a.account_id = s.account_id
+        ),
+        card_sepa AS (
+            SELECT account_id, op_date, signed_cents, COUNT(*) AS n FROM sepa_mf WHERE is_card GROUP BY ALL
+        ),
+        card_mf AS (
+            SELECT account_id, date_compta AS op_date, signed_cents, COUNT(*) AS n
+            FROM mf WHERE code_op_interne = '0310' GROUP BY ALL
+        )
+        SELECT
+            (SELECT COUNT(*) FROM sepa_mf s WHERE NOT s.is_card AND NOT EXISTS (
+                SELECT 1 FROM mf WHERE mf.sepa_end_to_end_id = s.e2e
+                  AND mf.date_compta = s.op_date AND mf.signed_cents = s.signed_cents)),
+            (SELECT COUNT(*) FROM mf WHERE mf.sepa_end_to_end_id IS NOT NULL
+                AND mf.code_op_interne <> '0580' AND NOT EXISTS (
+                SELECT 1 FROM sepa_mf s WHERE s.e2e = mf.sepa_end_to_end_id)),
+            (SELECT COUNT(*) FROM card_sepa c FULL JOIN card_mf m USING (account_id, op_date, signed_cents)
+                WHERE c.n IS DISTINCT FROM m.n)
+        """
+    ).fetchone()
+    print(
+        f"[OK] Cohérence Mainframe <-> SEPA : {sepa_not_in_mf} paiement SEPA absent du CFONB, "
+        f"{mf_not_in_sepa} mouvement SEPA CFONB absent du flux, {card_mismatch} écart carte"
+    )
+    assert (sepa_not_in_mf, mf_not_in_sepa, card_mismatch) == (0, 0, 0)
 
     print("\nSUCCÈS TOTAL : Les fichiers 'Dirty Mainframe' (EBCDIC+COMP3, CFONB 04+05, ABEND CFT, GZIP) sont prêts pour Spark !")
 

@@ -15,8 +15,9 @@ WITH payments_profile AS (
     COUNTIF(REGEXP_CONTAINS(debtor.iban, r'^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$')) AS debtor_iban_hits,
     COUNTIF(REGEXP_CONTAINS(creditor.iban, r'^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$')) AS creditor_iban_hits,
     COUNTIF(debtor.full_name IS NOT NULL AND ARRAY_LENGTH(SPLIT(TRIM(debtor.full_name), ' ')) >= 2) AS debtor_name_hits,
-    COUNTIF(creditor.name IS NOT NULL AND NOT REGEXP_CONTAINS(creditor.name, r'(CARREFOUR|MONOPRIX|SNCF|EDF|STRMFLIX|PHARMACIE|FONCIA|CABINET)')) AS creditor_person_hits,
-    COUNTIF(REGEXP_CONTAINS(UPPER(remittance.unstructured_info), r'(SANTE|CPAM|MEDICAL|ORDONNANCE|PHARMACIE|LOYER)')) AS remittance_sensitive_hits
+    -- Personne physique côté créditeur : virement vers son propre compte néobanque (nom = titulaire)
+    COUNTIF(creditor.name IS NOT NULL AND creditor.name = debtor.full_name) AS creditor_person_hits,
+    COUNTIF(REGEXP_CONTAINS(UPPER(remittance.unstructured_info), r'(SANTE|CPAM|MUTUELLE|MEDICAL|ORDONNANCE|PHARMACIE|LOYER)')) AS remittance_sensitive_hits
   FROM `__PROJECT_ID__.__DATASET_RAW__.raw_sepa_payments_pubsub_stream`
 ),
 iban_profile AS (

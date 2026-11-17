@@ -63,6 +63,10 @@ TABLE_NESTED_TAG_MAP: dict[str, dict[tuple[str, str], str]] = {
     },
 }
 
+# Tables BigLake d'historique (même schéma STRUCT) : mêmes règles que le temps réel
+TABLE_NESTED_TAG_MAP["raw_sepa_payments_history"] = dict(TABLE_NESTED_TAG_MAP["raw_sepa_payments_pubsub_stream"])
+TABLE_NESTED_TAG_MAP["raw_iban_events_history"] = dict(TABLE_NESTED_TAG_MAP["raw_iban_events_pubsub_stream"])
+
 
 def get_access_token_and_principal() -> tuple[str, str]:
     res_acc = subprocess.run(

@@ -31,6 +31,7 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
+from customer_ledger import build_or_load_ledger
 from shared_universe import (
     BANK_BIC,
     BANK_CODE,
@@ -207,187 +208,27 @@ def generate_all_movements_04(
         "is_protected": leak_acc_idx == WITNESS_CUST_IDX,
     }
 
-    # 3. Fuites néobanques historiques avant trimestre [2025-06-01 .. 2026-08-12]
-    n_leak_hist = 100_000
-    pre_cc_pool = np.array([i for i in range(1, 62_001) if i != WITNESS_CUST_IDX], dtype=np.int32)
-    hist_leak_acc = rng.choice(pre_cc_pool, size=n_leak_hist, replace=True)
-    aug12_ord = date(2026, 8, 12).toordinal()
-    hist_leak_ords = rng.integers(ord_start, aug12_ord + 1, size=n_leak_hist)
-    hist_neo_choice = rng.choice(len(NEOBANK_DESTINATIONS), size=n_leak_hist, p=[0.40, 0.30, 0.14, 0.10, 0.06])
-    hist_leak_cents = -rng.integers(15_000, 380_000, size=n_leak_hist, dtype=np.int64)
-    leak_hist_dict = {
-        "acc_idx": hist_leak_acc,
-        "code_op_interne": np.full(n_leak_hist, "0810", dtype="U4"),
-        "code_afb": np.full(n_leak_hist, "16", dtype="U2"),
-        "guichet_5": acc_guichets[hist_leak_acc - 1],
-        "date_compta": ord_lookup[hist_leak_ords - ord_start],
-        "signed_cents": hist_leak_cents,
-        "libelle": np.array([NEOBANK_DESTINATIONS[i][1] for i in hist_neo_choice], dtype="U31"),
-        "ref_bic": np.array([NEOBANK_DESTINATIONS[i][0] for i in hist_neo_choice], dtype="U12"),
-        "e2e_id": np.array([f"E2EHISTLEAK{i:08d}" for i in range(1, n_leak_hist + 1)], dtype="U36"),
-        "is_protected": np.zeros(n_leak_hist, dtype=bool),
+    # 3. Journal partagé `customer_ledger.py` : fuites historiques, épargne programmée 58* et vie courante
+    #    (salaires, prélèvements, santé, carte). Strictement les mêmes opérations que le flux paiements SEPA
+    #    (même end_to_end_id, compte, date et montant) pour tous les comptes présents dans le Mainframe J-1.
+    ledger = build_or_load_ledger().filter(pl.col("in_mainframe"))
+    l_acc = ledger["acc_idx"].to_numpy().astype(np.int32)
+    l_is_card = ledger["cfonb_code_op"].to_numpy() == "0310"
+    ledger_dict = {
+        "acc_idx": l_acc,
+        "code_op_interne": ledger["cfonb_code_op"].to_numpy().astype("U4"),
+        "code_afb": ledger["cfonb_afb"].to_numpy().astype("U2"),
+        "guichet_5": acc_guichets[l_acc - 1],
+        "date_compta": ledger["op_date"].to_numpy().astype("U8"),
+        "signed_cents": ledger["signed_cents"].to_numpy().astype(np.int64),
+        "libelle": ledger["label"].to_numpy().astype("U31"),
+        # Les paiements carte '0310' n'ont pas de complément SEPA '05' (ni BIC ni EndToEndId)
+        "ref_bic": np.where(l_is_card, "", ledger["creditor_bic"].to_numpy()).astype("U12"),
+        "e2e_id": np.where(l_is_card, "", ledger["e2e_id"].to_numpy()).astype("U36"),
+        "is_protected": np.zeros(ledger.height, dtype=bool),
     }
 
-    # 4. Virements internes Compte-à-Livret 58* (190 000 paires = 380 000 écritures '04')
-    n_int_pairs = 190_000
-    hist_sav_pool = np.arange(80_001, 92_001, dtype=np.int32)
-    sav_chosen = rng.choice(hist_sav_pool, size=n_int_pairs, replace=True)
-    cc_paired = acc_cust_idx[sav_chosen - 1]
-    int_ords = rng.integers(ord_start, ord_end + 1, size=n_int_pairs)
-    int_dates = ord_lookup[int_ords - ord_start]
-    int_amounts = rng.integers(10_000, 250_000, size=n_int_pairs, dtype=np.int64)
-    int_e2e = np.array([f"E2EINT58TR{i:08d}" for i in range(1, n_int_pairs + 1)], dtype="U36")
-
-    internal_dict = {
-        "acc_idx": np.concatenate([cc_paired, sav_chosen]),
-        "code_op_interne": np.full(2 * n_int_pairs, "0580", dtype="U4"),
-        "code_afb": np.concatenate(
-            [np.full(n_int_pairs, "16", dtype="U2"), np.full(n_int_pairs, "05", dtype="U2")]
-        ),
-        "guichet_5": np.concatenate([acc_guichets[cc_paired - 1], acc_guichets[sav_chosen - 1]]),
-        "date_compta": np.concatenate([int_dates, int_dates]),
-        "signed_cents": np.concatenate([-int_amounts, +int_amounts]),
-        "libelle": np.concatenate(
-            [
-                np.full(n_int_pairs, "VIR INTERNE 58 VERS LIVRET", dtype="U31"),
-                np.full(n_int_pairs, "VIR INTERNE 58 DEPUIS CC", dtype="U31"),
-            ]
-        ),
-        "ref_bic": np.full(2 * n_int_pairs, BANK_BIC, dtype="U12"),
-        "e2e_id": np.concatenate([int_e2e, int_e2e]),
-        "is_protected": np.zeros(2 * n_int_pairs, dtype=bool),
-    }
-
-    # 5. Opérations courantes
-    used_rows = n_witness + n_leak_90d + n_leak_hist + (2 * n_int_pairs)
-    rem_rows = TARGET_TOTAL_MOVEMENTS_04 - used_rows
-    n_sal = 1_150_000
-    n_remb = 150_000
-    n_prlv = 1_100_000
-    n_cb = rem_rows - (n_sal + n_remb + n_prlv)
-
-    mf_cc_all = (
-        np.flatnonzero(acc_in_mf & (acc_types == "CC_CHQ") & (np.arange(len(acc_in_mf)) != WITNESS_CUST_IDX - 1))
-        + 1
-    )
-    mf_cc_pre = np.array([i for i in range(1, 62_001) if i != WITNESS_CUST_IDX], dtype=np.int32)
-
-    def _sample_dates_after_open(chosen_acc_idx: np.ndarray) -> np.ndarray:
-        mins = acc_min_ord[chosen_acc_idx - 1]
-        ords = rng.integers(mins, ord_end + 1)
-        return ord_lookup[ords - ord_start]
-
-    sal_acc = rng.choice(mf_cc_all, size=n_sal, replace=True)
-    sal_dates = _sample_dates_after_open(sal_acc)
-    sal_cents = rng.integers(145_000, 680_000, size=n_sal, dtype=np.int64)
-    sal_labels = rng.choice(
-        [
-            "VIR SEPA SALAIRE ENTREPRISE",
-            "VIR PAIE MENSUELLE DRH",
-            "VIR REVENUS ACTIVITE PRO",
-            "VIR CAISSE RETRAITE",
-        ],
-        size=n_sal,
-    ).astype("U31")
-
-    remb_acc = rng.choice(mf_cc_all, size=n_remb, replace=True)
-    remb_dates = _sample_dates_after_open(remb_acc)
-    remb_cents = rng.integers(1_800, 42_000, size=n_remb, dtype=np.int64)
-    remb_labels = rng.choice(
-        [
-            "VIR CPAM REMBOURSEMENT SANTE",
-            "VIR MUTUELLE COMPLEMENTAIRE",
-            "VIR REMBOURSEMENT FRAIS",
-        ],
-        size=n_remb,
-    ).astype("U31")
-
-    prlv_acc = rng.choice(mf_cc_pre, size=n_prlv, replace=True)
-    prlv_dates = _sample_dates_after_open(prlv_acc)
-    prlv_cents = -rng.integers(1_299, 115_000, size=n_prlv, dtype=np.int64)
-    prlv_labels = rng.choice(
-        [
-            "PRLV SEPA EDF ENERGIE",
-            "PRLV SEPA LOYER HABITAT",
-            "PRLV SEPA ORANGE FIBRE",
-            "PRLV SEPA IMPOTS DGFIP",
-            "PRLV SEPA ASSURANCE AUTO",
-            "PRLV SEPA STRMFLIX ABO",
-        ],
-        size=n_prlv,
-    ).astype("U31")
-
-    cb_acc = rng.choice(mf_cc_pre, size=n_cb, replace=True)
-    cb_dates = _sample_dates_after_open(cb_acc)
-    cb_cents = -rng.integers(450, 28_500, size=n_cb, dtype=np.int64)
-    cb_labels = rng.choice(
-        [
-            "CB CARREFOUR HYPER",
-            "CB LECLERC DISTRIBUTION",
-            "CB SNCF VOYAGES",
-            "CB PHARMACIE CENTRALE",
-            "CB BOULANGERIE ARTISANALE",
-            "CB TOTALENERGIES STATION",
-            "CB AMAZON EU SARL",
-            "CB RESTAURANT BRASSERIE",
-        ],
-        size=n_cb,
-    ).astype("U31")
-
-    chunks = [
-        w_dict,
-        leak_dict,
-        leak_hist_dict,
-        internal_dict,
-        {
-            "acc_idx": sal_acc,
-            "code_op_interne": np.full(n_sal, "0420", dtype="U4"),
-            "code_afb": np.full(n_sal, "05", dtype="U2"),
-            "guichet_5": acc_guichets[sal_acc - 1],
-            "date_compta": sal_dates,
-            "signed_cents": sal_cents,
-            "libelle": sal_labels,
-            "ref_bic": np.full(n_sal, "EMPLOYEURFR", dtype="U12"),
-            "e2e_id": np.full(n_sal, "E2ESEPASALAIREBATCH", dtype="U36"),
-            "is_protected": np.zeros(n_sal, dtype=bool),
-        },
-        {
-            "acc_idx": remb_acc,
-            "code_op_interne": np.full(n_remb, "0430", dtype="U4"),
-            "code_afb": np.full(n_remb, "05", dtype="U2"),
-            "guichet_5": acc_guichets[remb_acc - 1],
-            "date_compta": remb_dates,
-            "signed_cents": remb_cents,
-            "libelle": remb_labels,
-            "ref_bic": np.full(n_remb, "CPAMFRANCE0", dtype="U12"),
-            "e2e_id": np.full(n_remb, "E2ESEPAREMBSANTE", dtype="U36"),
-            "is_protected": np.zeros(n_remb, dtype=bool),
-        },
-        {
-            "acc_idx": prlv_acc,
-            "code_op_interne": np.full(n_prlv, "0650", dtype="U4"),
-            "code_afb": np.full(n_prlv, "08", dtype="U2"),
-            "guichet_5": acc_guichets[prlv_acc - 1],
-            "date_compta": prlv_dates,
-            "signed_cents": prlv_cents,
-            "libelle": prlv_labels,
-            "ref_bic": np.full(n_prlv, "MANDATSEPA0", dtype="U12"),
-            "e2e_id": np.full(n_prlv, "E2ESEPAMANDATPRLV", dtype="U36"),
-            "is_protected": np.zeros(n_prlv, dtype=bool),
-        },
-        {
-            "acc_idx": cb_acc,
-            "code_op_interne": np.full(n_cb, "0310", dtype="U4"),
-            "code_afb": np.full(n_cb, "28", dtype="U2"),
-            "guichet_5": acc_guichets[cb_acc - 1],
-            "date_compta": cb_dates,
-            "signed_cents": cb_cents,
-            "libelle": cb_labels,
-            "ref_bic": np.full(n_cb, "", dtype="U12"),
-            "e2e_id": np.full(n_cb, "", dtype="U36"),
-            "is_protected": np.zeros(n_cb, dtype=bool),
-        },
-    ]
+    chunks = [w_dict, leak_dict, ledger_dict]
 
     all_acc_idx = np.concatenate([c["acc_idx"] for c in chunks]).astype(np.int32)
     all_op_int = np.concatenate([c["code_op_interne"] for c in chunks])
