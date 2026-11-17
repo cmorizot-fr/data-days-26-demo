@@ -83,11 +83,12 @@ flowchart BT
   * Flux d'événements de paiements temps réel (`Kafka` / `Pub/Sub` en `ISO 20022 pacs.008` & JSON).
   * Contrats et avenants promotionnels en **PDF** non structurés sur GCS.
 * **Actions réalisées dans `AGY` (6 étapes conversationnelles interactives) :**
-  1. Transfert binaire strict Mainframe z/OS (`EBCDIC CP500 + COMP-3`, conservation d'audit du lot `ABEND_S0C7`) vers GCS `RAW/` et décodage **Dataproc Serverless Spark** vers 4 tables **BigLake Managed Iceberg** documentées (`72/72` colonnes).
-  2. Création par agent du lien **Borderless Lakehouse** vers AWS (`AWS Glue / S3`, zéro copie).
-  3. Branchement temps réel sans serveur **Cloud Pub/Sub → BigQuery Subscriptions (`--use-table-schema`)** en schéma **`100 % Nested STRUCT`** (`ISO 20022 pacs.008` & enrôlements IBAN, `55/55` chemins documentés, `DLQ`), suivi d'un **audit hybride PII in-database** (détectant 10 sous-champs sensibles dont des motifs médicaux RGPD Art. 9) et de l'application chirurgicale du **Column-Level Security (`CLS` : `LAST_FOUR_CHARACTERS`, `SHA256`, `ALWAYS_NULL`)** directement sur les feuilles des `STRUCT`.
-  4. Découverte automatique sans DDL des `250` PDF d'agences et `6` PDF réglementaires CFO via **Dataplex Cloud Storage Discovery (`Object Tables`)**.
-  5. Initialisation de la structure industrielle **`dbt`** (`_raw_sources.yml`) et synchronisation de la **documentation technique initiale** dans `Knowledge Catalog`.
+  1. *Récupérer les données mainframe* : transfert binaire strict Mainframe z/OS (`EBCDIC CP500 + COMP-3`, conservation d'audit du lot `ABEND_S0C7`) vers GCS `RAW/`.
+  2. *Chargement et nettoyage mainframe* : décodage **Dataproc Serverless Spark** vers 4 tables **BigLake Managed Iceberg** documentées (`72/72` colonnes).
+  3. *Connecter aux données CRM (AWS)* : création par agent du lien **Borderless Lakehouse** vers AWS (`AWS Glue / S3`, zéro copie).
+  4. *Intégrer les données de paiement* : branchement temps réel sans serveur **Cloud Pub/Sub → BigQuery Subscriptions (`--use-table-schema`)** en schéma **`100 % Nested STRUCT`** (`ISO 20022 pacs.008` & enrôlements IBAN, `55/55` chemins documentés, `DLQ`), suivi d'un **audit hybride PII in-database** (détectant 10 sous-champs sensibles dont des motifs médicaux RGPD Art. 9) et de l'application chirurgicale du **Column-Level Security (`CLS` : `LAST_FOUR_CHARACTERS`, `SHA256`, `ALWAYS_NULL`)** directement sur les feuilles des `STRUCT`.
+  5. *Indexer les contrats PDF des agences* : découverte automatique sans DDL des `250` PDF d'agences et `6` PDF réglementaires CFO via **Dataplex Cloud Storage Discovery (`Object Tables`)**.
+  6. *Cataloguer les sources pour l'équipe Data* : initialisation de la structure industrielle **`dbt`** (`_raw_sources.yml`) et synchronisation de la **documentation technique initiale** dans `Knowledge Catalog`.
 * **Briques Google Cloud démontrées :** `Antigravity` + `DAK`, `Dataproc Serverless Spark` + `BigLake Managed Iceberg`, `Borderless Lakehouse`, `Pub/Sub BigQuery Subscriptions (Nested STRUCT)` + `Column-Level Security (Data Policies)`, `Dataplex Cloud Storage Discovery (Object Tables)`, `Knowledge Catalog`.
 * **Transition vers Démo #2 :** *Jojo (Data Steward) intervient : « Vous avez branché les tuyaux et protégé les PII, mais regardez l'état de la qualité métier en RAW — si on expose ça, tout va planter ! »*
 

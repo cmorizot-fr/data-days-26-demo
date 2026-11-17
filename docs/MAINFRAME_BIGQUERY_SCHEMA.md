@@ -17,7 +17,10 @@ Ce document décrit le **dataset**, les **4 tables BigLake Iceberg** et l'ensemb
 | **`cbk_customers_ref`** | `CBK_CUSTOMERS_REF_20261112.ebcdic`<br>[`CBK_CUSTOMERS_REF.cpy`](../00_data_generator/copybooks/CBK_CUSTOMERS_REF.cpy) (`LRECL=140`) | **`79 350` lignes** | Signalétique clients Mainframe J-1 (`80 000` clients au total moins les **`650` clients récents AWS S3** pas encore réconciliés). Âge décodé depuis `COMP-3`. |
 | **`cbk_accounts_master`** | `CBK_ACCOUNTS_MSTR_20261112.ebcdic`<br>[`CBK_ACCOUNTS_MSTR.cpy`](../00_data_generator/copybooks/CBK_ACCOUNTS_MSTR.cpy) (`LRECL=150`) | **`94 350` lignes** | Référentiel des comptes courants & livrets Mainframe (`95 000 - 650` orphelins AWS). Taux et solde veille J-1 décodés depuis `COMP-3` binaire (8 octets). `0` clôture sur le trimestre. |
 | **`cbk_cfonb_balances`** | `CFONB120_MVTS_*.cfonb[.gz]` (`ENR '01'` & `'07'`)<br>[`CFONB120_BAL_OPS.cpy`](../00_data_generator/copybooks/CFONB120_BAL_OPS.cpy) (`LRECL=120`) | **`2 875 062` lignes** | Arrêtés mensuels de soldes CFONB : `'01'` (Ancien solde début de mois) et `'07'` (Nouveau solde fin de mois), signés CFONB, hors fichier `202610_RUN01` rejeté (`ABEND_S0C7`). |
-| **`cbk_cfonb_movements`** | `CFONB120_MVTS_*.cfonb[.gz]` (`ENR '04'` + `'05'`)<br>[`CFONB120_BAL_OPS.cpy`](../00_data_generator/copybooks/CFONB120_BAL_OPS.cpy) (`LRECL=120`) | **`5 500 000` lignes** | Écritures comptables valorisées J+1 (`04`) enrichies par fenêtre physique Spark de leur ligne complémentaire SEPA `05` (`counterparty_bic`, `sepa_end_to_end_id`). Conserve les anomalies métier brutes (`1,20 %` de dates `00000000`/`99999999`, `12,08 %` de guichets décalés/blancs). |
+| **`cbk_cfonb_movements`** | `CFONB120_MVTS_*.cfonb[.gz]` (`ENR '04'` + `'05'`)<br>[`CFONB120_BAL_OPS.cpy`](../00_data_generator/copybooks/CFONB120_BAL_OPS.cpy) (`LRECL=120`) | **`5 500 000` lignes** | Écritures comptables valorisées J+1 (`04`) enrichies par fenêtre physique Spark de leur ligne complémentaire SEPA `05` (`counterparty_bic`, `sepa_end_to_end_id`). Conserve les anomalies métier brutes (`1,20 %` de dates `00000000`/`99999999`, `12,10 %` de guichets décalés/blancs). |
+
+> [!NOTE]
+> Les mouvements `cbk_cfonb_movements` proviennent du journal partagé [`customer_ledger.py`](../00_data_generator/customer_ledger.py) : chaque mouvement SEPA (`code_op_interne` ≠ `0310` carte, ≠ `0580` virement interne) existe à l'identique dans le flux paiements `raw_sepa_payments_unified` (même `sepa_end_to_end_id`, date et montant). La couche SILVER (`silver_bank.customer_movements`) s'appuie sur ce rapprochement pour éviter tout double comptage.
 
 ---
 
@@ -105,7 +108,7 @@ Ce document décrit le **dataset**, les **4 tables BigLake Iceberg** et l'ensemb
 | `period_ym` | `STRING` | *(Extrait `DATE-COMPTA 1..6`)* | Mois comptable `AAAAMM` (`'202506'` à `'202611'`). |
 | `bank_code` | `STRING` | `CFONB-CODE-BANQUE` (`003–007`) | Code établissement (`'30002'`). |
 | `code_op_interne` | `STRING` | `CFONB-CODE-OP-INTERNE` (`008–011`) | Nature interne de l'écriture : `'0420'` salaire/revenu, `'0430'` remboursement santé/divers, `'0580'` **virement interne compte-à-livret (`58*`)**, `'0810'` **virement SEPA Instant sortant**, `'0650'` prélèvement SEPA, `'0310'` paiement CB. |
-| `code_guichet_raw` | `STRING` | `CFONB-CODE-GUICHET` (`012–016`) | **Anomalie `RAW` conservée** : `12,08 %` des lignes (`664 637`) ont un code guichet non padé (`'42   '`) ou blanc (`'     '`). |
+| `code_guichet_raw` | `STRING` | `CFONB-CODE-GUICHET` (`012–016`) | **Anomalie `RAW` conservée** : `12,10 %` des lignes (`664 637`) ont un code guichet non padé (`'42   '`) ou blanc (`'     '`). |
 | `currency_iso` | `STRING` | `CFONB-CODE-DEVISE` (`017–019`) | Devise (`'EUR'`). |
 | `num_compte_11` | `STRING` | `CFONB-NUM-COMPTE` (`022–032`) | Numéro de compte RIB sur 11 caractères (`cbk_accounts_master.num_compte_11`). |
 | `code_afb` | `STRING` | `CFONB-CODE-AFB` (`033–034`) | Code interbancaire CFONB : `'05'` virement reçu, `'16'` virement émis, `'08'` prélèvement, `'28'` paiement carte. |

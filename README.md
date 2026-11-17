@@ -13,9 +13,18 @@ La démonstration se déroule en **4 actes** (chacun représenté par un **Works
 | Acte | Objectif technique & métier | Briques Google Cloud, `DAK` & Skills |
 | :--- | :--- | :--- |
 | **Démo #1**<br>*Agrégation `RAW`* | Transférer le drop Mainframe z/OS (`EBCDIC CP500 + COMP-3`, rejet du batch `ABEND_S0C7`), décoder via **Dataproc Serverless Spark** vers **4 tables BigLake Managed Iceberg** (`72` colonnes documentées), fédérer **AWS S3 / Glue** sans copie, ingérer les flux **Pub/Sub SEPA** avec **CLS**, découvrir sans DDL les `250 + 6` **PDF** via **Dataplex Cloud Storage Discovery**, et initialiser `dbt`. | `BigLake Iceberg`, `Dataproc Serverless Spark`, `Lakehouse Federation (AWS Glue)`, `Pub/Sub → BQ + CLS`, `Dataplex Cloud Storage Discovery` (`Object Tables`), `dbt-bigquery`, `bq-visual-audit` |
-| **Démo #2**<br>*Couche `SILVER` & DQ* | Scanner les anomalies `RAW` avec **Dataplex Auto Data Quality**, industrialiser le nettoyage dans `dbt` (`3,4 %` doublons `end_to_end_id`, `8,1 %` rejets `RJCT`/`PDNG`, `1,2 %` dates `00000000`, `650` comptes AWS J0), structurer les `250` PDF (`-14,30 M€`) via `AI.GENERATE_TABLE` et publier **5 Data Products** certifiés (`100 %` DQ). | `data-autocleaning`, `dbt-bigquery`, `bigquery-ai-ml` (`AI.GENERATE_TABLE`), `Knowledge Catalog`, `bq-visual-audit` |
+| **Démo #2**<br>*Couche `SILVER` & DQ* | Concevoir les **Data Products** par domaine métier & usage (5 SILVER + 2 GOLD, noms anglais), trouver les **règles de qualité** avec l'Agentic Data Cloud (profil Dataplex, `generateDataQualityRules`, contrats Knowledge Catalog, raisonnement inter-silos), industrialiser le nettoyage dans `dbt` (`3,4 %` doublons `end_to_end_id`, `8,1 %` rejets `RJCT`/`PDNG`, `1,2 %` dates `00000000`, `650` comptes AWS J0, aucun double comptage Mainframe ↔ SEPA) et publier les Data Products certifiés. | `data-autocleaning`, `dbt-bigquery`, `discover-assets`, `bigquery-ai-ml` (`AI.GENERATE_TABLE`), `Knowledge Catalog`, `bq-visual-audit` |
 | **Démo #3**<br>*Sémantique & CFO* | Extraire la doctrine métier depuis les exports legacy et 2 vidéos d'interviews (`.mp4`), publier 3 glossaires OKF dans **Knowledge Catalog** et démontrer l'écart critique de PNB : **`+42,80 M€`** en SQL naïf contre **`-38,42 M€`** certifié (refinancement ALM `-24,12 M€` + avenants PDF `-14,30 M€` + 2 alertes de seuils ILAAP/Risques). | `curate-context` (`OKF v0.2` / `kcmd`), `Knowledge Catalog`, `BigQuery Data Agents`, `bq-visual-audit` |
 | **Démo #4**<br>*Scale Mobile & ADK* | Prédire le reste à vivre fin de mois (`AI.FORECAST` TimesFM) et les dérives d'abonnements sur `80 000` clients (`CUST00002026` Lucas Martin : `+300,00 €` → *Livret Boost 4 %*), puis synchroniser vers **AlloyDB** (`< 15 ms`, `p99 = 8,4 ms`) pour servir 3 agents mobiles **ADK**. | `bigquery-ai-ml` (`AI.FORECAST`), `AlloyDB` (`alloydb_sync`), `ADK`, `bq-visual-audit` |
+
+### 📍 État d'avancement
+| Couche | État |
+| :--- | :--- |
+| **RAW** (`raw_bank`) | ✅ 5 silos chargés et certifiés, cohérents entre eux (0 écart Mainframe ↔ SEPA) |
+| **SILVER** (`silver_bank`) | ✅ `dp_customer_360`, `dp_customer_timeline` (39 tests dbt) · ⏳ `dp_customer_relationship`, `dp_finance_pnb`, `dp_commercial_commitments` |
+| **GOLD** (`gold_bank`) | ⏳ `dp_budget_insight` (Démo 4), `dp_certified_pnb` (Démo 3) |
+
+Détail, chiffres clés et limites connues : **[`docs/DATA_STATUS.md`](./docs/DATA_STATUS.md)**.
 
 ---
 
@@ -74,7 +83,7 @@ npm run preview
 
 ## 🐍 Génération déterministe des données multi-silos (`seed=2026`)
 
-Tous les générateurs Python s'appuient sur un univers client partagé (`shared_universe.py`, `seed=2026`) garantissant des invariants financiers vérifiables au centime près d'un silo à l'autre.
+Tous les générateurs Python s'appuient sur un univers client partagé (`shared_universe.py`, `seed=2026`) et sur un journal unique de la vie client (`customer_ledger.py`), garantissant des invariants financiers vérifiables au centime près d'un silo à l'autre. Architecture et règles de modification : **[`00_data_generator/README.md`](./00_data_generator/README.md)**.
 
 ### Prérequis
 - **Python** `>= 3.11, < 3.14`
@@ -101,12 +110,15 @@ Vous pouvez également exécuter chaque générateur individuellement :
 | Silo simulé | Commande individuelle | Sortie locale (`00_data_generator/output/`) |
 | :--- | :--- | :--- |
 | **Univers maître partagé** (`80k` clients, `95k` comptes) | `uv run python 00_data_generator/shared_universe.py` | `data/universe/*.parquet` |
+| **Journal de la vie client** (source unique Mainframe + SEPA) | `uv run python 00_data_generator/customer_ledger.py` | `data/universe/customer_ledger_v2.parquet` |
 | **Mainframe z/OS** (`EBCDIC CP500 + COMP-3`, `CFONB 120` 18 mois + `ABEND_S0C7`) | `uv run python 00_data_generator/generate_mainframe_cfonb.py` | `output/corebanking/` + `copybooks/*.cpy` |
-| **Validation Mainframe** (contrôle binaire & invariants) | `uv run python 00_data_generator/validate_corebanking.py` | Audit console (`7/7` invariants) |
+| **Validation Mainframe** (binaire, invariants, rapprochement Mainframe ↔ SEPA) | `uv run python 00_data_generator/validate_corebanking.py` | Audit console (`10/10` contrôles) |
 | **AWS S3 CRM** (`80k` clients, `320k` notes, `650` orphelins J0) | `uv run python 00_data_generator/generate_aws_crm_s3.py` | `output/RAW/AWS/` |
 | **Flux Paiements SEPA & IBAN** (`3,4 %` doublons, `8,1 %` `RJCT`/`PDNG`) | `uv run python 00_data_generator/generate_payments_stream.py` | `output/RAW/PAYMENTS/` |
+| **Cohérence paiements** (historique ↔ temps réel) | `uv run python 00_data_generator/validate_payments_coherence.py` | Audit console (`9/9` contrôles) |
 | **Corpus PDF** (`250` avenants agences `-14,30 M€` + `6` normes CFO/ACPR) | `uv run python 00_data_generator/generate_promo_pdfs.py` | `output/RAW/PROMO_CONTRACTS_PDF/` & `REGULATORY_CFO_PDF/` |
 | **Finance SAP / PCEC & ALM** (`1,2 M` lignes : naïf `+42,80 M€`, signé `-24,12 M€`) | `uv run python 00_data_generator/generate_finance_sap_alm.py` | `output/RAW/FINANCE_SAP_ALM/` + `output/bq_schemas/` |
+| **Contrôle croisé entre silos** (univers, AWS, paiements, Finance, PDF) | `uv run python 00_data_generator/verify_invariants.py` | Audit console (`15/15` contrôles) |
 
 Pour nettoyer proprement les fichiers générés en local et/ou sur GCS :
 ```bash
@@ -176,6 +188,41 @@ uv run python 00_data_generator/validate_payments_coherence.py
 
 ---
 
+## 🥈 Couche SILVER & Data Products (`Démo #2`, `dbt`)
+
+Le projet [`02_demo2_silver_dbt_dq/`](./02_demo2_silver_dbt_dq) construit les Data Products SILVER définis dans [`data_products_catalog.yaml`](./02_demo2_silver_dbt_dq/kc_products/data_products_catalog.yaml) (5 SILVER + 2 GOLD, noms techniques en anglais).
+
+```bash
+gcloud auth application-default login     # une fois (profiles.yml versionné, sans secret)
+cd 02_demo2_silver_dbt_dq
+uv run dbt build --profiles-dir .         # vues stg_* dans raw_bank, tables dans silver_bank, 39 tests
+```
+
+| Data Product | Tables `silver_bank` | État |
+| :--- | :--- | :--- |
+| `dp_customer_360` | `customers` (80 000), `accounts` (95 000) | ✅ |
+| `dp_customer_timeline` | `customer_movements` (~5,5 M), `beneficiaries` (113 936) | ✅ |
+| `dp_customer_relationship` · `dp_finance_pnb` · `dp_commercial_commitments` | `interactions` · `gl_entries` · `promo_contracts` | ⏳ |
+
+Structure, règles de qualité et ajout d'un Data Product : **[`02_demo2_silver_dbt_dq/README.md`](./02_demo2_silver_dbt_dq/README.md)**.
+
+---
+
+## 🔁 Régénérer toute la chaîne (RAW → SILVER)
+
+```bash
+./scripts/generate_all_data.sh                     # 1. génère les 5 silos, synchronise GCS, charge la Finance
+./scripts/run_demo1_mainframe_spark_iceberg.sh     # 2. Mainframe -> BigLake Iceberg (Spark Serverless, remplace les tables cbk_*)
+./scripts/run_demo1_payments_history_unified.sh    # 3. paiements historique + temps réel + CLS (vues unifiées)
+./scripts/run_demo1_aws_crm_iceberg.sh             # 4. CRM AWS en Iceberg (si l'univers a changé)
+cd 02_demo2_silver_dbt_dq && uv run dbt build --profiles-dir .   # 5. couche SILVER + tests
+```
+
+> [!CAUTION]
+> Les étapes 2 et 3 suppriment puis recréent des tables et des fichiers dans `raw_bank` et sur GCS : à ne lancer qu'en connaissance de cause.
+
+---
+
 ## 📂 Structure du repository
 
 ```text
@@ -187,6 +234,7 @@ uv run python 00_data_generator/validate_payments_coherence.py
 │       ├── bq-visual-audit/SKILL.md          # Skill Workspace de contrôle visuel post-création BigQuery
 │       └── stage-ui-step-authoring/          # Skill Workspace d'ajout d'étapes dans l'UI de démo (+ scripts/)
 ├── docs/
+│   ├── DATA_STATUS.md                        # État des données (RAW / SILVER / GOLD), chiffres clés, limites
 │   ├── DEMO_QUESTIONS_AND_FLOW.md            # Script conversationnel détaillé & skills DAK par étape
 │   ├── MAINFRAME_BIGQUERY_SCHEMA.md          # Dictionnaire des 4 tables BigLake Iceberg & 72 colonnes
 │   └── assets/                               # Schémas d'architecture & supports visuels
@@ -195,15 +243,18 @@ uv run python 00_data_generator/validate_payments_coherence.py
 │   │   ├── demo_config.yaml                  # Configuration YAML éditable à chaud (incl. askQuestions)
 │   │   └── assets/pdf_previews/              # Vignettes haute résolution des PDF découverts (zoom UI)
 │   └── src/                                  # Composants ChatStage, AskQuestionTray, VisualCheckCard
-├── 00_data_generator/                        # Générateurs déterministes multi-silos (seed=2026)
+├── 00_data_generator/                        # Générateurs déterministes multi-silos (seed=2026) — voir README.md
 │   ├── shared_universe.py                    # Univers partagé (80k clients, 95k comptes, 450 agences)
 │   ├── customer_ledger.py                    # Journal partagé de la vie client (source unique Mainframe + SEPA)
 │   ├── generate_mainframe_cfonb.py           # Mainframe EBCDIC CP500 + COMP-3 & relevés CFONB 120
 │   ├── generate_aws_crm_s3.py                # CRM AWS S3 Parquet & 650 comptes récents J0
+│   ├── payments_contract.py                  # Contrat partagé paiements historique <-> temps réel
 │   ├── generate_payments_stream.py           # Archive 18 mois Parquet 100 % Nested STRUCT (6,2 M lignes)
 │   ├── generate_promo_pdfs.py                # 250 PDF d'avenants agences (-14,30 M€) + 6 PDF CFO
 │   ├── generate_finance_sap_alm.py           # Grand livre SAP / PCEC + budget + TCI ALM (1,2 M lignes)
+│   ├── publish_aws_crm_iceberg.py            # Publication du CRM en tables Apache Iceberg sur GCS
 │   ├── stream_payments_pubsub.py             # Producteur temps réel Nested STRUCT vers Cloud Pub/Sub
+│   ├── validate_payments_coherence.py        # Cohérence paiements historique <-> temps réel
 │   ├── validate_corebanking.py               # Vérification locale des invariants Core Banking
 │   ├── verify_invariants.py                  # Contrôle croisé inter-silos (univers, AWS, paiements, Finance, PDF)
 │   └── copybooks/                            # Copybooks COBOL (.cpy) des fichiers Mainframe
@@ -213,8 +264,14 @@ uv run python 00_data_generator/validate_payments_coherence.py
 │       ├── 00_create_documented_mainframe_iceberg_tables.sql
 │       ├── 01_expose_discovered_pdf_views.sql
 │       ├── 02_create_documented_pubsub_nested_tables.sql
-│       └── 03_audit_pii_nested_pubsub.sql
-├── 02_demo2_silver_dbt_dq/                   # Acte 2 : Modèles dbt SILVER, Auto DQ & Data Products KC
+│       ├── 03_audit_pii_nested_pubsub.sql
+│       ├── 04_create_payments_history_biglake_unified.sql
+│       ├── 05_verify_payments_unified.sql
+│       └── 06_verify_aws_crm_iceberg.sql
+├── 02_demo2_silver_dbt_dq/                   # Acte 2 : projet dbt SILVER & Data Products — voir README.md
+│   ├── kc_products/data_products_catalog.yaml  # Catalogue de référence des Data Products
+│   ├── models/staging/ · models/silver/      # Vues de nettoyage RAW · tables SILVER par Data Product
+│   └── seeds/movement_category_rules.csv     # Règles de catégorisation des mouvements
 ├── 03_demo3_kc_semantics_cfo/                # Acte 3 : Glossaires Knowledge Catalog (OKF) & PNB CFO
 ├── 04_demo4_scale_mobile_adk/                # Acte 4 : BQML AI.FORECAST, AlloyDB (<15ms) & agents ADK
 ├── scripts/
@@ -222,6 +279,9 @@ uv run python 00_data_generator/validate_payments_coherence.py
 │   ├── run_demo1_mainframe_spark_iceberg.sh  # Replay complet Spark Serverless -> BigLake Iceberg
 │   ├── run_demo1_gcs_pdf_discovery.sh        # Replay complet Dataplex GCS PDF Discovery -> Object Tables
 │   ├── run_demo1_pubsub_bq_cls.sh            # Replay complet Pub/Sub Nested STRUCT -> Audit PII -> CLS
+│   ├── run_demo1_payments_history_unified.sh # Historique paiements BigLake + vues unifiées + certification
+│   ├── run_demo1_aws_crm_iceberg.sh          # CRM AWS en Iceberg sur GCS + certification
+│   ├── load_finance_sap_bq.sh                # Chargement direct de raw_bank.raw_sap_gl_alm
 │   ├── apply_pubsub_cls_policy_tags.py       # Déploiement Taxonomie & 3 Data Policies CLS sur STRUCT
 │   ├── setup_pubsub_queues.sh                # Provisionnement Pub/Sub & BigQuery Subscriptions (--use-table-schema)
 │   ├── clean_all_data.sh                     # Nettoyage propre des données locales et/ou GCS
@@ -235,6 +295,9 @@ uv run python 00_data_generator/validate_payments_coherence.py
 ## 📚 Documentation de référence
 
 - **[`DESIGN_AND_CONTEXT.md`](./DESIGN_AND_CONTEXT.md)** : contexte métier détaillé, architecture cible, anomalies `RAW` injectées et formules exactes des invariants financiers.
+- **[`docs/DATA_STATUS.md`](./docs/DATA_STATUS.md)** : état des données RAW / SILVER / GOLD, chiffres clés, procédure de régénération et limites connues.
+- **[`00_data_generator/README.md`](./00_data_generator/README.md)** : architecture des générateurs (univers, journal de la vie client, contrat paiements), anomalies injectées et règles de modification.
+- **[`02_demo2_silver_dbt_dq/README.md`](./02_demo2_silver_dbt_dq/README.md)** : projet dbt, Data Products construits, règles de qualité, tests et ajout d'un Data Product.
 - **[`docs/DEMO_QUESTIONS_AND_FLOW.md`](./docs/DEMO_QUESTIONS_AND_FLOW.md)** : déroulé pas-à-pas sur scène, questions d'arbitrage posées par `AGY` et cartographie des skills `DAK` mobilisés.
 - **[`docs/MAINFRAME_BIGQUERY_SCHEMA.md`](./docs/MAINFRAME_BIGQUERY_SCHEMA.md)** : dictionnaire complet du dataset `raw_bank`, des 4 tables **BigLake Managed Iceberg** (`cbk_*`) et de leurs `72` colonnes documentées.
 - **[`.agents/skills/bq-visual-audit/SKILL.md`](./.agents/skills/bq-visual-audit/SKILL.md)** : protocole du skill de contrôle visuel post-création BigQuery (`render_chart` + aperçu documentaire `ObjectRef`).
