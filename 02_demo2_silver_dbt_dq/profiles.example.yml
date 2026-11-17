@@ -1,0 +1,28 @@
+# Copier en profiles.yml (ignoré par Git) : cp profiles.example.yml profiles.yml
+# Aucun secret : authentification ADC (gcloud auth application-default login) ou jeton gcloud éphémère.
+data_days_demo_bq:
+  target: prod
+  outputs:
+    # Cible par défaut : Application Default Credentials (gcloud auth application-default login)
+    prod:
+      type: bigquery
+      method: oauth
+      project: data-days-demo
+      dataset: silver_bank     # dataset par défaut ; surchargé par +schema dans dbt_project.yml
+      location: europe-west1
+      threads: 8
+      job_execution_timeout_seconds: 600
+      priority: interactive
+
+    # Repli sans ADC : réutilise le jeton de la session gcloud courante (non stocké)
+    #   DBT_BQ_TOKEN=$(gcloud auth print-access-token) dbt build --target gcloud_token
+    gcloud_token:
+      type: bigquery
+      method: oauth-secrets
+      token: "{{ env_var('DBT_BQ_TOKEN') }}"
+      project: data-days-demo
+      dataset: silver_bank
+      location: europe-west1
+      threads: 8
+      job_execution_timeout_seconds: 600
+      priority: interactive

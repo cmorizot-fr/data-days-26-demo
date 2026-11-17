@@ -1,0 +1,147 @@
+version: 2
+
+models:
+  - name: customer_movements
+    description: >
+      dp_customer_timeline · Vie du client : 1 ligne par mouvement réglé, catégorisé.
+      Le Mainframe CFONB fait foi (5 500 000 mouvements J-1), enrichi par les paiements SEPA via l'end_to_end_id ;
+      les paiements SEPA postérieurs au dernier batch ou des comptes ouverts après le batch J-1 sont ajoutés.
+    meta:
+      data_product: dp_customer_timeline
+      owner: payments
+      freshness: daily (J-1) + intraday via AlloyDB
+    tests:
+      - expression_equals:
+          arguments:
+            expression: "COUNTIF(source_system = 'MAINFRAME_CFONB')"
+            expected: 5500000
+      - expression_equals:
+          name: neobank_leak_90d_equals_2_42bn
+          arguments:
+            expression: "CAST(ROUND(SUM(IF(is_neobank_outflow AND booking_date BETWEEN '2026-08-15' AND '2026-11-12', -signed_amount_eur, 0)), 2) AS NUMERIC)"
+            expected: 2420000000
+      - expression_equals:
+          name: no_sepa_payment_counted_twice
+          arguments:
+            expression: "COUNTIF(NOT is_internal_transfer AND end_to_end_id IS NOT NULL) - COUNT(DISTINCT IF(NOT is_internal_transfer, end_to_end_id, NULL))"
+            expected: 0
+    columns:
+      - name: movement_id
+        description: "Identifiant du mouvement (CFONB-<fichier>-<ligne> ou SEPA-<end_to_end_id>)."
+        tests: [unique, not_null]
+      - name: source_system
+        description: "MAINFRAME_CFONB (batch J-1, référence) ou SEPA_REALTIME (ajout hors batch)."
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['MAINFRAME_CFONB', 'SEPA_REALTIME']
+      - name: customer_id
+        description: "Client titulaire du compte."
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('customers')
+                field: customer_id
+      - name: account_id
+        description: "Compte mouvementé."
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('accounts')
+                field: account_id
+      - name: account_type
+        description: "Type du compte mouvementé (CC_CHQ, LIVRET_A, LDDS, LIV_MAISON)."
+      - name: booking_date
+        description: "Date comptable."
+        tests: [not_null]
+      - name: value_date
+        description: "Date de valeur (date comptable si la date de valeur Mainframe était invalide)."
+        tests: [not_null]
+      - name: value_date_was_invalid
+        description: "Vrai si la date de valeur RAW valait 00000000 / 99999999 (66 000 attendues)."
+      - name: direction
+        description: "CREDIT (entrée) ou DEBIT (sortie)."
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['CREDIT', 'DEBIT']
+      - name: amount_eur
+        description: "Montant absolu en euros."
+      - name: signed_amount_eur
+        description: "Montant signé du point de vue du compte (+ entrée, - sortie)."
+        tests: [not_null]
+      - name: category
+        description: "Catégorie fine (règles versionnées dans le seed movement_category_rules)."
+        tests: [not_null]
+      - name: category_group
+        description: "Famille : INCOME, FIXED_CHARGES, CARD_SPENDING, SAVINGS, EXTERNAL_TRANSFER, OTHER."
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['INCOME', 'FIXED_CHARGES', 'CARD_SPENDING', 'SAVINGS', 'EXTERNAL_TRANSFER', 'OTHER']
+      - name: label
+        description: "Libellé de l'opération."
+      - name: counterparty_name
+        description: "Nom de la contrepartie (paiements SEPA)."
+      - name: counterparty_iban
+        description: "IBAN de la contrepartie (donnée sensible)."
+      - name: counterparty_bic
+        description: "BIC de la contrepartie."
+      - name: payment_scheme
+        description: "Schéma de paiement (SCT_INBOUND, SEPA_SDD, SCT_INST, CARD_*...)."
+      - name: end_to_end_id
+        description: "Identifiant ISO 20022 de bout en bout (clé de rapprochement CFONB <-> SEPA)."
+      - name: is_neobank_outflow
+        description: "Vrai pour un virement sortant vers une néobanque ou un courtier en ligne."
+      - name: is_internal_transfer
+        description: "Vrai pour un virement interne compte courant <-> livret (58*)."
+
+  - name: beneficiaries
+    description: >
+      dp_customer_timeline · Bénéficiaires IBAN externes ajoutés par les clients
+      (1 ligne par compte et IBAN, retries techniques de l'API mobile retirés).
+    meta:
+      data_product: dp_customer_timeline
+      owner: payments
+    columns:
+      - name: customer_id
+        description: "Client ayant ajouté le bénéficiaire."
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('customers')
+                field: customer_id
+      - name: account_id
+        description: "Compte débiteur."
+        tests: [not_null]
+      - name: beneficiary_iban
+        description: "IBAN du bénéficiaire (donnée sensible)."
+        tests: [not_null]
+      - name: beneficiary_bic
+        description: "BIC du bénéficiaire."
+      - name: is_neobank_or_broker
+        description: "Vrai si le bénéficiaire est une néobanque ou un courtier en ligne."
+      - name: custom_label
+        description: "Libellé saisi par le client."
+      - name: channel
+        description: "Canal d'enrôlement (app mobile, web)."
+      - name: first_enrolled_at
+        description: "Premier enrôlement."
+      - name: ingestion_source
+        description: "HISTORY_ARCHIVE ou PUBSUB_LIVE."
+
+seeds:
+  - name: movement_category_rules
+    description: "Règles de catégorisation des mouvements par libellé (priorité croissante, la première qui correspond l'emporte)."
+    columns:
+      - name: priority
+        description: "Ordre d'application de la règle (la plus petite valeur l'emporte)."
+      - name: label_pattern
+        description: "Expression régulière appliquée au libellé de l'opération."
+      - name: category
+        description: "Catégorie fine attribuée (SALARY, RENT, STREAMING_SUBSCRIPTION...)."
+      - name: category_group
+        description: "Famille de la catégorie (INCOME, FIXED_CHARGES, CARD_SPENDING, SAVINGS, EXTERNAL_TRANSFER, OTHER)."

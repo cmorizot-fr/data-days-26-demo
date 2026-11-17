@@ -1,0 +1,46 @@
+name: 'hexagone_bank_lakehouse'
+version: '1.0.0'
+config-version: 2
+
+profile: 'data_days_demo_bq'
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+# Attribution des jobs BigQuery (labels datacloud:antigravity sur chaque requête dbt)
+query-comment:
+  comment: '{"datacloud": "antigravity", "app": "dbt", "project": "hexagone_bank_lakehouse"}'
+  job-label: true
+
+models:
+  hexagone_bank_lakehouse:
+    +persist_docs:
+      relation: true
+      columns: true
+    staging:
+      # Vues de nettoyage technique, une par source RAW (préfixe stg_)
+      +materialized: view
+      +schema: raw_bank
+    silver:
+      +materialized: table
+      +schema: silver_bank
+      customer_360:
+        +labels:
+          data_product: dp_customer_360
+      customer_timeline:
+        +labels:
+          data_product: dp_customer_timeline
+
+seeds:
+  hexagone_bank_lakehouse:
+    +schema: silver_bank
+    +persist_docs:
+      relation: true
+      columns: true
+    movement_category_rules:
+      +column_types:
+        priority: int64

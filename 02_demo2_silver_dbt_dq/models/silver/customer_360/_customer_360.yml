@@ -1,0 +1,135 @@
+version: 2
+
+models:
+  - name: customers
+    description: >
+      dp_customer_360 · Référentiel client unifié Mainframe + CRM AWS, 1 ligne par client (80 000).
+      Les 650 clients créés en agence après le batch Mainframe J-1 sont conservés (is_mainframe_orphan = true).
+    meta:
+      data_product: dp_customer_360
+      owner: retail_network_marketing
+      freshness: daily (J-1)
+    tests:
+      - row_count_equals:
+          arguments:
+            expected: 80000
+    columns:
+      - name: customer_id
+        description: "Identifiant client (CUSTnnnnnnnn), clé commune à tous les silos."
+        tests: [unique, not_null]
+      - name: first_name
+        description: "Prénom (donnée personnelle)."
+      - name: last_name
+        description: "Nom (donnée personnelle)."
+      - name: birth_date
+        description: "Date de naissance."
+      - name: age
+        description: "Âge révolu au 12/11/2026."
+      - name: is_young_18_32
+        description: "Vrai si le client a entre 18 et 32 ans (cohorte cible de la fuite vers les néobanques)."
+      - name: age_segment
+        description: "Tranche d'âge commerciale du CRM."
+      - name: segment
+        description: "Segment de clientèle (JEUNE_ACTIF, MASS_MARKET, AFFLUENT, PATRIMONIAL)."
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['JEUNE_ACTIF', 'MASS_MARKET', 'AFFLUENT', 'PATRIMONIAL']
+      - name: csp
+        description: "Catégorie socio-professionnelle."
+      - name: declared_monthly_income_eur
+        description: "Revenu mensuel déclaré au CRM (EUR)."
+      - name: region_code
+        description: "Région commerciale (REG1..REG8)."
+        tests: [not_null]
+      - name: region_name
+        description: "Libellé de la région."
+      - name: agency_code
+        description: "Code agence normalisé sur 4 caractères."
+        tests: [not_null]
+      - name: city
+        description: "Ville de l'agence."
+      - name: onboarding_date
+        description: "Date d'entrée en relation."
+        tests: [not_null]
+      - name: closed_date
+        description: "Date de clôture de la relation (NULL si active ; 0 clôture sur le trimestre)."
+      - name: commercial_status
+        description: "Statut commercial CRM."
+      - name: mainframe_dossier_status
+        description: "Statut du dossier dans le référentiel Mainframe (NULL pour les clients absents du batch J-1)."
+      - name: digital_opt_in
+        description: "Consentement aux notifications digitales (app mobile)."
+      - name: is_in_mainframe
+        description: "Vrai si le client figure dans le batch Mainframe J-1."
+      - name: is_mainframe_orphan
+        description: "Vrai pour les clients créés sur le CRM AWS après le batch Mainframe J-1 (650 attendus)."
+      - name: mainframe_batch_date
+        description: "Date du batch Mainframe d'où provient la ligne."
+      - name: crm_updated_at
+        description: "Horodatage de dernière mise à jour CRM."
+
+  - name: accounts
+    description: >
+      dp_customer_360 · Comptes unifiés Mainframe + CRM AWS, 1 ligne par compte (95 000),
+      avec le solde de la veille issu du Mainframe.
+    meta:
+      data_product: dp_customer_360
+      owner: retail_network_marketing
+      freshness: daily (J-1)
+    tests:
+      - row_count_equals:
+          arguments:
+            expected: 95000
+    columns:
+      - name: account_id
+        description: "Identifiant du compte (ACCnnnnnnnn)."
+        tests: [unique, not_null]
+      - name: customer_id
+        description: "Titulaire du compte."
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('customers')
+                field: customer_id
+      - name: account_number_11
+        description: "Numéro de compte sur 11 chiffres (clé des mouvements CFONB)."
+        tests: [unique, not_null]
+      - name: iban
+        description: "IBAN FR du compte (donnée sensible)."
+        tests: [unique, not_null]
+      - name: account_type
+        description: "Type de compte."
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['CC_CHQ', 'LIVRET_A', 'LDDS', 'LIV_MAISON']
+      - name: is_current_account
+        description: "Vrai pour un compte courant (CC_CHQ)."
+      - name: product_label
+        description: "Libellé produit."
+      - name: rate_bps
+        description: "Taux de rémunération en points de base."
+      - name: agency_code
+        description: "Code agence normalisé sur 4 caractères."
+        tests: [not_null]
+      - name: account_status
+        description: "Statut du compte."
+      - name: opened_date
+        description: "Date d'ouverture."
+        tests: [not_null]
+      - name: closed_date
+        description: "Date de clôture (NULL si ouvert)."
+      - name: opened_in_current_quarter
+        description: "Vrai si ouvert sur la fenêtre 2026-08-15 .. 2026-11-12 (15 000 attendus)."
+      - name: promo_contract_id
+        description: "Avenant promotionnel PDF rattaché au compte (dp_commercial_commitments)."
+      - name: balance_d1_eur
+        description: "Solde de la veille (EUR) issu du Mainframe ; NULL pour les comptes absents du batch J-1."
+      - name: last_movement_date
+        description: "Date du dernier mouvement connu du Mainframe."
+      - name: is_in_mainframe
+        description: "Vrai si le compte figure dans le maître Mainframe J-1."
+      - name: is_mainframe_orphan
+        description: "Vrai pour les comptes ouverts sur le CRM AWS après le batch Mainframe J-1 (650 attendus)."

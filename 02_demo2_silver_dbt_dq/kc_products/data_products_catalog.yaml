@@ -1,0 +1,89 @@
+# ==============================================================================
+# Catalogue des Data Products — Banque Hexagone (Paris Data Summit 2026)
+# Source de vérité du découpage : 5 Data Products SILVER + 2 Data Products GOLD.
+# Convention : noms techniques en anglais (Data Products, tables, colonnes, modèles dbt).
+# Découpage par domaine métier & usage (pas par système source).
+# ==============================================================================
+domain: retail_banking_france
+project: data-days-demo
+location: europe-west1
+
+data_products:
+  # ---------------------------------------------------------------- SILVER
+  - id: dp_customer_360
+    layer: silver
+    title: Customer 360 — référentiel client & comptes
+    owner: retail_network_marketing
+    freshness: daily (J-1 Mainframe + CRM)
+    dataset: silver_bank
+    tables: [customers, accounts]
+    sources: [cbk_customers_ref, aws_crm_customers, cbk_accounts_master, aws_crm_account_portfolio]
+    consumers: [all_domains, budget_insight, cfo_agent]
+    contract: 80 000 clients (dont 650 absents du Mainframe J-1), 95 000 comptes, 0 clôture, solde J-1
+
+  - id: dp_customer_timeline
+    layer: silver
+    title: Customer timeline — mouvements & paiements (vie du client)
+    owner: payments
+    freshness: daily (J-1) + intraday via AlloyDB
+    dataset: silver_bank
+    tables: [customer_movements, beneficiaries]
+    sources: [cbk_cfonb_movements, raw_sepa_payments_unified, raw_iban_events_unified]
+    consumers: [budget_insight, deposit_leak_analysis, cfo_agent]
+    contract: mouvements catégorisés et dédoublonnés ; fuite néobanques 90 j = 2 420 000 000,00 EUR
+
+  - id: dp_customer_relationship
+    layer: silver
+    title: Customer relationship — interactions CRM
+    owner: retail_network_call_center
+    freshness: daily
+    dataset: silver_bank
+    tables: [interactions]
+    sources: [aws_crm_interactions]
+    consumers: [churn_analytics, ai_agents]
+    contract: 320 000 RDV et appels, texte libre sensible masqué
+
+  - id: dp_finance_pnb
+    layer: silver
+    title: Finance PNB — grand livre SAP, budget & TCI ALM
+    owner: cfo_finance
+    freshness: monthly / quarterly close
+    dataset: silver_bank
+    tables: [gl_entries]
+    sources: [raw_sap_gl_alm]
+    consumers: [cfo_agent]
+    contract: 1 200 000 lignes ; SUM brut = +42,80 M EUR ; signé hors 58* = -24,12 M EUR
+
+  - id: dp_commercial_commitments
+    layer: silver
+    title: Commercial commitments — contrats promotionnels PDF
+    owner: management_control
+    freshness: on document arrival
+    dataset: silver_bank
+    tables: [promo_contracts]
+    sources: [raw_promo_contracts_pdf, raw_cfo_regulatory_pdf]
+    consumers: [cfo_agent, next_best_offer]
+    contract: 250 avenants extraits par IA = -14 300 000,00 EUR
+
+  # ------------------------------------------------------------------ GOLD
+  - id: dp_budget_insight
+    layer: gold
+    title: Budget insight — prévision de fin de mois par client
+    owner: digital_banking
+    freshness: daily in BigQuery, real-time adjustment in AlloyDB
+    dataset: gold_bank
+    tables: [customer_mobile_insights]
+    sources: [dp_customer_360, dp_customer_timeline]
+    consumers: [mobile_app, adk_agents]
+    contract: 1 ligne par client ; offre d'épargne seulement si reste à vivre >= 100 EUR (ACPR 2024-R-01)
+
+  - id: dp_certified_pnb
+    layer: gold
+    title: Certified PNB — écart de PNB certifié vs budget
+    owner: cfo_finance
+    freshness: quarterly
+    dataset: gold_bank
+    tables: [v_cfo_certified_pnb_variance]
+    sources: [dp_finance_pnb, dp_commercial_commitments]
+    consumers: [cfo, executive_committee]
+    contract: -38 420 000,00 EUR = -24,12 M EUR ALM + -14,30 M EUR PDF

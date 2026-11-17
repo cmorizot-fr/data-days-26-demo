@@ -1,0 +1,32 @@
+version: 2
+
+sources:
+  - name: raw_bank
+    database: data-days-demo
+    schema: raw_bank
+    description: "Couche RAW : BigLake Iceberg Mainframe, AWS S3 Omni, flux SEPA, extraction SAP GL / ALM & Object Tables PDF (Dataplex Discovery)"
+    tables:
+      - name: cbk_customers_ref
+        description: "Référentiel clients Mainframe z/OS (batch J-1, 79 350 clients) — codes agence non normalisés, dates texte YYYYMMDD."
+      - name: cbk_accounts_master
+        description: "Maître des comptes Mainframe (94 350 comptes) avec solde de la veille."
+      - name: cbk_cfonb_movements
+        description: "Mouvements CFONB 120 sur 18 mois (5,5 M) — 1,2 % de dates de valeur 00000000 / 99999999."
+      - name: cbk_cfonb_balances
+        description: "Soldes CFONB 120 (lignes 01 / 07)."
+      - name: aws_crm_customers
+        description: "Clients du CRM SaaS AWS (80 000, dont 650 créés après le batch Mainframe J-1)."
+      - name: aws_crm_account_portfolio
+        description: "Portefeuille de comptes du CRM AWS (95 000)."
+      - name: aws_crm_interactions
+        description: "RDV agences & verbatims call center (320 000)."
+      - name: raw_sepa_payments_unified
+        description: "Paiements SEPA : historique 18 mois + flux temps réel Pub/Sub (100 % Nested STRUCT) — ~3,4 % doublons, 8,1 % RJCT / PDNG."
+      - name: raw_iban_events_unified
+        description: "Ajouts de bénéficiaires IBAN : historique + flux temps réel Pub/Sub."
+      - name: raw_sap_gl_alm
+        description: "Grand livre d'écart PNB SAP / PCEC & dépôts TCI ALM (1 200 000 lignes)."
+      - name: raw_promo_contracts_pdf
+        description: "Object Table des 250 avenants promotionnels PDF (Dataplex Discovery)."
+      - name: raw_cfo_regulatory_pdf
+        description: "Object Table des 6 PDF réglementaires CFO."
