@@ -17,6 +17,7 @@ import json
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import polars as pl
@@ -248,6 +249,16 @@ def build_aws_interactions(
     is_silent_churn_topic = np.where(cust_ages <= 32, roll < 0.44, roll < 0.09)
     is_promo_topic = (~is_silent_churn_topic) & (rng.random(n) < 0.18)
 
+    # Tirages des verbatims dans le même ordre qu'auparavant (flux aléatoire inchangé pour les autres clients)
+    silent_pick = VERBATIM_SILENT_CHURN_YOUNG[rng.integers(0, len(VERBATIM_SILENT_CHURN_YOUNG), size=n)]
+    promo_pick = VERBATIM_PROMO_CONTRACTS[rng.integers(0, len(VERBATIM_PROMO_CONTRACTS), size=n)]
+    standard_pick = VERBATIM_STANDARD_RETAIL[rng.integers(0, len(VERBATIM_STANDARD_RETAIL), size=n)]
+
+    # Lucas Martin n'a qu'un compte courant (aucun livret, aucune offre promo signée) : l'agent de la
+    # Démo #4 ouvre le Livret Boost Maison et y vire l'excédent de 300 €. Ses éventuels RDV « avenant
+    # promotionnel » tirés au hasard deviennent des RDV de suivi courant.
+    is_promo_topic = is_promo_topic & (cust_zero_idx != WITNESS_CUST_IDX - 1)
+
     topics = np.where(
         is_silent_churn_topic,
         "VIREMENT_INSTANTANE_PLAFOND_EPARGNE_EXTERNE",
@@ -256,12 +267,8 @@ def build_aws_interactions(
 
     verbatims = np.where(
         is_silent_churn_topic,
-        VERBATIM_SILENT_CHURN_YOUNG[rng.integers(0, len(VERBATIM_SILENT_CHURN_YOUNG), size=n)],
-        np.where(
-            is_promo_topic,
-            VERBATIM_PROMO_CONTRACTS[rng.integers(0, len(VERBATIM_PROMO_CONTRACTS), size=n)],
-            VERBATIM_STANDARD_RETAIL[rng.integers(0, len(VERBATIM_STANDARD_RETAIL), size=n)],
-        ),
+        silent_pick,
+        np.where(is_promo_topic, promo_pick, standard_pick),
     )
 
     # Verbatims témoin Lucas Martin (CUST00002026)
@@ -278,8 +285,11 @@ def build_aws_interactions(
         "et vérifie la réception d'un remboursement santé de +42 EUR."
     )
 
-    end_ts = int(datetime.combine(DEMO_LIVE_DATE, datetime.min.time()).replace(hour=13, minute=45).timestamp())
-    start_ts = int((datetime(2026, 11, 13, 13, 45) - timedelta(days=530)).timestamp())
+    # Fuseau explicite (Europe/Paris) : sans lui, .timestamp() dépend du fuseau de la machine et décale
+    # les 320 000 horodatages d'une heure selon le poste qui génère les données.
+    paris = ZoneInfo("Europe/Paris")
+    end_ts = int(datetime.combine(DEMO_LIVE_DATE, datetime.min.time()).replace(hour=13, minute=45, tzinfo=paris).timestamp())
+    start_ts = int((datetime(2026, 11, 13, 13, 45) - timedelta(days=530)).replace(tzinfo=paris).timestamp())
     random_epoch_sec = rng.integers(start_ts, end_ts, size=n)
     random_epoch_sec.sort()
 

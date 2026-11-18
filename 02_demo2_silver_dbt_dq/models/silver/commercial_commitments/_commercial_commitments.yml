@@ -1,0 +1,259 @@
+version: 2
+
+models:
+  - name: promo_contracts
+    description: >
+      dp_commercial_commitments · Avenants promotionnels signés par les agences, 1 ligne par PDF (250).
+      Approche hybride : les champs certifiés sont extraits une fois par AI.GENERATE (température 0, reprise
+      immédiate des échecs) directement depuis l'Object Table raw_promo_contracts_pdf (aucune copie) et testés
+      au centime (14 300 000,00 EUR) ; chaque ligne garde l'ObjectRef du PDF (source_pdf) pour une lecture à la
+      demande par un agent. Incrémental : seuls les PDF incomplets ou modifiés sont relus.
+    meta:
+      data_product: dp_commercial_commitments
+      owner: management_control
+      freshness: on document arrival
+    tests:
+      - row_count_equals:
+          arguments:
+            expected: 250
+      - expression_equals:
+          arguments:
+            expression: "SUM(committed_promo_cost_eur)"
+            expected: 14300000
+      - expression_equals:
+          arguments:
+            expression: "COUNTIF(NOT is_extraction_complete)"
+            expected: 0
+    columns:
+      - name: promo_contract_id
+        description: "Identifiant de l'avenant (PROMO-2026-nnn), rattaché aux comptes via accounts.promo_contract_id."
+        tests: [unique, not_null]
+      - name: region_code
+        description: "Région de l'agence signataire (issue du chemin du PDF)."
+        tests: [not_null]
+      - name: agency_code
+        description: "Code de l'agence principale signataire (extrait du PDF)."
+        tests: [not_null]
+      - name: promo_type
+        description: "Type de promotion, déduit du compte PCEC lu dans le PDF via le référentiel promo_types."
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('promo_types')
+                field: promo_type
+      - name: promo_type_label
+        description: "Libellé du type de promotion (référentiel promo_types)."
+      - name: effective_date
+        description: "Date d'effet, de signature ou d'arrêté de l'avenant."
+        tests: [not_null]
+      - name: end_date
+        description: "Date d'échéance de l'avenant (vide si le document n'en indique pas)."
+      - name: duration_months
+        description: "Durée de l'avenant en mois."
+      - name: boost_rate_bps
+        description: "Bonification de taux en points de base (0 si l'avenant n'est pas un taux boosté)."
+      - name: welcome_bonus_eur
+        description: "Prime unitaire de bienvenue par client en EUR (0 si aucune)."
+      - name: committed_promo_cost_eur
+        description: "Montant total engagé par l'agence (coût promotionnel) en EUR, absent du grand livre SAP."
+        tests: [not_null]
+      - name: pcec_account
+        description: "Compte PCEC d'imputation du coût promotionnel (lu dans le PDF)."
+        tests:
+          - relationships:
+              arguments:
+                to: ref('promo_types')
+                field: pcec_account
+      - name: exceeds_acpr_digital_cap
+        description: >
+          Vrai si le taux boosté dépasse le plafond ACPR du canal mobile (+200 bps, 3 mois, voir savings_offers).
+          Informatif : l'avenant agence reste valable, mais ne peut pas être repris tel quel sur mobile.
+      - name: is_extraction_complete
+        description: "Vrai si l'appel IA a réussi et que montant, compte PCEC et référence du contrat sont présents et cohérents."
+      - name: extraction_status
+        description: "Statut technique de l'appel AI.GENERATE (vide si l'appel a réussi)."
+      - name: extraction_error_detail
+        description: "Réponse brute du modèle (tronquée) quand l'extraction est incomplète, pour diagnostic."
+      - name: extracted_contract_reference
+        description: "Référence de contrat lue dans le PDF (doit être égale à promo_contract_id)."
+      - name: extraction_attempts
+        description: "Nombre d'appels IA cumulés sur la version courante du PDF (remis à zéro si le PDF change)."
+      - name: extraction_model
+        description: "Modèle Gemini utilisé pour l'extraction."
+      - name: extracted_at
+        description: "Horodatage de la dernière extraction."
+      - name: source_pdf
+        description: "ObjectRef du PDF source (Object Table). Pour une lecture à la demande dans le périmètre VPC-SC, utiliser AI.GENERATE((question, OBJ.MAKE_REF(source_uri)), ...)."
+      - name: source_uri
+        description: "Chemin GCS du PDF source."
+      - name: source_md5_hash
+        description: "Empreinte MD5 du PDF au moment de l'extraction (pilote l'incrémental)."
+      - name: source_updated_at
+        description: "Dernière mise à jour du PDF dans GCS."
+
+  - name: promo_contracts_pdf_tracking
+    description: >
+      dp_commercial_commitments · Suivi d'extraction PDF par PDF : tous les PDF présents dans l'Object Table, avec
+      leur statut (PENDING, OUTDATED, FAILED, EXTRACTED), le nombre de tentatives, l'erreur éventuelle, le montant
+      extrait et les contrôles de cohérence. Vue sans appel IA, toujours à jour.
+    meta:
+      data_product: dp_commercial_commitments
+      owner: management_control
+    tests:
+      - row_count_equals:
+          arguments:
+            expected: 250
+      - expression_equals:
+          arguments:
+            expression: "COUNTIF(NOT is_certifiable)"
+            expected: 0
+    columns:
+      - name: promo_contract_id
+        description: "Identifiant de l'avenant."
+        tests: [unique, not_null]
+      - name: region_code
+        description: "Région de l'agence (chemin du PDF)."
+      - name: tracking_status
+        description: "PENDING (jamais extrait), OUTDATED (PDF modifié depuis), FAILED (extraction incomplète) ou EXTRACTED."
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['PENDING', 'OUTDATED', 'FAILED', 'EXTRACTED']
+      - name: extraction_attempts
+        description: "Nombre d'appels IA cumulés sur la version courante du PDF."
+      - name: last_extracted_at
+        description: "Horodatage de la dernière extraction."
+      - name: extraction_model
+        description: "Modèle Gemini utilisé."
+      - name: extraction_status
+        description: "Statut technique du dernier appel AI.GENERATE."
+      - name: extraction_error_detail
+        description: "Réponse brute (tronquée) en cas d'échec."
+      - name: agency_code
+        description: "Agence principale extraite."
+      - name: promo_type
+        description: "Type de promotion (référentiel promo_types)."
+      - name: pcec_account
+        description: "Compte PCEC extrait."
+      - name: effective_date
+        description: "Date d'effet extraite."
+      - name: end_date
+        description: "Date d'échéance extraite."
+      - name: committed_promo_cost_eur
+        description: "Montant engagé extrait, en EUR."
+      - name: is_promo_type_known
+        description: "Vrai si le compte PCEC extrait correspond à un type de promotion du référentiel."
+      - name: is_pcec_off_sap_gl
+        description: "Vrai si le compte PCEC est bien un compte hors grand livre SAP (attendu pour les avenants)."
+      - name: is_period_consistent
+        description: "Vrai si la date d'échéance est postérieure ou égale à la date d'effet."
+      - name: is_certifiable
+        description: "Vrai si le PDF est extrait dans sa version courante et passe les contrôles : il peut entrer dans le PNB certifié."
+      - name: source_pdf
+        description: "ObjectRef du PDF, pour lecture à la demande."
+      - name: source_uri
+        description: "Chemin GCS du PDF."
+      - name: source_size_bytes
+        description: "Taille du PDF en octets."
+      - name: source_md5_hash
+        description: "Empreinte MD5 actuelle du PDF."
+      - name: source_updated_at
+        description: "Dernière mise à jour du PDF dans GCS."
+
+  - name: savings_offers
+    description: >
+      dp_commercial_commitments · Offres d'épargne proposables, 1 ligne par offre. Catalogue versionné
+      (seed savings_offer_catalog) contrôlé contre les règles extraites par IA du PDF REG_06 (ACPR 2024-R-01).
+    meta:
+      data_product: dp_commercial_commitments
+      owner: management_control
+      freshness: on document arrival
+    tests:
+      - expression_equals:
+          arguments:
+            expression: "COUNTIF(NOT is_acpr_compliant OR is_acpr_compliant IS NULL)"
+            expected: 0
+    columns:
+      - name: offer_code
+        description: "Code de l'offre."
+        tests: [unique, not_null]
+      - name: product_label
+        description: "Libellé commercial."
+      - name: account_type
+        description: "Type de compte ouvert par l'offre (même codes que accounts.account_type)."
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['LIVRET_A', 'LDDS', 'LIV_MAISON']
+      - name: channel
+        description: "Canal de commercialisation (ALL ou MOBILE)."
+      - name: base_rate_bps
+        description: "Taux de base en points de base."
+      - name: boosted_rate_bps
+        description: "Taux boosté en points de base (NULL si aucune bonification)."
+      - name: boost_duration_months
+        description: "Durée de la bonification en mois."
+      - name: headline_rate_bps
+        description: "Taux affiché au client : taux boosté s'il existe, sinon taux de base."
+      - name: deposit_cap_eur
+        description: "Plafond de dépôt en EUR (NULL si aucun)."
+      - name: is_regulated
+        description: "Vrai pour l'épargne réglementée (Livret A, LDDS), à proposer en premier."
+      - name: tax_status
+        description: "Fiscalité : NET_OF_TAX ou TAXABLE."
+      - name: priority_rank
+        description: "Rang de proposition imposé par l'ACPR (1 = épargne réglementée d'abord)."
+      - name: acpr_max_surplus_share_pct
+        description: "Part maximale du surplus de fin de mois qu'on peut recommander d'épargner (extrait de REG_06)."
+      - name: acpr_boosted_rate_cap_bps
+        description: "Taux boosté maximal autorisé (extrait de REG_06)."
+      - name: acpr_max_boost_bps
+        description: "Bonification maximale autorisée (extrait de REG_06)."
+      - name: acpr_max_boost_duration_months
+        description: "Durée maximale de bonification (extrait de REG_06)."
+      - name: is_acpr_compliant
+        description: "Vrai si l'offre respecte toutes les règles extraites de REG_06."
+      - name: rule_source_uri
+        description: "Chemin GCS du PDF réglementaire source des règles."
+
+seeds:
+  - name: savings_offer_catalog
+    description: "Catalogue versionné des offres d'épargne, aligné sur la Recommandation ACPR 2024-R-01 (PDF REG_06)."
+    columns:
+      - name: offer_code
+        description: "Code de l'offre."
+      - name: product_label
+        description: "Libellé commercial."
+      - name: account_type
+        description: "Type de compte ouvert."
+      - name: channel
+        description: "Canal de commercialisation."
+      - name: base_rate_bps
+        description: "Taux de base en points de base."
+      - name: boosted_rate_bps
+        description: "Taux boosté en points de base."
+      - name: boost_duration_months
+        description: "Durée de la bonification en mois."
+      - name: deposit_cap_eur
+        description: "Plafond de dépôt en EUR."
+      - name: is_regulated
+        description: "Épargne réglementée."
+      - name: tax_status
+        description: "Fiscalité."
+      - name: priority_rank
+        description: "Rang de proposition."
+
+  - name: promo_types
+    description: "Référentiel des types d'avenants promotionnels, rattachés à leur compte PCEC d'imputation (hors grand livre SAP)."
+    columns:
+      - name: pcec_account
+        description: "Compte PCEC d'imputation (clé)."
+        tests: [unique, not_null]
+      - name: promo_type
+        description: "Code du type de promotion."
+        tests: [unique, not_null]
+      - name: promo_type_label
+        description: "Libellé du type de promotion."
+      - name: pnb_impact_nature
+        description: "Nature de l'impact PNB : CHARGE (charge supplémentaire) ou MINORATION_PRODUIT (produit minoré)."

@@ -1,0 +1,5 @@
+offer_code,product_label,account_type,channel,base_rate_bps,boosted_rate_bps,boost_duration_months,deposit_cap_eur,is_regulated,tax_status,priority_rank
+LIVRET_A,Livret A,LIVRET_A,ALL,300,,,22950,true,NET_OF_TAX,1
+LDDS,Livret de développement durable et solidaire,LDDS,ALL,300,,,12000,true,NET_OF_TAX,1
+LIV_MAISON,Livret Épargne Hexa,LIV_MAISON,ALL,150,,,,false,TAXABLE,2
+LIV_BOOST_MAISON,Livret Boost Maison,LIV_MAISON,MOBILE,150,350,3,,false,TAXABLE,2

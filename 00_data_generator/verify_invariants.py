@@ -110,6 +110,16 @@ print("== Client témoin CUST00002026 ==")
 check(q(f"""SELECT (SELECT COUNT(*) FROM {AWS_C} WHERE customer_id='CUST00002026')
              + (SELECT COUNT(*) > 0 FROM {PAY} WHERE debtor.customer_id='CUST00002026')::INT""")[0][0] == 2,
       "Témoin présent dans AWS et dans les paiements")
+AWS_I = f"read_parquet('{R}/AWS/crm_interactions/*.parquet')"
+check(q(f"""SELECT COUNT(*) = 1 AND MIN(account_type) = 'CC_CHQ' FROM {AWS_A}
+            WHERE customer_id='CUST00002026'""")[0][0],
+      "Témoin : un seul compte, le compte courant (l'agent Démo #4 ouvre le livret)")
+check(q(f"""SELECT COUNT(*) FROM {AWS_I} WHERE customer_id='CUST00002026'
+            AND topic_code = 'OFFRE_PROMO_TAUX_BOOSTE_AGENCE'""")[0][0] == 0,
+      "Témoin : aucun RDV d'avenant promotionnel / livret boosté dans le CRM")
+check(q(f"SELECT COUNT(*) FROM {AWS_A} WHERE account_type='LIV_MAISON' AND rate_bps <> 150")[0][0] == 0
+      and acc.filter((pl.col("account_type") == "LIV_MAISON") & (pl.col("rate_bps") != 150)).height == 0,
+      "Livret Maison servi à 1,50 % (= PDF REG_06 ACPR et avenants agence)")
 
 ko = [l for ok, l in results if not ok]
 print(f"\nRésultat : {len(results) - len(ko)}/{len(results)} contrôles OK")

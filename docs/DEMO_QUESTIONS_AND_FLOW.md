@@ -95,11 +95,12 @@
 
 ## Workspaces Démos #2, #3 & #4
 
-* **Workspace `02_demo2_silver_dbt_dq` (4 conversations)** :
+* **Workspace `02_demo2_silver_dbt_dq` (5 conversations)** :
   1. `1. Concevoir les data products` (revue du découpage par domaine métier & usage, 3 questions d'arbitrage : découpage, nommage anglais, fraîcheur `dbt` + `AlloyDB` → [`data_products_catalog.yaml`](../02_demo2_silver_dbt_dq/kc_products/data_products_catalog.yaml) : 5 SILVER + 2 GOLD)
   2. `2. Diagnostiquer la qualité des données` : (a) **trouver les règles de qualité** avec l'Agentic Data Cloud — profil Dataplex, recommandations `generateDataQualityRules`, contrats Knowledge Catalog et raisonnement inter-silos de l'agent → `31` règles dans `dq_scans/dq_rules_catalog.yaml` + 3 arbitrages (où appliquer, traitement des anomalies, seuils) ; (b) les appliquer par un scan Auto Data Quality RAW (`3,4 %` doublons, `8,1 %` `RJCT`/`PDNG`, `1,2 %` dates `00000000`, `650` orphelins AWS)
   3. `3. Nettoyer & fiabiliser les données` : 3 arbitrages de qualité avant écriture (Mainframe fait foi + enrichissement SEPA sans double comptage, 650 comptes orphelins conservés et signalés, catégorisation par règles versionnées en seed) puis vrais modèles `dbt` de `dp_customer_360` et `dp_customer_timeline` (10 modèles, 1 seed, 39 tests `schema.yml`)
-  4. `4. Publier les 5 produits de données` (`dp_customer_360`, `dp_customer_timeline`, `dp_customer_relationship`, `dp_finance_pnb`, `dp_commercial_commitments` à `100 %` DQ PASS)
+  4. `4. Extraire les engagements des PDF` : 3 arbitrages (extraction hybride : champs certifiés extraits une fois par `AI.GENERATE` et lien vers le PDF pour une lecture à la demande ; fiabilisation des 63 échecs initiaux par température 0, contrôle de complétude, reprise immédiate puis incrémentale ; type de promotion déduit du compte PCEC via le seed `promo_types`) puis 250 / 250 PDF certifiables = `14 300 000,00 €`, accès direct GCS (`OBJ.MAKE_REF`) car le périmètre VPC-SC bloque les URL signées, vue de suivi `promo_contracts_pdf_tracking` (22 / 22 tests)
+  5. `5. Publier les 5 produits de données` (`dp_customer_360`, `dp_customer_timeline`, `dp_customer_relationship`, `dp_finance_pnb`, `dp_commercial_commitments` à `100 %` DQ PASS)
 * **Workspace `03_demo3_kc_semantics_cfo` (2 conversations)** :
   1. `1. Comprendre le faux PNB (+42,8 M€)` (réconciliation catalogues legacy + interviews `.mp4`)
   2. `2. Certifier la vraie marge (-38,42 M€)` (`curate-context` OKF v0.2, 3 glossaires, `-24,12 M€` ALM + `-14,30 M€` PDF)

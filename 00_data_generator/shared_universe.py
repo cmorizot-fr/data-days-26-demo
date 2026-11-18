@@ -396,7 +396,9 @@ def build_or_load_universe(force_rebuild: bool = False) -> dict[str, pl.DataFram
     acc_agencies_4 = agency_code_4_arr[cust_agency_idx[all_cust_zero_idx]]
     cle_rib, ibans = compute_french_rib_and_iban(BANK_CODE, acc_guichets, num_comptes_11)
 
-    rate_bps_map = {"CC_CHQ": 0, "LIVRET_A": 300, "LDDS": 300, "LIV_MAISON": 250}
+    # Taux faciaux : Livret Maison à 1,50 %, comme le PDF réglementaire REG_06 (ACPR 2024-R-01),
+    # les avenants agence (« taux facial du Livret Maison (1,50 %) ») et le seed savings_offer_catalog.
+    rate_bps_map = {"CC_CHQ": 0, "LIVRET_A": 300, "LDDS": 300, "LIV_MAISON": 150}
     label_map = {
         "CC_CHQ": "COMPTE COURANT HEXA",
         "LIVRET_A": "LIVRET A REGLEMENTE",

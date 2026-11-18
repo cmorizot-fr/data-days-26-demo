@@ -1,0 +1,103 @@
+version: 2
+
+models:
+  - name: interactions
+    description: >
+      dp_customer_relationship · Interactions CRM AWS, 1 ligne par contact client (320 000) :
+      RDV agence, call center, messagerie app. Le verbatim est conservé mais masqué par CLS (ALWAYS_NULL) ;
+      les usages analytiques s'appuient sur les indicateurs non sensibles dérivés.
+    meta:
+      data_product: dp_customer_relationship
+      owner: retail_network_call_center
+      freshness: daily
+    tests:
+      - row_count_equals:
+          arguments:
+            expected: 320000
+      - expression_equals:
+          arguments:
+            expression: "COUNTIF(is_sentiment_tag_inconsistent)"
+            expected: 2
+      - expression_equals:
+          arguments:
+            expression: "COUNTIF(mentions_neobank != is_liquidity_outflow_risk)"
+            expected: 0
+    columns:
+      - name: interaction_id
+        description: "Identifiant de l'interaction CRM (INTnnnnnnnn)."
+        tests: [unique, not_null]
+      - name: customer_id
+        description: "Client concerné."
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('customers')
+                field: customer_id
+      - name: agency_code
+        description: "Code agence sur 4 caractères, dérivé du code guichet CRM (5 caractères)."
+        tests: [not_null]
+      - name: interaction_ts
+        description: "Horodatage du contact. Le CRM est alimenté le jour même (J0), contrairement au Mainframe (J-1)."
+        tests: [not_null]
+      - name: interaction_date
+        description: "Date du contact (partition mensuelle)."
+      - name: channel
+        description: "Canal du contact."
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['CALL_CENTER', 'AGENCE_RDV', 'MESSAGERIE_APP']
+      - name: topic_code
+        description: "Sujet du contact, choisi dans une liste fermée."
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['SUIVI_COURANT_RELATION', 'VIREMENT_INSTANTANE_PLAFOND_EPARGNE_EXTERNE', 'OFFRE_PROMO_TAUX_BOOSTE_AGENCE']
+      - name: advisor_sentiment_tag
+        description: "Tag de sentiment saisi par le conseiller (saisie manuelle, voir is_sentiment_tag_inconsistent)."
+      - name: is_liquidity_outflow_risk
+        description: "Vrai si le contact porte sur un virement instantané vers une épargne externe (risque de fuite des dépôts)."
+      - name: is_promo_related
+        description: "Vrai si le contact porte sur une offre promotionnelle d'agence (taux boosté, prime)."
+      - name: mentions_neobank
+        description: "Vrai si le verbatim cite une néobanque ou un courtier (Revolut, N26, BoursoBank, Trade Republic)."
+      - name: is_sentiment_tag_inconsistent
+        description: "Vrai si le tag du conseiller contredit le sujet du contact (2 lignes témoins attendues)."
+      - name: verbatim_note
+        description: >
+          Verbatim libre du conseiller. Donnée sensible : 12,8 % évoquent la santé (RGPD Art. 9).
+          Masqué par la policy tag PII_SENSITIVE_FREETEXT_REDACT (ALWAYS_NULL).
+        policy_tags:
+          - 'projects/data-days-demo/locations/europe-west1/taxonomies/865891482327921291/policyTags/8080441607105860209'
+
+seeds:
+  - name: crm_topics
+    description: "Référentiel des sujets d'interaction CRM : sentiment attendu et signaux de risque associés."
+    columns:
+      - name: topic_code
+        description: "Code du sujet CRM (clé)."
+        tests: [unique, not_null]
+      - name: topic_label
+        description: "Libellé du sujet."
+      - name: expected_sentiment_tag
+        description: "Sentiment attendu pour ce sujet (NEUTRAL_SATISFIED, AT_RISK_LIQUIDITY_OUTFLOW, PROMO_SENSITIVE)."
+      - name: is_liquidity_outflow_risk
+        description: "Vrai si le sujet signale un risque de fuite de dépôts."
+      - name: is_promo_related
+        description: "Vrai si le sujet concerne une offre promotionnelle d'agence."
+
+  - name: competitor_institutions
+    description: "Référentiel des néobanques et courtiers concurrents : BIC (fuite de dépôts dans customer_movements) et motif de mention (verbatims CRM)."
+    columns:
+      - name: bic
+        description: "BIC de l'établissement (vide pour le terme générique « néobanque »)."
+      - name: institution_name
+        description: "Nom de l'établissement."
+      - name: institution_type
+        description: "Type d'établissement : NEOBANK ou BROKER."
+      - name: country_code
+        description: "Pays de l'établissement (ISO 3166-1 alpha-2)."
+      - name: mention_pattern
+        description: "Expression régulière détectant une mention de l'établissement dans un verbatim."
+        tests: [not_null]

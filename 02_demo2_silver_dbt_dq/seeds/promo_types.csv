@@ -1,0 +1,4 @@
+pcec_account,promo_type,promo_type_label,pnb_impact_nature
+602910,TAUX_BOOSTE_LIVRET_MAISON,Bonification de taux sur Livret Maison (avenant taux boosté),CHARGE
+602920,PRIME_BIENVENUE_CONQUETE,Primes de bienvenue et de mobilité (campagne de conquête 18-32 ans),CHARGE
+708590,AVENANT_GRATUITE_RETENTION,Gratuités et remises commerciales de rétention patrimoniale,MINORATION_PRODUIT

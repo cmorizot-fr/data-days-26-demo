@@ -1,0 +1,4 @@
+topic_code,topic_label,expected_sentiment_tag,is_liquidity_outflow_risk,is_promo_related
+SUIVI_COURANT_RELATION,Suivi courant de la relation,NEUTRAL_SATISFIED,false,false
+VIREMENT_INSTANTANE_PLAFOND_EPARGNE_EXTERNE,Virement instantané vers une épargne externe,AT_RISK_LIQUIDITY_OUTFLOW,true,false
+OFFRE_PROMO_TAUX_BOOSTE_AGENCE,Offre promotionnelle d'agence (taux boosté / prime),PROMO_SENSITIVE,false,true

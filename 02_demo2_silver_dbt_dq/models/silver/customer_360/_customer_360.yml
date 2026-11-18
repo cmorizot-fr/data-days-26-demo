@@ -133,3 +133,65 @@ models:
         description: "Vrai si le compte figure dans le maître Mainframe J-1."
       - name: is_mainframe_orphan
         description: "Vrai pour les comptes ouverts sur le CRM AWS après le batch Mainframe J-1 (650 attendus)."
+
+  - name: account_monthly_balances
+    description: >
+      dp_customer_360 · Soldes mensuels par compte sur 18 mois (juin 2025 à novembre 2026), 1 ligne par compte et par mois
+      (1 437 531). Solde d'ouverture et de clôture CFONB, rapprochés des mouvements Mainframe du mois.
+    meta:
+      data_product: dp_customer_360
+      owner: retail_network_marketing
+      freshness: daily (J-1)
+    tests:
+      - row_count_equals:
+          arguments:
+            expected: 1437531
+      - expression_equals:
+          arguments:
+            expression: "COUNT(*) - COUNT(DISTINCT CONCAT(account_id, '|', CAST(period_month AS STRING)))"
+            expected: 0
+      - expression_equals:
+          arguments:
+            expression: "COUNTIF(NOT is_reconciled)"
+            expected: 0
+    columns:
+      - name: account_id
+        description: "Compte."
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('accounts')
+                field: account_id
+      - name: customer_id
+        description: "Titulaire du compte."
+        tests: [not_null]
+      - name: account_number_11
+        description: "Numéro de compte sur 11 chiffres."
+      - name: account_type
+        description: "Type de compte (CC_CHQ, LIVRET_A, LDDS, LIV_MAISON)."
+      - name: agency_code
+        description: "Code agence sur 4 caractères, dérivé du code guichet CFONB."
+      - name: period_month
+        description: "Premier jour du mois (partition mensuelle)."
+        tests: [not_null]
+      - name: opening_balance_eur
+        description: "Solde d'ouverture du mois (ligne CFONB 01), égal à la clôture du mois précédent."
+        tests: [not_null]
+      - name: closing_balance_eur
+        description: "Solde de clôture du mois (ligne CFONB 07)."
+        tests: [not_null]
+      - name: net_change_eur
+        description: "Variation du solde sur le mois (clôture - ouverture)."
+      - name: movement_count
+        description: "Nombre de mouvements Mainframe du mois sur le compte."
+      - name: is_reconciled
+        description: "Vrai si ouverture + somme des mouvements Mainframe du mois = clôture (100 % attendu)."
+      - name: closing_balance_date
+        description: "Date du solde de clôture (12/11/2026 pour le mois en cours)."
+      - name: is_partial_month
+        description: "Vrai pour le mois en cours, arrêté au dernier batch Mainframe J-1."
+      - name: is_overdrawn
+        description: "Vrai si le solde de clôture est négatif (découvert)."
+      - name: source_file
+        description: "Fichier CFONB d'origine."

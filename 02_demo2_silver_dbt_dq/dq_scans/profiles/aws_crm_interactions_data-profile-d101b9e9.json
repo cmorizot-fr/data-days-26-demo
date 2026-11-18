@@ -1,0 +1,441 @@
+{
+  "createTime": "2026-11-17T15:40:52.904229836Z",
+  "data": {
+    "resource": "//bigquery.googleapis.com/projects/data-days-demo/datasets/raw_bank/tables/aws_crm_interactions"
+  },
+  "dataProfileResult": {
+    "profile": {
+      "fields": [
+        {
+          "mode": "NULLABLE",
+          "name": "interaction_id",
+          "profile": {
+            "distinctRatio": 0.994509375,
+            "stringProfile": {
+              "averageLength": 11.0,
+              "maxLength": "11",
+              "minLength": "11"
+            },
+            "topNValues": [
+              {
+                "count": "1",
+                "ratio": 3.125e-06,
+                "value": "INT00320000"
+              },
+              {
+                "count": "1",
+                "ratio": 3.125e-06,
+                "value": "INT00319999"
+              },
+              {
+                "count": "1",
+                "ratio": 3.125e-06,
+                "value": "INT00319998"
+              },
+              {
+                "count": "1",
+                "ratio": 3.125e-06,
+                "value": "INT00319997"
+              },
+              {
+                "count": "1",
+                "ratio": 3.125e-06,
+                "value": "INT00319996"
+              },
+              {
+                "count": "1",
+                "ratio": 3.125e-06,
+                "value": "INT00319995"
+              },
+              {
+                "count": "1",
+                "ratio": 3.125e-06,
+                "value": "INT00319994"
+              },
+              {
+                "count": "1",
+                "ratio": 3.125e-06,
+                "value": "INT00319993"
+              },
+              {
+                "count": "1",
+                "ratio": 3.125e-06,
+                "value": "INT00319992"
+              },
+              {
+                "count": "1",
+                "ratio": 3.125e-06,
+                "value": "INT00319991"
+              }
+            ]
+          },
+          "type": "STRING"
+        },
+        {
+          "mode": "NULLABLE",
+          "name": "customer_id",
+          "profile": {
+            "distinctRatio": 0.240475,
+            "stringProfile": {
+              "averageLength": 12.0,
+              "maxLength": "12",
+              "minLength": "12"
+            },
+            "topNValues": [
+              {
+                "count": "16",
+                "ratio": 5e-05,
+                "value": "CUST00024251"
+              },
+              {
+                "count": "16",
+                "ratio": 5e-05,
+                "value": "CUST00008021"
+              },
+              {
+                "count": "15",
+                "ratio": 4.6875e-05,
+                "value": "CUST00019328"
+              },
+              {
+                "count": "14",
+                "ratio": 4.375e-05,
+                "value": "CUST00058330"
+              },
+              {
+                "count": "14",
+                "ratio": 4.375e-05,
+                "value": "CUST00054503"
+              },
+              {
+                "count": "14",
+                "ratio": 4.375e-05,
+                "value": "CUST00053664"
+              },
+              {
+                "count": "14",
+                "ratio": 4.375e-05,
+                "value": "CUST00045682"
+              },
+              {
+                "count": "14",
+                "ratio": 4.375e-05,
+                "value": "CUST00045625"
+              },
+              {
+                "count": "14",
+                "ratio": 4.375e-05,
+                "value": "CUST00038952"
+              },
+              {
+                "count": "14",
+                "ratio": 4.375e-05,
+                "value": "CUST00038874"
+              }
+            ]
+          },
+          "type": "STRING"
+        },
+        {
+          "mode": "NULLABLE",
+          "name": "guichet_code_5",
+          "profile": {
+            "distinctRatio": 0.00140625,
+            "stringProfile": {
+              "averageLength": 5.0,
+              "maxLength": "5",
+              "minLength": "5"
+            },
+            "topNValues": [
+              {
+                "count": "913",
+                "ratio": 0.002853125,
+                "value": "00011"
+              },
+              {
+                "count": "890",
+                "ratio": 0.00278125,
+                "value": "00017"
+              },
+              {
+                "count": "873",
+                "ratio": 0.002728125,
+                "value": "00157"
+              },
+              {
+                "count": "872",
+                "ratio": 0.002725,
+                "value": "00325"
+              },
+              {
+                "count": "848",
+                "ratio": 0.00265,
+                "value": "00264"
+              },
+              {
+                "count": "839",
+                "ratio": 0.002621875,
+                "value": "00411"
+              },
+              {
+                "count": "839",
+                "ratio": 0.002621875,
+                "value": "00308"
+              },
+              {
+                "count": "839",
+                "ratio": 0.002621875,
+                "value": "00238"
+              },
+              {
+                "count": "835",
+                "ratio": 0.002609375,
+                "value": "00347"
+              },
+              {
+                "count": "834",
+                "ratio": 0.00260625,
+                "value": "00338"
+              }
+            ]
+          },
+          "type": "STRING"
+        },
+        {
+          "mode": "NULLABLE",
+          "name": "interaction_ts",
+          "profile": {
+            "distinctRatio": 0.999415625,
+            "topNValues": [
+              {
+                "count": "3",
+                "ratio": 9.375e-06,
+                "value": "1.785413564E9"
+              },
+              {
+                "count": "3",
+                "ratio": 9.375e-06,
+                "value": "1.779038435E9"
+              },
+              {
+                "count": "2",
+                "ratio": 6.25e-06,
+                "value": "1.794564422E9"
+              },
+              {
+                "count": "2",
+                "ratio": 6.25e-06,
+                "value": "1.794535663E9"
+              },
+              {
+                "count": "2",
+                "ratio": 6.25e-06,
+                "value": "1.79441243E9"
+              },
+              {
+                "count": "2",
+                "ratio": 6.25e-06,
+                "value": "1.794386525E9"
+              },
+              {
+                "count": "2",
+                "ratio": 6.25e-06,
+                "value": "1.794346381E9"
+              },
+              {
+                "count": "2",
+                "ratio": 6.25e-06,
+                "value": "1.794316552E9"
+              },
+              {
+                "count": "2",
+                "ratio": 6.25e-06,
+                "value": "1.794294001E9"
+              },
+              {
+                "count": "2",
+                "ratio": 6.25e-06,
+                "value": "1.794186586E9"
+              }
+            ]
+          },
+          "type": "TIMESTAMP"
+        },
+        {
+          "mode": "NULLABLE",
+          "name": "channel",
+          "profile": {
+            "distinctRatio": 9.375e-06,
+            "stringProfile": {
+              "averageLength": 11.341209374999787,
+              "maxLength": "14",
+              "minLength": "10"
+            },
+            "topNValues": [
+              {
+                "count": "147391",
+                "ratio": 0.460596875,
+                "value": "CALL_CENTER"
+              },
+              {
+                "count": "102160",
+                "ratio": 0.31925,
+                "value": "AGENCE_RDV"
+              },
+              {
+                "count": "70449",
+                "ratio": 0.220153125,
+                "value": "MESSAGERIE_APP"
+              }
+            ]
+          },
+          "type": "STRING"
+        },
+        {
+          "mode": "NULLABLE",
+          "name": "topic_code",
+          "profile": {
+            "distinctRatio": 9.375e-06,
+            "stringProfile": {
+              "averageLength": 27.759612499999903,
+              "maxLength": "43",
+              "minLength": "22"
+            },
+            "topNValues": [
+              {
+                "count": "204516",
+                "ratio": 0.6391125,
+                "value": "SUIVI_COURANT_RELATION"
+              },
+              {
+                "count": "70708",
+                "ratio": 0.2209625,
+                "value": "VIREMENT_INSTANTANE_PLAFOND_EPARGNE_EXTERNE"
+              },
+              {
+                "count": "44776",
+                "ratio": 0.139925,
+                "value": "OFFRE_PROMO_TAUX_BOOSTE_AGENCE"
+              }
+            ]
+          },
+          "type": "STRING"
+        },
+        {
+          "mode": "NULLABLE",
+          "name": "advisor_sentiment_tag",
+          "profile": {
+            "distinctRatio": 9.375e-06,
+            "stringProfile": {
+              "averageLength": 18.48785000000004,
+              "maxLength": "25",
+              "minLength": "15"
+            },
+            "topNValues": [
+              {
+                "count": "204516",
+                "ratio": 0.6391125,
+                "value": "NEUTRAL_SATISFIED"
+              },
+              {
+                "count": "70708",
+                "ratio": 0.2209625,
+                "value": "AT_RISK_LIQUIDITY_OUTFLOW"
+              },
+              {
+                "count": "44776",
+                "ratio": 0.139925,
+                "value": "PROMO_SENSITIVE"
+              }
+            ]
+          },
+          "type": "STRING"
+        },
+        {
+          "mode": "NULLABLE",
+          "name": "verbatim_note",
+          "profile": {
+            "distinctRatio": 4.375e-05,
+            "stringProfile": {
+              "averageLength": 148.46000624999957,
+              "maxLength": "212",
+              "minLength": "117"
+            },
+            "topNValues": [
+              {
+                "count": "41292",
+                "ratio": 0.1290375,
+                "value": "Appel conseiller : simulation de capacit\u00e9 d'emprunt auto / projet personnel, compte courant mouvement\u00e9 r\u00e9guli\u00e8rement."
+              },
+              {
+                "count": "40862",
+                "ratio": 0.12769375,
+                "value": "Contact agence : renouvellement anticip\u00e9 de carte bancaire sans contact et mise \u00e0 jour du num\u00e9ro de t\u00e9l\u00e9phone mobile."
+              },
+              {
+                "count": "40837",
+                "ratio": 0.127615625,
+                "value": "Messagerie s\u00e9curis\u00e9e : demande d'attestation de RIB et suivi d'un remboursement compl\u00e9mentaire sant\u00e9 attendu sur le mois en cours."
+              },
+              {
+                "count": "40810",
+                "ratio": 0.12753125,
+                "value": "Appel Call Center : demande d'information sur le plafond de paiement carte lors d'un d\u00e9placement en Europe. R\u00e9solu en ligne."
+              },
+              {
+                "count": "40714",
+                "ratio": 0.12723125,
+                "value": "RDV agence annuel : point patrimonial courant, client satisfait de la relation conseiller, aucune anomalie signal\u00e9e sur le compte \u00e0 vue."
+              },
+              {
+                "count": "17821",
+                "ratio": 0.055690625,
+                "value": "Appel client : demande le rel\u00e8vement imm\u00e9diat du plafond de virement SEPA Instant en d\u00e9but de mois vers son compte Revolut (REVOLT21XXX). Conserve son compte courant chez nous pour la domiciliation du salaire."
+              },
+              {
+                "count": "17740",
+                "ratio": 0.0554375,
+                "value": "Contact messagerie mobile : question sur l'absence de notification budget temps r\u00e9el dans l'application mobile par rapport \u00e0 N26 / BoursoBank ; r\u00e9alise un virement instantan\u00e9 sortant juste apr\u00e8s r\u00e9ception paie."
+              },
+              {
+                "count": "17576",
+                "ratio": 0.054925,
+                "value": "Appel Call Center : v\u00e9rification d'ajout de b\u00e9n\u00e9ficiaire IBAN externe n\u00e9obanque pour virement SEPA Instant r\u00e9current post-salaire. Compte courant principal maintenu actif."
+              },
+              {
+                "count": "17570",
+                "ratio": 0.05490625,
+                "value": "RDV agence : le client indique transf\u00e9rer chaque mois entre le 1er et le 5 l'essentiel de ses liquidit\u00e9s vers Trade Republic (TRBKDEBBXXX) r\u00e9mun\u00e9r\u00e9 \u00e0 taux court terme. Aucune demande de cl\u00f4ture du compte courant."
+              },
+              {
+                "count": "15056",
+                "ratio": 0.04705,
+                "value": "Appel suivi commercial : le client demande confirmation de la date de versement de la prime promotionnelle et de la bonification tarifaire engag\u00e9e lors de la campagne agence."
+              }
+            ]
+          },
+          "type": "STRING"
+        }
+      ]
+    },
+    "rowCount": "320000"
+  },
+  "dataProfileSpec": {},
+  "executionSpec": {
+    "trigger": {
+      "oneTime": {
+        "ttlAfterScanCompletion": "2400s"
+      }
+    }
+  },
+  "executionStatus": {
+    "latestJobCreateTime": "2026-11-17T15:41:01.749880681Z",
+    "latestJobEndTime": "2026-11-17T15:41:07.067263224Z",
+    "latestJobStartTime": "2026-11-17T15:41:03.068Z"
+  },
+  "name": "projects/data-days-demo/locations/europe-west1/dataScans/data-profile-d101b9e9",
+  "state": "ACTIVE",
+  "type": "DATA_PROFILE",
+  "uid": "4fa72b21-e922-41dd-b648-0631da1ef9d6",
+  "updateTime": "2026-11-17T15:40:58.370098484Z"
+}

@@ -16,10 +16,10 @@ data_products:
     owner: retail_network_marketing
     freshness: daily (J-1 Mainframe + CRM)
     dataset: silver_bank
-    tables: [customers, accounts]
-    sources: [cbk_customers_ref, aws_crm_customers, cbk_accounts_master, aws_crm_account_portfolio]
+    tables: [customers, accounts, account_monthly_balances]
+    sources: [cbk_customers_ref, aws_crm_customers, cbk_accounts_master, aws_crm_account_portfolio, cbk_cfonb_balances]
     consumers: [all_domains, budget_insight, cfo_agent]
-    contract: 80 000 clients (dont 650 absents du Mainframe J-1), 95 000 comptes, 0 clôture, solde J-1
+    contract: 80 000 clients (dont 650 absents du Mainframe J-1), 95 000 comptes, 0 clôture, solde J-1 ; 1 437 531 soldes compte x mois (18 mois, ouverture + mouvements = clôture)
 
   - id: dp_customer_timeline
     layer: silver
@@ -41,7 +41,7 @@ data_products:
     tables: [interactions]
     sources: [aws_crm_interactions]
     consumers: [churn_analytics, ai_agents]
-    contract: 320 000 RDV et appels, texte libre sensible masqué
+    contract: 320 000 RDV et appels ; verbatim masqué par CLS (ALWAYS_NULL), indicateurs non sensibles extraits
 
   - id: dp_finance_pnb
     layer: silver
@@ -56,14 +56,14 @@ data_products:
 
   - id: dp_commercial_commitments
     layer: silver
-    title: Commercial commitments — contrats promotionnels PDF
+    title: Commercial commitments — contrats promotionnels PDF & offres d'épargne
     owner: management_control
     freshness: on document arrival
     dataset: silver_bank
-    tables: [promo_contracts]
-    sources: [raw_promo_contracts_pdf, raw_cfo_regulatory_pdf]
+    tables: [promo_contracts, promo_contracts_pdf_tracking, savings_offers]
+    sources: [raw_promo_contracts_pdf, raw_cfo_regulatory_pdf, savings_offer_catalog (seed), promo_types (seed)]
     consumers: [cfo_agent, next_best_offer]
-    contract: 250 avenants extraits par IA = -14 300 000,00 EUR
+    contract: 250 avenants extraits par IA (AI.GENERATE, 250 / 250 certifiables, suivi PDF par PDF, PDF relisible à la demande) = -14 300 000,00 EUR ; offres d'épargne conformes ACPR 2024-R-01 (Livret Boost Maison 3,50 % sur 3 mois)
 
   # ------------------------------------------------------------------ GOLD
   - id: dp_budget_insight

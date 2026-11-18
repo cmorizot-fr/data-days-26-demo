@@ -2452,7 +2452,7 @@ workspaces:
                     label: schema.yml
                 bullets:
                   - "`18` règles de catégorisation (revenus, charges fixes, carte, épargne, néobanques) dans un seed dbt ; `39` tests dont la fuite néobanques 90 j = `2 420 000 000,00 €`, l'unicité des mouvements et les liens client ↔ compte ↔ mouvement."
-                  - "Les 3 autres Data Products (`dp_customer_relationship`, `dp_finance_pnb`, `dp_commercial_commitments` avec extraction des PDF par `AI.GENERATE_TABLE`) suivent le même modèle."
+                  - "Les 3 autres Data Products (`dp_customer_relationship`, `dp_finance_pnb`, `dp_commercial_commitments`) suivent le même modèle ; l'extraction des PDF par `AI.GENERATE` fait l'objet de l'étape suivante."
             traces:
               - id: d2-tr5
                 action: analyzed
@@ -2713,9 +2713,483 @@ workspaces:
                 skill: data-autocleaning
                 status: completed
             backgroundTasks: []
+      - id: d2-step-pdf
+        demoId: demo2
+        shortName: 4. Extraire les engagements des PDF
+        conversationTitle: Extraction AI.GENERATE des 250 avenants PDF, lecture à la demande & suivi PDF par PDF
+        projectFolder: 02_demo2_silver_dbt_dq
+        gitBranch: feat/silver-data-products
+        greetingName: Clément
+        modelLabel: Gemini 4 - Carbon
+        turns:
+          - id: d2-t2p
+            chipLabel: 1. Extraire les montants engagés des avenants PDF
+            prompt: Extrais les montants engagés des 250 avenants PDF directement depuis l'Object Table avec AI.GENERATE, en gardant la possibilité d'aller lire le PDF au besoin. Fais-moi un suivi PDF par PDF.
+            workedDurationLabel: Worked for 9m 40s
+            workGroupSummary: Diagnosed 63 failed extractions, hardened the AI.GENERATE prompt, re-extracted 250 PDFs, built the per-PDF tracking view
+            intermediateMessage: "Diagnostic de la première extraction (`63` PDF sur `250` en échec), test d'un prompt durci sur ces `63` PDF, puis ré-extraction incrémentale des `250` avenants avec `AI.GENERATE` directement sur les fichiers GCS."
+            taskFinishedLabel: 250 / 250 PDF extracted & certifiable · 14 300 000,00 € · 22 / 22 dbt tests PASS
+            leadConfirmation: "Les `250` avenants sont extraits et certifiables dans `silver_bank.promo_contracts` : `14 300 000,00 €` au centime, identiques PDF par PDF aux documents sources. Chaque ligne garde le lien vers son PDF pour une lecture à la demande, et le suivi est dans `promo_contracts_pdf_tracking`. 3 arbitrages ont été validés avant écriture."
+            sectionHeading: "Ce qui a été mis en place :"
+            askQuestions:
+              - id: d2-qp-hybrid
+                question: "Les 250 avenants PDF portent 14,30 M€ d'engagements absents du grand livre SAP. Faut-il extraire les montants une fois dans une table, ou interroger les PDF à chaque question ?"
+                options:
+                  - "(Recommended) Hybride : extraire une fois les champs certifiés (montant, compte PCEC, dates), testés au centime par dbt, et garder le lien vers chaque PDF pour le relire à la demande"
+                  - "Interroger les PDF à chaque requête (vue AI.GENERATE) : rien n'est stocké mais le résultat varie et coûte 250 appels par question"
+                  - Extraire tout le texte des PDF dans une table
+              - id: d2-qp-failures
+                question: "Au premier essai, 63 PDF sur 250 sont en échec : 54 réponses illisibles et 9 réponses vides comptées comme réussies. Le total ne fait que 10,46 M€. Comment fiabiliser ?"
+                options:
+                  - "(Recommended) Température 0, extraction jugée complète seulement si montant, compte PCEC et référence sont cohérents, reprise immédiate puis incrémentale, et suivi PDF par PDF"
+                  - Relancer tout le lot à la main jusqu'à obtenir 250 réponses
+                  - Accepter les échecs et compléter les montants à la main
+              - id: d2-qp-promo-type
+                question: "Le modèle renvoie la référence du contrat à la place du type de promotion : ce code n'est écrit dans aucun PDF. D'où doit venir le type ?"
+                options:
+                  - "(Recommended) Le déduire du compte PCEC lu dans le PDF, via un référentiel versionné (seed promo_types)"
+                  - Lister les types autorisés dans le prompt
+                  - Laisser le modèle proposer un libellé libre
+            items:
+              - title: Extraction hybride, certifiée au centime
+                chips:
+                  - kind: sql
+                    label: promo_contracts.sql
+                  - kind: sql
+                    label: ai_extract_promo_contract.sql
+                bullets:
+                  - "`AI.GENERATE` lit chaque PDF directement dans GCS (aucune copie) et remplit `9` champs typés ; le montant total vaut `14 300 000,00 €` et les `250` PDF sont identiques aux documents sources (montant, compte PCEC, agence, date d'effet)."
+                  - "Chaque ligne garde le lien vers son PDF (`source_pdf`, `source_uri`) : test sur `PROMO-2026-042`, les 3 lignes de coût relues à la demande (`68 680,00 €` + `16 266,00 €` + `5 423,55 €`) retombent sur le montant certifié de `90 369,55 €`."
+              - title: Fiabilisation des échecs
+                chips:
+                  - kind: bq
+                    label: promo_contracts
+                bullets:
+                  - "Température `0` et contrôle de complétude : `201` PDF réussis au premier appel, `43` récupérés par la reprise immédiate dans la même requête."
+                  - "Les `6` derniers échouaient sur `Cannot fetch content` : les URL signées de l'Object Table ne traversent pas le périmètre VPC Service Controls. Passage en accès direct (`OBJ.MAKE_REF(uri)`) : `6 / 6` en `13 s`."
+                  - "`PROMO-2026-186` lu au 9 mai au lieu du 5 septembre (date française lue à l'américaine) : format `JJ/MM/AAAA` précisé dans le prompt et relance ciblée de ce seul PDF (`--vars reextract_ids`)."
+              - title: Suivi PDF par PDF & type de promotion gouverné
+                chips:
+                  - kind: sql
+                    label: promo_contracts_pdf_tracking.sql
+                  - kind: yml
+                    label: promo_types.csv
+                bullets:
+                  - "Vue `promo_contracts_pdf_tracking`, sans appel IA : statut (`PENDING`, `OUTDATED`, `FAILED`, `EXTRACTED`), nombre d'appels, erreur brute, montant extrait et indicateur `is_certifiable` pour chacun des `250` PDF."
+                  - "Le type de promotion est déduit du compte PCEC via le seed `promo_types` (`602910`, `602920`, `708590`) ; `22 / 22` tests dbt PASS, dont le total à `14 300 000,00 €` et `0` PDF non certifiable."
+            visualCheck:
+              skillBadge: bq-visual-audit · MCP render_chart
+              title: "Contrôle visuel post-extraction · 250 avenants PDF (silver_bank.promo_contracts)"
+              subtitle: "AI.GENERATE sur les fichiers GCS, température 0 — 306 appels IA pour 250 PDF certifiables"
+              kpis:
+                - label: PDF certifiables
+                  value: "250 / 250"
+                  sublabel: "identiques aux documents sources"
+                  tone: positive
+                - label: Engagements extraits
+                  value: "14 300 000,00 €"
+                  sublabel: "absents du grand livre SAP"
+                  tone: warning
+                - label: Appels IA
+                  value: "306"
+                  sublabel: "201 PDF réussis au 1er appel"
+                  tone: blue
+                - label: Tests dbt
+                  value: "22 / 22 PASS"
+                  sublabel: "total au centime & 0 échec"
+                  tone: positive
+              chartTitle: "PDF extraits par type de promotion (compte PCEC) et nombre d'appels IA nécessaires"
+              bars:
+                - label: "Taux boosté Livret Maison (602910) · 95 PDF"
+                  sublabel: "79 au 1er appel · 15 à la reprise · 1 en relance"
+                  valueLabel: "6 928 857,14 €"
+                  pct: 100
+                  tone: positive
+                  badge: 95 / 95
+                - label: "Prime de bienvenue conquête (602920) · 90 PDF"
+                  sublabel: "72 au 1er appel · 15 à la reprise · 3 en relance"
+                  valueLabel: "4 597 804,25 €"
+                  pct: 66
+                  tone: positive
+                  badge: 90 / 90
+                - label: "Gratuité de rétention (708590) · 65 PDF"
+                  sublabel: "49 au 1er appel · 14 à la reprise · 2 en relance"
+                  valueLabel: "2 773 338,61 €"
+                  pct: 40
+                  tone: positive
+                  badge: 65 / 65
+              documentsTitle: "Lecture à la demande : montant certifié et PDF source"
+              documents:
+                - id: doc-d2-promo-042
+                  title: "PROMO-2026-042 · Paris 0042"
+                  subtitle: "Taux boosté Livret Maison · 602910"
+                  uri: "gs://data-days-demo-landing/RAW/PROMO_CONTRACTS_PDF/PROMO-2026-042_REG1_TAUX_BOOSTE_LIVRET.pdf"
+                  metaBadge: EXTRACTED · 1 appel
+                  highlightLabel: "90 369,55 €"
+                  tone: warning
+                  imageUrl: "./assets/pdf_previews/promo_042_taux_booste.png"
+                - id: doc-d2-promo-003
+                  title: "PROMO-2026-003 · Jeunes"
+                  subtitle: "Prime de bienvenue · 602920"
+                  uri: "gs://data-days-demo-landing/RAW/PROMO_CONTRACTS_PDF/PROMO-2026-003_REG1_PRIME_BIENVENUE_JEUNES.pdf"
+                  metaBadge: EXTRACTED · 1 appel
+                  highlightLabel: "62 286,55 €"
+                  tone: blue
+                  imageUrl: "./assets/pdf_previews/promo_003_prime_jeunes.png"
+                - id: doc-d2-promo-001
+                  title: "PROMO-2026-001 · Rétention"
+                  subtitle: "Gratuité de rétention · 708590"
+                  uri: "gs://data-days-demo-landing/RAW/PROMO_CONTRACTS_PDF/PROMO-2026-001_REG1_AVENANT_RETENTION.pdf"
+                  metaBadge: EXTRACTED · 2 appels
+                  highlightLabel: "59 193,96 €"
+                  tone: neutral
+                  imageUrl: "./assets/pdf_previews/promo_001_retention.png"
+              footerNote: "Montants recoupés PDF par PDF avec les documents sources : 250 / 250 identiques (montant, compte PCEC, agence, date d'effet)."
+            traces:
+              - id: d2-trp1
+                action: analyzed
+                icon: dak
+                fileName: bigquery-ai-ml/SKILL.md
+                lineRange: "#L1-180"
+                durationMs: 450
+              - id: d2-trp2
+                action: ran
+                commandSummary: diagnose first extraction of silver_bank.promo_contracts
+                durationMs: 600
+                cwd: 02_demo2_silver_dbt_dq
+                command: bq query --use_legacy_sql=false --label datacloud:antigravity "SELECT extraction_status, COUNT(*) FROM silver_bank.promo_contracts GROUP BY 1"
+                output:
+                  - "Failed to parse the response - please check the full_response field. : 54"
+                  - "Empty answers counted as success (committed_promo_cost_eur IS NULL) : 9"
+                  - "SUM(committed_promo_cost_eur) = 10 455 700.90 EUR (expected 14 300 000.00)"
+              - id: d2-trp3
+                action: ran
+                commandSummary: test hardened prompt (temperature 0) on the 63 failed PDFs
+                durationMs: 700
+                cwd: 02_demo2_silver_dbt_dq
+                command: bq query --use_legacy_sql=false --label datacloud:antigravity < scratch/test_prompt.sql
+                output:
+                  - "57 / 63 PDF extracted, amounts identical to the source documents"
+                  - "6 / 63 empty responses -> retry needed"
+              - id: d2-trp4
+                action: edited
+                icon: sql
+                fileName: ai_extract_promo_contract.sql
+                added: 42
+                removed: 0
+                durationMs: 400
+              - id: d2-trp5
+                action: edited
+                icon: sql
+                fileName: promo_contracts.sql
+                added: 111
+                removed: 70
+                durationMs: 550
+              - id: d2-trp6
+                action: edited
+                icon: sql
+                fileName: promo_contracts_pdf_tracking.sql
+                added: 47
+                removed: 0
+                durationMs: 400
+              - id: d2-trp7
+                action: edited
+                icon: csv
+                fileName: promo_types.csv
+                added: 4
+                removed: 0
+                durationMs: 300
+              - id: d2-trp8
+                action: ran
+                commandSummary: dbt run promo_contracts (250 PDF re-extracted with the hardened prompt)
+                durationMs: 850
+                cwd: 02_demo2_silver_dbt_dq
+                command: dbt run --select promo_contracts promo_contracts_pdf_tracking
+                output:
+                  - "1 of 2 OK created sql incremental model silver_bank.promo_contracts ............ [MERGE (250.0 rows, 228.4 KiB processed) in 489.33s]"
+                  - "2 of 2 OK created sql view model silver_bank.promo_contracts_pdf_tracking ...... [CREATE VIEW (0 processed) in 1.76s]"
+                  - "Tracking : EXTRACTED 244 (201 at 1st call, 43 after retry) · FAILED 6"
+              - id: d2-trp9
+                action: ran
+                commandSummary: switch to direct GCS access (VPC-SC blocks signed URLs) and retry the 6 failed PDFs
+                durationMs: 650
+                cwd: 02_demo2_silver_dbt_dq
+                command: dbt run --select promo_contracts
+                output:
+                  - "INVALID_ARGUMENT: Cannot fetch content from the provided URL (signed URLs cannot cross the VPC Service Controls perimeter)"
+                  - "1 of 1 OK created sql incremental model silver_bank.promo_contracts ............ [MERGE (6.0 rows, 163.4 KiB processed) in 12.96s]"
+              - id: d2-trp10
+                action: ran
+                commandSummary: dbt test commercial commitments (22 / 22 PASS)
+                durationMs: 600
+                cwd: 02_demo2_silver_dbt_dq
+                command: dbt test --select promo_contracts promo_contracts_pdf_tracking promo_types pcec_accounts
+                output:
+                  - "PASS expression_equals_promo_contracts_14300000__SUM_committed_promo_cost_eur_"
+                  - "PASS expression_equals_promo_contracts_pdf_tracking_0__COUNTIF_NOT_is_certifiable_"
+                  - "Done. PASS=22 WARN=0 ERROR=0 SKIP=0 NO-OP=0 TOTAL=22"
+              - id: d2-trp11
+                action: ran
+                commandSummary: read PROMO-2026-042 on demand from its PDF
+                durationMs: 550
+                cwd: 02_demo2_silver_dbt_dq
+                command: bq query --use_legacy_sql=false "SELECT AI.GENERATE(('Quelles sont les 3 lignes de coût de cet avenant ?', OBJ.MAKE_REF(source_uri)), ...).result FROM silver_bank.promo_contracts_pdf_tracking WHERE promo_contract_id = 'PROMO-2026-042'"
+                output:
+                  - "Bonification Livret Maison 68 680,00 € · Jeunes Actifs 18-32 ans 16 266,00 € · Prime d'activation 5 423,55 €"
+                  - "Sum = 90 369,55 € = committed_promo_cost_eur (certified)"
+            filesChanged:
+              - path: 02_demo2_silver_dbt_dq/models/silver/commercial_commitments/promo_contracts.sql
+                language: sql
+                badge: SQL
+                added: 111
+                removed: 0
+                content: |-
+                  {{ config(
+                      materialized='incremental',
+                      incremental_strategy='merge',
+                      unique_key='promo_contract_id',
+                      on_schema_change='append_new_columns',
+                  ) }}
+
+                  -- dp_commercial_commitments · promo_contracts : 1 ligne par avenant promotionnel d'agence (250 PDF).
+                  -- Approche hybride :
+                  --   * les champs certifiés (montant engagé, compte PCEC, dates) sont extraits UNE fois par AI.GENERATE
+                  --     directement sur l'Object Table (aucune copie des PDF), puis testés par dbt (total = 14 300 000,00 EUR) ;
+                  --   * chaque ligne garde son ObjectRef (source_pdf) : un agent peut rouvrir le PDF à la demande pour citer une clause.
+                  -- Fiabilité : température 0, reprise immédiate des PDF en échec dans la même requête, puis à chaque run
+                  -- seuls les PDF incomplets ou modifiés (md5) sont relus. Le suivi PDF par PDF est dans promo_contracts_pdf_tracking.
+                  -- Le type de promotion n'est pas demandé au modèle : il est déduit du compte PCEC via le référentiel promo_types.
+
+                  {% set existing_cols = [] %}
+                  {% if is_incremental() %}
+                      {% set existing_cols = adapter.get_columns_in_relation(this) | map(attribute='name') | list %}
+                  {% endif %}
+                  {% set has_tracking = 'is_extraction_complete' in existing_cols %}
+
+                  WITH pdf AS (
+                      SELECT p.promo_contract_id, p.region_code_hint, p.uri, p.md5_hash, p.updated_ts, p.ref
+                      FROM {{ source('raw_bank', 'raw_promo_contracts_pdf') }} AS p
+                      {% if has_tracking %}
+                      -- PDF déjà extrait complètement dans sa version courante : on ne le relit pas,
+                      -- sauf relance ciblée : dbt run -s promo_contracts --vars '{reextract_ids: [PROMO-2026-186]}'
+                      WHERE NOT EXISTS (
+                          SELECT 1 FROM {{ this }} AS t
+                          WHERE t.promo_contract_id = p.promo_contract_id
+                            AND t.source_md5_hash = p.md5_hash
+                            AND t.is_extraction_complete
+                      )
+                      {% if var('reextract_ids', []) | length > 0 %}
+                         OR p.promo_contract_id IN ('{{ var("reextract_ids") | join("', '") }}')
+                      {% endif %}
+                      {% endif %}
+                      -- Sans colonnes de suivi (1er run ou table antérieure), les 250 PDF sont relus avec le prompt courant.
+                  ),
+                  first_pass AS (
+                      SELECT pdf.*, {{ ai_extract_promo_contract('pdf.uri') }} AS ai
+                      FROM pdf
+                  ),
+                  checked AS (
+                      SELECT *, {{ promo_extraction_is_complete('ai', 'promo_contract_id') }} AS first_pass_ok
+                      FROM first_pass
+                  ),
+                  extracted AS (
+                      -- Reprise immédiate des réponses vides ou non conformes (quota, réponse illisible, champ manquant) :
+                      -- la branche ELSE du IF n'est évaluée que pour les PDF en échec au premier passage.
+                      SELECT
+                          k.* EXCEPT (ai, first_pass_ok),
+                          IF(k.first_pass_ok, k.ai, {{ ai_extract_promo_contract('k.uri') }}) AS ai,
+                          IF(k.first_pass_ok, 1, 2)                                           AS run_attempts
+                      FROM checked AS k
+                  ),
+                  {% if has_tracking %}
+                  previous AS (
+                      SELECT promo_contract_id, source_md5_hash, extraction_attempts
+                      FROM {{ this }}
+                  ),
+                  {% endif %}
+                  digital_cap AS (
+                      -- Plafond ACPR 2024-R-01 du canal mobile, porté par l'offre Livret Boost Maison
+                      SELECT boosted_rate_bps - base_rate_bps AS max_boost_bps, boost_duration_months AS max_boost_months
+                      FROM {{ ref('savings_offer_catalog') }}
+                      WHERE offer_code = 'LIV_BOOST_MAISON'
+                  )
+                  SELECT
+                      e.promo_contract_id,
+                      e.region_code_hint                                               AS region_code,
+                      e.ai.primary_branch_code                                         AS agency_code,
+                      pt.promo_type                                                    AS promo_type,
+                      pt.promo_type_label                                              AS promo_type_label,
+                      SAFE.PARSE_DATE('%Y-%m-%d', e.ai.effective_date)                 AS effective_date,
+                      SAFE.PARSE_DATE('%Y-%m-%d', e.ai.end_date)                       AS end_date,
+                      e.ai.duration_months                                             AS duration_months,
+                      e.ai.boost_rate_bps                                              AS boost_rate_bps,
+                      CAST(ROUND(e.ai.welcome_bonus_eur, 2) AS NUMERIC)                AS welcome_bonus_eur,
+                      CAST(ROUND(e.ai.committed_promo_cost_eur, 2) AS NUMERIC)         AS committed_promo_cost_eur,
+                      e.ai.pcec_account                                                AS pcec_account,
+                      e.ai.boost_rate_bps > 0
+                          AND (e.ai.boost_rate_bps > c.max_boost_bps
+                               OR e.ai.duration_months > c.max_boost_months)           AS exceeds_acpr_digital_cap,
+                      -- Suivi de l'extraction
+                      {{ promo_extraction_is_complete('e.ai', 'e.promo_contract_id') }} AS is_extraction_complete,
+                      e.ai.status                                                      AS extraction_status,
+                      IF({{ promo_extraction_is_complete('e.ai', 'e.promo_contract_id') }}, NULL,
+                         SUBSTR(TO_JSON_STRING(e.ai.full_response), 1, 1000))         AS extraction_error_detail,
+                      e.ai.contract_reference                                          AS extracted_contract_reference,
+                      {% if has_tracking %}
+                      -- Tentatives cumulées sur la version courante du PDF (remise à zéro si le PDF change)
+                      e.run_attempts + IF(pv.source_md5_hash = e.md5_hash, COALESCE(pv.extraction_attempts, 0), 0)
+                      {% else %}
+                      e.run_attempts
+                      {% endif %}                                                      AS extraction_attempts,
+                      '{{ var("ai_endpoint").split("/")[-1] }}'                        AS extraction_model,
+                      CURRENT_TIMESTAMP()                                              AS extracted_at,
+                      -- Lien vers le PDF source. Lecture à la demande : AI.GENERATE((question, OBJ.MAKE_REF(source_uri)), ...) sur une seule ligne
+                      -- (accès direct : les URL signées de source_pdf ne traversent pas le périmètre VPC Service Controls)
+                      e.ref                                                            AS source_pdf,
+                      e.uri                                                            AS source_uri,
+                      e.md5_hash                                                       AS source_md5_hash,
+                      e.updated_ts                                                     AS source_updated_at
+                  FROM extracted AS e
+                  CROSS JOIN digital_cap AS c
+                  LEFT JOIN {{ ref('promo_types') }} AS pt ON pt.pcec_account = e.ai.pcec_account
+                  {% if has_tracking %}
+                  LEFT JOIN previous AS pv USING (promo_contract_id)
+                  {% endif %}
+              - path: 02_demo2_silver_dbt_dq/macros/ai_extract_promo_contract.sql
+                language: sql
+                badge: SQL
+                added: 42
+                removed: 0
+                content: |-
+                  {#
+                    Extraction IA d'un avenant promotionnel PDF lu directement dans GCS (ObjectRef, aucune copie).
+                    Utilisée deux fois par promo_contracts : premier passage, puis reprise immédiate des PDF en échec dans la même requête.
+                    Température 0 : même PDF -> même réponse (extraction reproductible et testable au centime).
+                    Accès direct (OBJ.MAKE_REF(uri) sans connexion) : les URL signées de l'Object Table (OBJ.GET_ACCESS_URL)
+                    ne traversent pas le périmètre VPC Service Controls du projet et faisaient échouer une partie des PDF.
+                  #}
+                  {% macro ai_extract_promo_contract(object_uri) %}
+                  AI.GENERATE(
+                      ('''Tu es contrôleur de gestion. Lis cet avenant promotionnel d'agence bancaire (PDF d'une page) et renvoie uniquement les champs demandés.
+                  - contract_reference : la référence de l'avenant, au format PROMO-AAAA-NNN ;
+                  - primary_branch_code : le code de l'agence principale signataire, 4 chiffres (le premier code agence cité) ;
+                  - effective_date : la date d'effet, de signature ou d'arrêté de l'avenant, au format AAAA-MM-JJ ;
+                  - end_date : la date d'échéance ou de fin, au format AAAA-MM-JJ (vide si absente) ;
+                  - duration_months : la durée en mois (0 si absente) ;
+                  - boost_rate_bps : la bonification de taux en points de base, par exemple 150 pour +150 bps (0 si aucune) ;
+                  - welcome_bonus_eur : la prime unitaire d'ouverture de compte par client en euros (0 si aucune) ;
+                  - committed_promo_cost_eur : le montant TOTAL engagé par l'avenant (coût commercial net, engagement PNB ou impact PNB), en euros, nombre positif avec 2 décimales ;
+                  - pcec_account : le compte PCEC d'imputation, 6 chiffres.
+                  Les montants français utilisent l'espace ou le point comme séparateur de milliers et la virgule comme séparateur décimal.
+                  Les dates françaises sont au format JJ/MM/AAAA (jour d'abord) : 05/09/2026 est le 5 septembre 2026.''',
+                       OBJ.MAKE_REF({{ object_uri }})),
+                      connection_id => '{{ var("ai_connection") }}',
+                      endpoint => '{{ var("ai_endpoint") }}',
+                      model_params => JSON '{"generation_config": {"temperature": 0}}',
+                      output_schema => '''contract_reference STRING, primary_branch_code STRING, effective_date STRING, end_date STRING,
+                          duration_months INT64, boost_rate_bps INT64, welcome_bonus_eur FLOAT64,
+                          committed_promo_cost_eur FLOAT64, pcec_account STRING'''
+                  )
+                  {% endmacro %}
+
+
+                  {# Une extraction n'est complète que si l'appel a réussi ET que les champs certifiés sont présents et cohérents. #}
+                  {% macro promo_extraction_is_complete(ai, contract_id) %}
+                  COALESCE(
+                      {{ ai }}.status = ''
+                      AND {{ ai }}.committed_promo_cost_eur > 0
+                      AND REGEXP_CONTAINS({{ ai }}.pcec_account, r'^[0-9]{6}$')
+                      AND {{ ai }}.contract_reference = {{ contract_id }},
+                      FALSE
+                  )
+                  {% endmacro %}
+              - path: 02_demo2_silver_dbt_dq/models/silver/commercial_commitments/promo_contracts_pdf_tracking.sql
+                language: sql
+                badge: SQL
+                added: 47
+                removed: 0
+                content: |-
+                  {{ config(materialized='view') }}
+
+                  -- dp_commercial_commitments · promo_contracts_pdf_tracking : suivi d'extraction PDF par PDF.
+                  -- Part de l'Object Table (tous les PDF présents dans GCS, y compris ceux jamais traités) et y rattache
+                  -- le résultat de promo_contracts : statut, tentatives, erreur, montant extrait et contrôles de cohérence.
+                  -- Vue : toujours à jour, sans aucun appel au modèle IA.
+                  SELECT
+                      p.promo_contract_id,
+                      p.region_code_hint                                                 AS region_code,
+                      CASE
+                          WHEN c.promo_contract_id IS NULL           THEN 'PENDING'      -- PDF arrivé, jamais extrait
+                          WHEN c.source_md5_hash != p.md5_hash       THEN 'OUTDATED'     -- PDF modifié depuis l'extraction
+                          WHEN NOT c.is_extraction_complete          THEN 'FAILED'       -- extraction vide ou non conforme
+                          ELSE 'EXTRACTED'
+                      END                                                                AS tracking_status,
+                      c.extraction_attempts,
+                      c.extracted_at                                                     AS last_extracted_at,
+                      c.extraction_model,
+                      c.extraction_status,
+                      c.extraction_error_detail,
+                      -- Champs certifiés extraits
+                      c.agency_code,
+                      c.promo_type,
+                      c.pcec_account,
+                      c.effective_date,
+                      c.end_date,
+                      c.committed_promo_cost_eur,
+                      -- Contrôles de cohérence (aucune règle métier codée en dur : référentiels pcec_accounts et promo_types)
+                      c.promo_type IS NOT NULL                                           AS is_promo_type_known,
+                      COALESCE(NOT a.is_in_sap_gl, FALSE)                                AS is_pcec_off_sap_gl,
+                      c.end_date IS NULL OR c.end_date >= c.effective_date               AS is_period_consistent,
+                      COALESCE(
+                          c.is_extraction_complete
+                          AND c.source_md5_hash = p.md5_hash
+                          AND c.promo_type IS NOT NULL
+                          AND NOT a.is_in_sap_gl,
+                          FALSE
+                      )                                                                  AS is_certifiable,
+                      -- PDF source, à rouvrir à la demande : AI.GENERATE((question, OBJ.MAKE_REF(source_uri)), ...) sur cette seule ligne
+                      p.ref                                                              AS source_pdf,
+                      p.uri                                                              AS source_uri,
+                      p.size_bytes                                                       AS source_size_bytes,
+                      p.md5_hash                                                         AS source_md5_hash,
+                      p.updated_ts                                                       AS source_updated_at
+                  FROM {{ source('raw_bank', 'raw_promo_contracts_pdf') }} AS p
+                  LEFT JOIN {{ ref('promo_contracts') }} AS c USING (promo_contract_id)
+                  LEFT JOIN {{ ref('pcec_accounts') }} AS a ON a.pcec_account = c.pcec_account
+              - path: 02_demo2_silver_dbt_dq/seeds/promo_types.csv
+                language: yaml
+                badge: CSV
+                added: 4
+                removed: 0
+                content: |-
+                  pcec_account,promo_type,promo_type_label,pnb_impact_nature
+                  602910,TAUX_BOOSTE_LIVRET_MAISON,Bonification de taux sur Livret Maison (avenant taux boosté),CHARGE
+                  602920,PRIME_BIENVENUE_CONQUETE,Primes de bienvenue et de mobilité (campagne de conquête 18-32 ans),CHARGE
+                  708590,AVENANT_GRATUITE_RETENTION,Gratuités et remises commerciales de rétention patrimoniale,MINORATION_PRODUIT
+            terminalLogs:
+              - $ dbt run --select promo_contracts promo_contracts_pdf_tracking
+              - "MERGE (250.0 rows) in 489.33s · EXTRACTED 244 · FAILED 6 (VPC-SC signed URLs)"
+              - $ dbt run --select promo_contracts
+              - "MERGE (6.0 rows) in 12.96s · 250 / 250 certifiable · 14 300 000,00 €"
+              - $ dbt test --select promo_contracts promo_contracts_pdf_tracking
+              - "Done. PASS=22 WARN=0 ERROR=0"
+            subagents:
+              - id: sa-d2-p1
+                role: Document AI Extraction Engineer
+                skill: bigquery-ai-ml
+                status: completed
+              - id: sa-d2-p2
+                role: dbt Silver Pipeline Engineer
+                skill: dbt-bigquery
+                status: completed
+            backgroundTasks:
+              - id: bg-d2-p1
+                command: dbt run --select promo_contracts
+                target: data-days-demo.silver_bank.promo_contracts
+                duration: 8m 9s
       - id: d2-step3
         demoId: demo2
-        shortName: 4. Publier les 5 produits de données
+        shortName: 5. Publier les 5 produits de données
         conversationTitle: Exécution dbt build & Publication des 5 Data Products
         projectFolder: 02_demo2_silver_dbt_dq
         gitBranch: feat/silver-data-products
@@ -2764,7 +3238,7 @@ workspaces:
                   tone: positive
                 - label: Contrats PDF extraits
                   value: "-14,30 M€"
-                  sublabel: "250 PDF via AI.GENERATE_TABLE"
+                  sublabel: "250 PDF via AI.GENERATE"
                   tone: warning
                 - label: Fuite 18-32 ans (J1–J5)
                   value: "68,0 %"
@@ -2796,7 +3270,7 @@ workspaces:
                   valueLabel: "100,0 % DQ"
                   pct: 100
                   tone: blue
-                  badge: AI.GENERATE_TABLE
+                  badge: AI.GENERATE
             traces:
               - id: d2-tr11
                 action: ran
@@ -2810,7 +3284,7 @@ workspaces:
                   - 3 of 6 OK created sql table model silver_bank.customer_movements ............ [CREATE TABLE (5.50m rows) in 2.18s]
                   - 4 of 6 OK created sql table model silver_bank.interactions .................. [CREATE TABLE (320.0k rows) in 1.36s]
                   - 5 of 6 OK created sql table model silver_bank.gl_entries .................... [CREATE TABLE (1.20m rows) in 1.54s]
-                  - 6 of 6 OK created sql table model silver_bank.promo_contracts ............... [CREATE TABLE (250 rows) in 1.89s]
+                  - 6 of 6 OK created sql incremental model silver_bank.promo_contracts ....... [MERGE (0.0 rows, 134.5 KiB processed) in 6.97s]
                   - Done. PASS=29 WARN=0 ERROR=0 SKIP=0 TOTAL=29
               - id: d2-tr11b
                 action: analyzed

@@ -1,0 +1,17 @@
+pcec_account,pcec_account_label,pcec_class,account_nature,is_liaison_account,is_in_sap_gl
+581000,Virements internes compte courant -> livret (liaison),5,LIAISON,true,true
+601100,Charges de refinancement interbancaire structurel,6,CHARGE,false,true
+601320,Charge de refinancement TCI ALM (dépôts à vue évaporés),6,CHARGE,false,true
+602100,Intérêts versés sur livrets réglementés (A / LDDS),6,CHARGE,false,true
+602200,Intérêts versés sur livrets Hexa (Livret Maison),6,CHARGE,false,true
+602910,Bonifications sur collecte (avenants taux boosté),6,CHARGE,false,false
+602920,Primes de bienvenue (campagnes de conquête),6,CHARGE,false,false
+606100,Commissions versées schémas cartes & interchange,6,CHARGE,false,true
+702100,Intérêts sur crédits habitat,7,PRODUIT,false,true
+702200,Intérêts sur crédits à la consommation,7,PRODUIT,false,true
+702300,Intérêts sur découverts comptes à vue,7,PRODUIT,false,true
+706100,Commissions de tenue de compte & packages,7,PRODUIT,false,true
+706200,Commissions sur moyens de paiement & cartes,7,PRODUIT,false,true
+706300,Commissions d'intervention,7,PRODUIT,false,true
+708100,Commissions de placement assurance & prévoyance,7,PRODUIT,false,true
+708590,Remises et gratuités commerciales (rétention),7,PRODUIT,false,false

@@ -68,7 +68,7 @@ Ce document décrit le **dataset**, les **4 tables BigLake Iceberg** et l'ensemb
 | `opening_date_raw` | `STRING` | `CBK-DATE-OUVERTURE` (`091–098`) | Date d'ouverture `AAAAMMJJ` (`14 350` ouvertures sur le trimestre côté Mainframe + `650` côté AWS = `15 000`). |
 | `closure_date_raw` | `STRING` | `CBK-DATE-CLOTURE` (`099–106`) | Date de clôture (`'00000000'` sur 100 % des comptes -> `0` clôture sur le trimestre). |
 | `account_status` | `STRING` | `CBK-STATUT-COMPTE` (`107–112`) | Statut du compte (`OUVERT`). |
-| `rate_bps` | `INT64` | `CBK-TAUX-REMUN-BPS` (`113–115`) | Taux nominal en points de base décodé depuis **3 octets binaires `COMP-3`** (`0` sur `CC_CHQ`, `300` sur `LIVRET_A`/`LDDS`, `250` sur `LIV_MAISON`). |
+| `rate_bps` | `INT64` | `CBK-TAUX-REMUN-BPS` (`113–115`) | Taux nominal en points de base décodé depuis **3 octets binaires `COMP-3`** (`0` sur `CC_CHQ`, `300` sur `LIVRET_A`/`LDDS`, `150` sur `LIV_MAISON`, comme le PDF REG_06). |
 | `solde_veille_cents` | `INT64` | `CBK-SOLDE-VEILLE-COMP3` (`116–123`) | Solde comptable veille J-1 en **centimes signés**, décodé depuis **8 octets binaires `PIC S9(13)V99 COMP-3`** (nibble `'C'` = `+`, `'D'` = `-`). |
 | `solde_veille_eur` | `NUMERIC(15,2)` | *(Dérivé `COMP-3 / 100`)* | Solde comptable veille J-1 en euros avec 2 décimales exactes. |
 | `last_movement_date_raw` | `STRING` | `CBK-DATE-DERNIER-MVT` (`124–131`) | Date de dernière écriture comptable `AAAAMMJJ`. |

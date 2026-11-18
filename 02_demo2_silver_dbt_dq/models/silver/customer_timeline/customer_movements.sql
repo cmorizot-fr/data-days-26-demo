@@ -107,7 +107,7 @@ SELECT
     counterparty_bic,
     payment_scheme,
     end_to_end_id,
-    counterparty_bic IN ('REVOLT21XXX', 'TRBKDEBBXXX', 'NTSBDEB1XXX', 'BOURFRPPXXX', 'DEGIRO2AXXX')
+    counterparty_bic IN (SELECT bic FROM {{ ref('competitor_institutions') }} WHERE bic IS NOT NULL)
         AND signed_amount_eur < 0                                              AS is_neobank_outflow,
     category = 'INTERNAL_SAVINGS'                                              AS is_internal_transfer
 FROM categorized

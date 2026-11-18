@@ -1,0 +1,7 @@
+bic,institution_name,institution_type,country_code,mention_pattern
+REVOLT21XXX,Revolut,NEOBANK,LT,revolut
+NTSBDEB1XXX,N26,NEOBANK,DE,\bn26\b
+BOURFRPPXXX,Boursobank,NEOBANK,FR,boursobank
+TRBKDEBBXXX,Trade Republic,BROKER,DE,trade republic
+DEGIRO2AXXX,DEGIRO,BROKER,NL,degiro
+,Néobanque (terme générique),NEOBANK,,n[ée]obanque

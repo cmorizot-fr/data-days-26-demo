@@ -34,6 +34,21 @@ models:
       customer_timeline:
         +labels:
           data_product: dp_customer_timeline
+      customer_relationship:
+        +labels:
+          data_product: dp_customer_relationship
+      finance_pnb:
+        +labels:
+          data_product: dp_finance_pnb
+      commercial_commitments:
+        +labels:
+          data_product: dp_commercial_commitments
+
+# Extraction IA des PDF (AI.GENERATE sur les Object Tables).
+# gemini-2.5-flash n'est plus servi au projet : seul gemini-3-flash-preview répond, sur l'endpoint global.
+vars:
+  ai_connection: 'data-days-demo.europe-west1.biglake-gcs-conn'
+  ai_endpoint: 'https://aiplatform.googleapis.com/v1/projects/data-days-demo/locations/global/publishers/google/models/gemini-3-flash-preview'
 
 seeds:
   hexagone_bank_lakehouse:
@@ -44,3 +59,16 @@ seeds:
     movement_category_rules:
       +column_types:
         priority: int64
+    savings_offer_catalog:
+      +column_types:
+        base_rate_bps: int64
+        boosted_rate_bps: int64
+        boost_duration_months: int64
+        deposit_cap_eur: numeric
+        priority_rank: int64
+    pcec_accounts:
+      +column_types:
+        pcec_account: string
+    promo_types:
+      +column_types:
+        pcec_account: string

@@ -1,0 +1,112 @@
+version: 2
+
+models:
+  - name: gl_entries
+    description: >
+      dp_finance_pnb · Grand livre SAP FI (réel), budget BPC T4 et coût de refinancement ALM (TCI), 1 ligne par écriture
+      (1 200 000). Les montants sont conservés tels quels : gross_amount_eur n'est pas signé, le sens est porté par sens_dc.
+      La règle de calcul du PNB certifié est définie dans Knowledge Catalog, pas dans ce modèle.
+    meta:
+      data_product: dp_finance_pnb
+      owner: cfo_finance
+      freshness: monthly / quarterly close
+    tests:
+      - row_count_equals:
+          arguments:
+            expected: 1200000
+      - expression_equals:
+          # Somme brute naïve, conservée volontairement (piège de la Démo 3) : +42,80 M EUR
+          arguments:
+            expression: "SUM(gross_amount_eur)"
+            expected: 42800000
+      - expression_equals:
+          # Les seuls montants négatifs sont ceux du budget BPC (convention de saisie budgétaire)
+          arguments:
+            expression: "COUNTIF(gross_amount_eur < 0 AND ledger != 'BUDGET')"
+            expected: 0
+      - expression_equals:
+          arguments:
+            expression: "COUNTIF(is_liaison_account)"
+            expected: 40000
+    columns:
+      - name: gl_line_id
+        description: "Identifiant de la ligne d'écriture (numéro de pièce + poste)."
+        tests: [unique, not_null]
+      - name: company_code
+        description: "Société SAP (HEXA)."
+      - name: fiscal_year
+        description: "Exercice comptable."
+      - name: fiscal_period
+        description: "Période comptable (8 à 11 sur le trimestre)."
+      - name: ledger
+        description: "REEL (comptabilité générale, ALM) ou BUDGET (plan BPC)."
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['REEL', 'BUDGET']
+      - name: source_system
+        description: "Système d'origine : SAP_FI_GL, SAP_FI_LIAISON, ALM_TCI_DROP, BPC_BUDGET_T4."
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['SAP_FI_GL', 'SAP_FI_LIAISON', 'ALM_TCI_DROP', 'BPC_BUDGET_T4']
+      - name: doc_type
+        description: "Type de pièce SAP (SA, UB, TC, BU)."
+      - name: doc_number
+        description: "Numéro de pièce."
+      - name: line_item
+        description: "Numéro de poste dans la pièce."
+      - name: posting_date
+        description: "Date comptable (partition mensuelle)."
+        tests: [not_null]
+      - name: agency_code
+        description: "Code agence sur 4 caractères ; '0000' pour les écritures du siège (ALM)."
+        tests: [not_null]
+      - name: region_code
+        description: "Région commerciale (REG1..REG8) ou SIEGE (écritures du siège, dont le refinancement ALM)."
+      - name: pcec_account
+        description: "Compte du plan comptable des établissements de crédit (PCEC)."
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('pcec_accounts')
+                field: pcec_account
+      - name: pcec_account_label
+        description: "Libellé du compte PCEC tel que saisi dans SAP."
+      - name: pcec_class
+        description: "Classe PCEC (référentiel pcec_accounts : 5 trésorerie, 6 charges, 7 produits)."
+      - name: account_nature
+        description: "Nature du compte (référentiel pcec_accounts) : PRODUIT, CHARGE ou LIAISON."
+      - name: is_liaison_account
+        description: "Vrai pour les comptes de liaison internes (référentiel pcec_accounts ; 40 000 lignes, neutres en consolidation)."
+      - name: sens_dc
+        description: "Sens de l'écriture : D (débit) ou C (crédit). gross_amount_eur n'est pas signé."
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['D', 'C']
+      - name: gross_amount_eur
+        description: >
+          Montant brut en EUR tel que saisi dans SAP, non signé. Le sommer directement donne +42,80 M EUR, qui n'est pas le PNB :
+          appliquer la règle certifiée de Knowledge Catalog.
+      - name: item_text
+        description: "Texte de l'écriture."
+
+seeds:
+  - name: pcec_accounts
+    description: "Référentiel des comptes PCEC utilisés par le grand livre SAP et par les avenants PDF : nature du compte, compte de liaison, présence dans SAP."
+    columns:
+      - name: pcec_account
+        description: "Numéro de compte PCEC (6 chiffres, clé)."
+        tests: [unique, not_null]
+      - name: pcec_account_label
+        description: "Libellé du compte."
+      - name: pcec_class
+        description: "Classe PCEC (5 = liaison / trésorerie, 6 = charges, 7 = produits)."
+      - name: account_nature
+        description: "Nature du compte : CHARGE, PRODUIT ou LIAISON."
+      - name: is_liaison_account
+        description: "Vrai pour les comptes de liaison internes (58*), à exclure du PNB certifié."
+      - name: is_in_sap_gl
+        description: "Faux pour les comptes alimentés uniquement par les avenants PDF (602910, 602920, 708590), absents du grand livre SAP."
