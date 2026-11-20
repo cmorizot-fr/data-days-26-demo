@@ -32,3 +32,22 @@ bq query --use_legacy_sql=false --project_id=data-days-demo --location=europe-we
 ## Socle opérationnel AlloyDB (`bigquery_fdw`, `alloydb_sync`, Read Pool & Action Agent)
 
 Voir [`ALLOYDB_SETUP.md`](./ALLOYDB_SETUP.md) pour le détail du cluster `hexagone-d4-alloydb` (PostgreSQL 18), la fédération `bq_fed.*`, les 6 tables synchronisées `alloydb_sync`, l'ingestion temps réel Pub/Sub → Cloud Run → AlloyDB et le script de reset [`sql/alloydb/03_reset_demo4.sql`](./sql/alloydb/03_reset_demo4.sql).
+
+## Identité Visuelle & Maquettes Mobile — Banque Hexagone (`design/`)
+
+Le système de marque et les maquettes mobiles (conçues dans **Stitch**, projet `717705868757685868`, édition **Light Stage** optimisée pour la projection en plénière) sont versionnés dans [`design/`](./design/) :
+
+- [`design/DESIGN.md`](./design/DESIGN.md) : tokens de couleur (`Ink #11131A`, `Paper #FAFAFA`, `Indigo #4F46E5`, `Coral #FF6B4A`), typographie et composants.
+- [`design/hexagone_brand_sheet.html`](./design/hexagone_brand_sheet.html) : planche de marque interactive (wordmarks, icônes `HX`, motif *Silos Become Clarity*, swatches click-to-copy).
+- [`design/PRD_DEMO4.md`](./design/PRD_DEMO4.md) : PRD complet de la Démo #4 (architecture dual-repo `starter`/`final`, 3 issues GitHub, agents ADK sur Gemini Hydrogen, skills déterministes et reset).
+
+### Planche de marque Hexagone
+
+![Hexagone Brand Identity Spec Sheet](./design/assets/hexagone_brand_sheet.png)
+
+### Écrans Mobile — Avant / Après (même socle Light, 3 fonctionnalités agentiques intégrées)
+
+| Avant — Accueil Classique (`starter`) | Après — Accueil Agentique (`final`) |
+| :---: | :---: |
+| <img src="./design/assets/screen_before_classic.png" alt="Banque Hexagone - Accueil Classique" width="320" /> | <img src="./design/assets/screen_after_agentic.png" alt="Banque Hexagone - Accueil Agentique" width="320" /> |
+| Solde `6 892,00 €`, carte Ink, actions rapides & `Dernières opérations` | Même socle + **Budget Insight** (`STRMFLIX +4 €`, `CPAM +42 €`, `TimesFM +300 €`), **Conseil Épargne** (`ACPR 2024-R-01`, `200 €` en 1 clic) & **Coach IA** |
