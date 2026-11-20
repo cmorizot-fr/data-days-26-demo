@@ -28,3 +28,7 @@ uv run dbt build --profiles-dir . --select path:models/gold/budget_insight
 bq query --use_legacy_sql=false --project_id=data-days-demo --location=europe-west1 \
   --label datacloud:antigravity < 04_demo4_scale_mobile_adk/sql/01_evaluate_timesfm_budget_forecast.sql
 ```
+
+## Socle opérationnel AlloyDB (`bigquery_fdw`, `alloydb_sync`, Read Pool & Action Agent)
+
+Voir [`ALLOYDB_SETUP.md`](./ALLOYDB_SETUP.md) pour le détail du cluster `hexagone-d4-alloydb` (PostgreSQL 18), la fédération `bq_fed.*`, les 6 tables synchronisées `alloydb_sync`, l'ingestion temps réel Pub/Sub → Cloud Run → AlloyDB et le script de reset [`sql/alloydb/03_reset_demo4.sql`](./sql/alloydb/03_reset_demo4.sql).
