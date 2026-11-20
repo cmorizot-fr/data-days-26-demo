@@ -1,0 +1,508 @@
+version: 2
+
+models:
+  - name: customer_transactions_enriched
+    description: >
+      dp_budget_insight · Grand livre de transactions enrichi pour l'agent conversationnel mobile et AlloyDB (< 15 ms).
+      Corrige les valeurs nulles résiduelles de SILVER sur les paiements carte (merchant_name 100 % renseigné,
+      is_neobank_outflow booléen strict), ajoute les libellés métier français et les indicateurs budgétaires
+      issus du seed movement_categories, et omet l'IBAN de la contrepartie.
+    meta:
+      data_product: dp_budget_insight
+      owner: digital_banking
+      freshness: daily in BigQuery, real-time adjustment in AlloyDB
+    tests:
+      - expression_equals:
+          name: zero_null_merchant_name
+          arguments:
+            expression: "COUNTIF(merchant_name IS NULL OR TRIM(merchant_name) = '')"
+            expected: 0
+      - expression_equals:
+          name: zero_null_neobank_flag
+          arguments:
+            expression: "COUNTIF(is_neobank_outflow IS NULL)"
+            expected: 0
+    columns:
+      - name: movement_id
+        description: "Identifiant unique du mouvement (CFONB ou SEPA)."
+        tests: [unique, not_null]
+      - name: customer_id
+        description: "Identifiant client."
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('customers')
+                field: customer_id
+      - name: account_id
+        description: "Compte mouvementé."
+        tests: [not_null]
+      - name: account_type
+        description: "Type du compte mouvementé (CC_CHQ, LIVRET_A, LDDS, LIV_MAISON)."
+      - name: source_system
+        description: "Origine du mouvement : MAINFRAME_CFONB (J-1) ou SEPA_REALTIME (temps réel)."
+      - name: booking_date
+        description: "Date comptable de l'opération."
+        tests: [not_null]
+      - name: booking_month
+        description: "Premier jour du mois comptable."
+        tests: [not_null]
+      - name: day_of_month
+        description: "Jour du mois (1..31) pour l'analyse de saisonnalité intra-mensuelle."
+      - name: is_current_month
+        description: "Vrai si l'opération appartient au mois en cours (mois partiel du dernier batch Mainframe)."
+      - name: is_post_batch_realtime
+        description: "Vrai si l'opération est postérieure à la date du dernier batch Mainframe (flux temps réel J0)."
+      - name: direction
+        description: "Sens de l'opération : CREDIT ou DEBIT."
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['CREDIT', 'DEBIT']
+      - name: amount_eur
+        description: "Montant absolu en euros."
+        tests: [not_null]
+      - name: signed_amount_eur
+        description: "Montant signé en euros (+ entrée, - sortie)."
+        tests: [not_null]
+      - name: category_group
+        description: "Famille de catégorie technique (INCOME, FIXED_CHARGES, CARD_SPENDING, SAVINGS, EXTERNAL_TRANSFER, OTHER)."
+        tests: [not_null]
+      - name: category_group_label_fr
+        description: "Libellé français de la famille de catégorie pour l'agent conversationnel."
+        tests: [not_null]
+      - name: category
+        description: "Catégorie métier fine."
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('movement_categories')
+                field: category
+      - name: category_label_fr
+        description: "Libellé français de la catégorie pour l'agent conversationnel."
+        tests: [not_null]
+      - name: cashflow_role
+        description: "Rôle budgétaire de l'opération (INCOME, FIXED_CHARGE, VARIABLE_CARD, INTERNAL_SAVINGS, NEOBANK_TRANSFER, OTHER)."
+      - name: is_income
+        description: "Vrai pour un revenu ou remboursement entrant."
+      - name: is_fixed_charge
+        description: "Vrai pour une charge fixe récurrente."
+      - name: is_variable_card
+        description: "Vrai pour une dépense carte variable (modélisée par TimesFM)."
+      - name: is_recurring_candidate
+        description: "Vrai si la catégorie est candidate à la détection d'engagements récurrents."
+      - name: is_subscription
+        description: "Vrai si la catégorie correspond à un abonnement surveillé contre les hausses tarifaires."
+      - name: is_health_refund
+        description: "Vrai pour un remboursement santé (CPAM / mutuelle)."
+      - name: is_organic_budget_flow
+        description: "Vrai si l'opération entre dans le budget organique mensuel (hors virements d'épargne interne et néobanques)."
+      - name: merchant_name
+        description: "Nom de marchand ou d'établissement nettoyé, toujours renseigné (ex. CARREFOUR CITY PARIS, STRMFLIX DIGITAL, Revolut)."
+        tests: [not_null]
+      - name: raw_label
+        description: "Libellé bancaire brut issu du Mainframe ou de SEPA."
+      - name: payment_scheme
+        description: "Schéma de paiement ISO 20022 (SCT_INBOUND, SEPA_SDD, SCT_INST, CARD_CONTACTLESS, CARD_ECOMMERCE)."
+      - name: is_neobank_outflow
+        description: "Vrai pour un virement sortant vers une néobanque ou un courtier en ligne (jamais NULL)."
+        tests: [not_null]
+      - name: neobank_institution_name
+        description: "Nom commercial de la néobanque ou du courtier destinataire (issu de competitor_institutions)."
+      - name: neobank_institution_type
+        description: "Type d'établissement concurrent (NEOBANK ou BROKER)."
+      - name: is_internal_transfer
+        description: "Vrai pour un virement interne compte courant <-> livret (58*)."
+
+  - name: customer_monthly_spending
+    description: >
+      dp_budget_insight · Agrégat mensuel client x mois x catégorie x sens, avec comparaison M vs M-1,
+      moyenne glissante 3 mois et part des dépenses mensuelles. Conçu pour les questions conversationnelles
+      instantanées (< 15 ms dans AlloyDB).
+    meta:
+      data_product: dp_budget_insight
+      owner: digital_banking
+    tests:
+      - expression_equals:
+          name: unique_customer_month_category_direction
+          arguments:
+            expression: "COUNT(*) - COUNT(DISTINCT CONCAT(customer_id, '|', CAST(period_month AS STRING), '|', category, '|', direction))"
+            expected: 0
+    columns:
+      - name: customer_id
+        description: "Identifiant client."
+        tests: [not_null]
+      - name: period_month
+        description: "Premier jour du mois analysé."
+        tests: [not_null]
+      - name: category_group
+        description: "Famille de catégorie technique."
+      - name: category_group_label_fr
+        description: "Libellé français de la famille."
+      - name: category
+        description: "Catégorie métier fine."
+        tests: [not_null]
+      - name: category_label_fr
+        description: "Libellé français de la catégorie."
+      - name: cashflow_role
+        description: "Rôle budgétaire de la catégorie."
+      - name: direction
+        description: "Sens : CREDIT ou DEBIT."
+      - name: transaction_count
+        description: "Nombre d'opérations réglées sur le mois et la catégorie."
+      - name: total_amount_eur
+        description: "Montant cumulé absolu sur le mois (EUR)."
+        tests: [not_null]
+      - name: signed_total_eur
+        description: "Montant cumulé signé sur le mois (EUR)."
+      - name: prev_month_amount_eur
+        description: "Montant sur la même catégorie au mois civil précédent (0 si aucune opération après le 1er mois actif, NULL au 1er mois)."
+      - name: mom_delta_eur
+        description: "Variation en euros par rapport au mois précédent."
+      - name: mom_delta_pct
+        description: "Variation en pourcentage par rapport au mois précédent."
+      - name: avg_3m_amount_eur
+        description: "Moyenne mensuelle des 3 mois civils précédents."
+      - name: share_of_month_outflows_pct
+        description: "Part de la catégorie dans les dépenses organiques du mois (%)."
+      - name: neobank_transaction_count
+        description: "Nombre de virements vers néobanques sur le mois et la catégorie."
+      - name: neobank_outflow_eur
+        description: "Montant viré vers néobanques sur le mois et la catégorie (EUR)."
+      - name: is_partial_month
+        description: "Vrai pour le mois en cours (en cours d'exécution)."
+
+  - name: customer_recurring_commitments
+    description: >
+      dp_budget_insight · Revenus et prélèvements récurrents détectés par client (1 ligne par client x catégorie récurrente),
+      avec détection proactive des hausses d'abonnement (ex. STRMFLIX +4,00 EUR) et montant restant attendu avant fin de mois.
+    meta:
+      data_product: dp_budget_insight
+      owner: digital_banking
+    tests:
+      - expression_equals:
+          name: unique_customer_recurring_category
+          arguments:
+            expression: "COUNT(*) - COUNT(DISTINCT CONCAT(customer_id, '|', category))"
+            expected: 0
+      - expression_equals:
+          name: witness_strmflix_hike_detected
+          arguments:
+            expression: "CAST(ROUND(MAX(IF(customer_id = 'CUST00002026' AND is_price_hike, amount_delta_vs_prev_month_eur, 0)), 2) AS NUMERIC)"
+            expected: 4
+    columns:
+      - name: customer_id
+        description: "Identifiant client."
+        tests: [not_null]
+      - name: category
+        description: "Catégorie récurrente."
+        tests: [not_null]
+      - name: category_label_fr
+        description: "Libellé français de la catégorie."
+      - name: category_group
+        description: "Famille de catégorie."
+      - name: category_group_label_fr
+        description: "Libellé français de la famille."
+      - name: direction
+        description: "CREDIT (revenu récurrent) ou DEBIT (charge fixe)."
+      - name: is_income
+        description: "Vrai pour un revenu récurrent."
+      - name: is_fixed_charge
+        description: "Vrai pour une charge fixe récurrente."
+      - name: is_subscription
+        description: "Vrai pour un abonnement surveillé."
+      - name: merchant_name
+        description: "Marchand ou organisme habituel."
+        tests: [not_null]
+      - name: reference_month
+        description: "Mois de référence en cours."
+      - name: total_hist_months
+        description: "Nombre total de mois historiques complets observés."
+      - name: recent_3m_months
+        description: "Nombre de mois observés sur les 3 derniers mois complets."
+      - name: usual_day_of_month
+        description: "Jour habituel de passage dans le mois (1..31)."
+      - name: prev_month_amount_eur
+        description: "Montant observé le mois précédent (M-1, EUR)."
+      - name: avg_3m_amount_eur
+        description: "Montant moyen sur les 3 derniers mois complets (EUR)."
+      - name: current_month_amount_eur
+        description: "Montant déjà passé sur le mois en cours (NULL si non encore débité/crédité)."
+      - name: current_month_booking_date
+        description: "Date de passage constatée sur le mois en cours."
+      - name: amount_delta_vs_prev_month_eur
+        description: "Écart constaté entre le mois en cours et M-1 (EUR)."
+      - name: is_price_hike
+        description: "Vrai si un abonnement a augmenté d'au moins subscription_hike_min_delta_eur (1,00 EUR) vs M-1."
+      - name: expected_amount_this_month_eur
+        description: "Montant total attendu sur le mois en cours (réalisé ou estimé, saisonnalité incluse)."
+      - name: commitment_status
+        description: "Statut du mois en cours : RECEIVED_THIS_MONTH, PAID_THIS_MONTH, EXPECTED_BEFORE_EOM ou NOT_EXPECTED_THIS_MONTH."
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['RECEIVED_THIS_MONTH', 'PAID_THIS_MONTH', 'EXPECTED_BEFORE_EOM', 'NOT_EXPECTED_THIS_MONTH']
+      - name: expected_remaining_eur
+        description: "Montant encore attendu avant la fin du mois (0 si déjà passé ou hors période)."
+        tests: [not_null]
+
+  - name: customer_card_spending_forecast
+    description: >
+      dp_budget_insight · Prévision des dépenses carte mensuelles par client (80 000 lignes) produite par
+      BigQuery AI.FORECAST (TimesFM 2.5, horizon = 1 mois, intervalle de confiance 80 %) avec repli statistique
+      pour les clients ayant moins de 3 mois d'historique.
+    meta:
+      data_product: dp_budget_insight
+      owner: digital_banking
+    tests:
+      - row_count_equals:
+          arguments:
+            expected: 80000
+      - expression_equals:
+          name: zero_negative_card_forecast
+          arguments:
+            expression: "COUNTIF(forecast_card_spending_eur < 0)"
+            expected: 0
+      - expression_equals:
+          name: witness_timesfm_card_forecast_exact
+          arguments:
+            expression: "CAST(ROUND(MAX(IF(customer_id = 'CUST00002026', forecast_card_spending_eur, 0)), 2) AS NUMERIC)"
+            expected: 788
+    columns:
+      - name: customer_id
+        description: "Identifiant client."
+        tests: [unique, not_null]
+      - name: forecast_month
+        description: "Mois civil prédit (premier jour du mois en cours)."
+        tests: [not_null]
+      - name: history_months_count
+        description: "Nombre de mois civils complets disponibles en historique pour le client."
+      - name: avg_3m_card_spending_eur
+        description: "Moyenne des dépenses carte sur les 3 derniers mois complets (EUR)."
+      - name: forecast_card_spending_eur
+        description: "Dépenses carte totales prévues sur le mois en cours (EUR, >= 0)."
+        tests: [not_null]
+      - name: forecast_ci_low_eur
+        description: "Borne inférieure de l'intervalle de confiance 80 % TimesFM 2.5 (EUR)."
+      - name: forecast_ci_high_eur
+        description: "Borne supérieure de l'intervalle de confiance 80 % TimesFM 2.5 (EUR)."
+      - name: forecast_method
+        description: "Méthode appliquée : TIMESFM_2_5 (>= 3 mois), HISTORICAL_AVG (1-2 mois) ou NEW_OR_INACTIVE (0 mois)."
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['TIMESFM_2_5', 'HISTORICAL_AVG', 'NEW_OR_INACTIVE']
+      - name: ai_forecast_status
+        description: "Message d'erreur éventuel retourné par AI.FORECAST (NULL si succès)."
+
+  - name: customer_mobile_insights
+    description: >
+      dp_budget_insight · Table maîtresse GOLD (1 ligne par client = 80 000) synchronisée vers AlloyDB (< 15 ms)
+      pour les 3 agents mobiles ADK (Budget Insight, Conseil Offres, Action). Combine la prévision TimesFM 2.5,
+      les engagements récurrents, les alertes proactives et les recommandations conformes ACPR 2024-R-01.
+    meta:
+      data_product: dp_budget_insight
+      owner: digital_banking
+      freshness: daily in BigQuery, real-time adjustment in AlloyDB
+    tests:
+      - row_count_equals:
+          arguments:
+            expected: 80000
+      - expression_equals:
+          name: zero_acpr_violation_below_safety_cushion
+          arguments:
+            expression: "COUNTIF(is_eligible_for_proactive_savings AND predicted_end_of_month_surplus_eur < minimum_safety_cushion_eur)"
+            expected: 0
+      - expression_equals:
+          name: zero_acpr_violation_over_70pct_or_cushion
+          arguments:
+            expression: "COUNTIF(is_eligible_for_proactive_savings AND (recommended_savings_amount_eur > predicted_end_of_month_surplus_eur * (acpr_max_surplus_share_pct / 100.0) OR predicted_end_of_month_surplus_eur - recommended_savings_amount_eur < minimum_safety_cushion_eur))"
+            expected: 0
+      - expression_equals:
+          name: witness_lucas_martin_surplus_300
+          arguments:
+            expression: "CAST(ROUND(MAX(IF(customer_id = 'CUST00002026', predicted_end_of_month_surplus_eur, 0)), 2) AS NUMERIC)"
+            expected: 300
+      - expression_equals:
+          name: witness_lucas_martin_savings_reco_200
+          arguments:
+            expression: "CAST(ROUND(MAX(IF(customer_id = 'CUST00002026', recommended_savings_amount_eur, 0)), 2) AS NUMERIC)"
+            expected: 200
+      - expression_equals:
+          name: witness_lucas_martin_sub_hike_4
+          arguments:
+            expression: "CAST(ROUND(MAX(IF(customer_id = 'CUST00002026', subscription_hike_delta_eur, 0)), 2) AS NUMERIC)"
+            expected: 4
+      - expression_equals:
+          name: witness_lucas_martin_health_refund_42
+          arguments:
+            expression: "CAST(ROUND(MAX(IF(customer_id = 'CUST00002026', recent_health_refund_eur, 0)), 2) AS NUMERIC)"
+            expected: 42
+    columns:
+      - name: customer_id
+        description: "Identifiant unique client."
+        tests: [unique, not_null]
+      - name: first_name
+        description: "Prénom du client."
+      - name: last_name
+        description: "Nom du client."
+      - name: age
+        description: "Âge du client."
+      - name: age_segment
+        description: "Tranche d'âge commerciale."
+      - name: segment
+        description: "Segment de clientèle."
+      - name: city
+        description: "Ville de l'agence."
+      - name: region_code
+        description: "Code région commerciale."
+      - name: region_name
+        description: "Nom de la région."
+      - name: agency_code
+        description: "Code agence normalisé sur 4 caractères."
+      - name: digital_opt_in
+        description: "Consentement aux notifications digitales mobiles."
+      - name: reference_month
+        description: "Mois civil analysé."
+      - name: batch_cutoff_date
+        description: "Date du dernier batch Mainframe J-1."
+      - name: current_account_id
+        description: "Identifiant du compte courant principal."
+      - name: current_account_balance_d1_eur
+        description: "Solde J-1 du compte courant (EUR, NULL pour les comptes ouverts après le batch Mainframe)."
+      - name: total_savings_balance_d1_eur
+        description: "Encours total d'épargne détenu chez Banque Hexagone à J-1 (EUR)."
+      - name: savings_accounts_count
+        description: "Nombre de livrets d'épargne détenus chez Banque Hexagone."
+      - name: monthly_salary_eur
+        description: "Revenu mensuel récurrent attendu (salaire / retraite, EUR)."
+      - name: mtd_income_eur
+        description: "Revenus et remboursements déjà encaissés sur le mois en cours (EUR)."
+      - name: expected_remaining_income_eur
+        description: "Revenus récurrents encore attendus avant la fin du mois (EUR)."
+      - name: mtd_fixed_charges_eur
+        description: "Charges fixes déjà débitées sur le mois en cours (EUR)."
+      - name: expected_remaining_fixed_charges_eur
+        description: "Charges fixes récurrentes encore attendues avant la fin du mois (EUR)."
+      - name: remaining_fixed_charges_count
+        description: "Nombre de prélèvements récurrents encore attendus avant fin de mois."
+      - name: mtd_card_spending_eur
+        description: "Dépenses carte déjà réalisées sur le mois en cours, batch J-1 + temps réel inclus (EUR)."
+      - name: realtime_post_batch_spend_eur
+        description: "Montant des dépenses temps réel postérieures au dernier batch Mainframe (EUR)."
+      - name: realtime_post_batch_tx_count
+        description: "Nombre d'opérations temps réel postérieures au dernier batch Mainframe."
+      - name: forecast_card_spending_eur
+        description: "Prévision TimesFM 2.5 des dépenses carte sur le mois complet (EUR)."
+      - name: forecast_card_ci_low_eur
+        description: "Borne basse de l'intervalle de confiance 80 % TimesFM 2.5 (EUR)."
+      - name: forecast_card_ci_high_eur
+        description: "Borne haute de l'intervalle de confiance 80 % TimesFM 2.5 (EUR)."
+      - name: forecast_method
+        description: "Méthode de prévision utilisée (TIMESFM_2_5, HISTORICAL_AVG ou NEW_OR_INACTIVE)."
+      - name: expected_remaining_card_spending_eur
+        description: "Dépenses carte résiduelles estimées d'ici la fin du mois (EUR)."
+      - name: predicted_end_of_month_surplus_eur
+        description: "Reste à vivre prévisionnel net de fin de mois sur le budget organique (EUR)."
+        tests: [not_null]
+      - name: neobank_outflow_m2_m1_eur
+        description: "Cumul signé des virements sortants vers néobanques/courtiers sur M-2 et M-1 (EUR)."
+      - name: neobank_transfers_m2_m1_count
+        description: "Nombre de virements sortants vers néobanques/courtiers sur M-2 et M-1."
+      - name: primary_neobank_name
+        description: "Principale néobanque ou courtier destinataire sur M-2 et M-1."
+      - name: detected_subscription_hike_merchant
+        description: "Marchand de l'abonnement présentant la plus forte hausse tarifaire détectée ce mois-ci."
+      - name: subscription_prev_amount_eur
+        description: "Ancien montant mensuel de l'abonnement en hausse (EUR)."
+      - name: subscription_new_amount_eur
+        description: "Nouveau montant mensuel de l'abonnement en hausse (EUR)."
+      - name: subscription_hike_delta_eur
+        description: "Montant de la hausse d'abonnement détectée (EUR, 0 si aucune)."
+      - name: recent_health_refund_eur
+        description: "Cumul des remboursements santé reçus sur le mois en cours (EUR)."
+      - name: minimum_safety_cushion_eur
+        description: "Coussin de sécurité minimal obligatoire sur le compte courant (EUR, référentiel budget_insight_rules)."
+      - name: acpr_max_surplus_share_pct
+        description: "Part maximale du surplus de fin de mois recommandable en épargne (%, extrait de REG_06 ACPR 2024-R-01)."
+      - name: is_eligible_for_proactive_savings
+        description: "Vrai si le client est éligible à une proposition d'épargne proactive conforme ACPR 2024-R-01."
+        tests: [not_null]
+      - name: recommended_savings_amount_eur
+        description: "Montant prudent d'épargne recommandé (EUR, arrondi, <= 70 % du surplus et préservant le coussin de 100 EUR)."
+        tests: [not_null]
+      - name: primary_recommended_offer_code
+        description: "Code de l'offre prioritaire conforme ACPR (épargne réglementée Livret A / LDDS en 1er rang si disponible)."
+      - name: primary_recommended_offer_label
+        description: "Libellé commercial de l'offre prioritaire recommandée."
+      - name: primary_recommended_rate_bps
+        description: "Taux facial de l'offre prioritaire en points de base."
+      - name: boosted_alternative_offer_code
+        description: "Code de l'offre boostée mobile alternative (LIV_BOOST_MAISON, si épargne réglementée déjà détenue ailleurs)."
+      - name: boosted_alternative_offer_label
+        description: "Libellé de l'offre boostée mobile alternative (Livret Boost Maison)."
+      - name: boosted_alternative_rate_bps
+        description: "Taux boosté de l'offre mobile alternative en points de base (350 bps = 3,50 % sur 3 mois)."
+      - name: recommended_mobile_action
+        description: "Synthèse actionnable en français pour l'Agent Conseil Offres et l'application mobile."
+
+seeds:
+  - name: movement_categories
+    description: "Référentiel des catégories de mouvements : libellés français, rôle budgétaire, récurrence, abonnement et mois actifs."
+    columns:
+      - name: category
+        description: "Code technique de catégorie (clé)."
+        tests: [unique, not_null]
+      - name: category_group
+        description: "Famille technique de catégorie."
+        tests: [not_null]
+      - name: category_label_fr
+        description: "Libellé français de la catégorie."
+        tests: [not_null]
+      - name: category_group_label_fr
+        description: "Libellé français de la famille."
+        tests: [not_null]
+      - name: cashflow_role
+        description: "Rôle budgétaire (INCOME, FIXED_CHARGE, VARIABLE_CARD, INTERNAL_SAVINGS, NEOBANK_TRANSFER, OTHER)."
+      - name: is_income
+        description: "Vrai pour un flux de revenu ou remboursement."
+      - name: is_fixed_charge
+        description: "Vrai pour une charge fixe récurrente."
+      - name: is_variable_card
+        description: "Vrai pour une dépense carte variable."
+      - name: is_recurring_candidate
+        description: "Vrai si la catégorie est suivie en récurrence mensuelle."
+      - name: is_subscription
+        description: "Vrai pour les abonnements surveillés contre les dérives tarifaires."
+      - name: is_health_refund
+        description: "Vrai pour les remboursements santé."
+      - name: is_organic_budget_flow
+        description: "Vrai si inclus dans le reste à vivre mensuel organique."
+      - name: active_months_max
+        description: "Dernier mois civil de l'année où la catégorie est attendue (10 pour les impôts mensualisés, 12 sinon)."
+
+  - name: budget_insight_rules
+    description: "Paramètres métier versionnés du Data Product GOLD dp_budget_insight (seuils ACPR 2024-R-01 et détection d'anomalies)."
+    columns:
+      - name: rule_set_id
+        description: "Identifiant du jeu de règles."
+        tests: [unique, not_null]
+      - name: min_safety_cushion_eur
+        description: "Coussin minimal de reste à vivre à préserver sur le compte courant (EUR)."
+      - name: savings_rounding_step_eur
+        description: "Pas d'arrondi inférieur du montant d'épargne recommandé (EUR)."
+      - name: subscription_hike_min_delta_eur
+        description: "Hausse minimale M vs M-1 déclenchant une alerte d'abonnement (EUR)."
+      - name: min_recurring_months
+        description: "Nombre minimal de mois sur les 3 derniers mois complets pour qualifier un flux récurrent."
+      - name: min_timesfm_history_months
+        description: "Nombre minimal de mois complets requis pour appeler AI.FORECAST (TimesFM 2.5)."
+      - name: neobank_lookback_months
+        description: "Profondeur en mois (M-2..M-1) pour le suivi de la fuite néobanque."
+      - name: recent_event_lookback_days
+        description: "Fenêtre en jours pour les événements récents affichés à l'ouverture de l'app."
+      - name: regulated_priority_rank
+        description: "Rang de priorité des livrets réglementés dans savings_offers (ACPR Règle n°2)."
+      - name: boosted_offer_code
+        description: "Code de l'offre d'épargne boostée digitale dans savings_offers (ACPR Règle n°3)."

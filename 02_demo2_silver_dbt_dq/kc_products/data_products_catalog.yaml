@@ -68,14 +68,23 @@ data_products:
   # ------------------------------------------------------------------ GOLD
   - id: dp_budget_insight
     layer: gold
-    title: Budget insight — prévision de fin de mois par client
+    title: Budget insight — prévision de fin de mois, dépenses & engagements récurrents par client
     owner: digital_banking
     freshness: daily in BigQuery, real-time adjustment in AlloyDB
     dataset: gold_bank
-    tables: [customer_mobile_insights]
-    sources: [dp_customer_360, dp_customer_timeline]
-    consumers: [mobile_app, adk_agents]
-    contract: 1 ligne par client ; offre d'épargne seulement si reste à vivre >= 100 EUR (ACPR 2024-R-01)
+    tables:
+      - customer_transactions_enriched
+      - customer_monthly_spending
+      - customer_recurring_commitments
+      - customer_card_spending_forecast
+      - customer_mobile_insights
+    sources: [dp_customer_360, dp_customer_timeline, dp_commercial_commitments]
+    consumers: [mobile_app, adk_agents, alloydb_sync]
+    contract: >
+      80 000 clients (1 ligne/client dans customer_mobile_insights) avec prévision TimesFM 2.5 (AI.FORECAST) ;
+      offre d'épargne seulement si reste à vivre >= 100 EUR et <= 70 % du surplus (ACPR 2024-R-01, priorité Livret A / LDDS puis Livret Boost Maison 3,50 % sur 3 mois) ;
+      transactions typées FR + marchands nettoyés + agrégats mensuels + engagements récurrents pour l'agent conversationnel ;
+      témoin CUST00002026 = STRMFLIX +4,00 EUR, CPAM +42,00 EUR, reste à vivre +300,00 EUR, épargne recommandée 200 EUR
 
   - id: dp_certified_pnb
     layer: gold

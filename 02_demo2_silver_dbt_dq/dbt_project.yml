@@ -43,6 +43,12 @@ models:
       commercial_commitments:
         +labels:
           data_product: dp_commercial_commitments
+    gold:
+      +materialized: table
+      +schema: gold_bank
+      budget_insight:
+        +labels:
+          data_product: dp_budget_insight
 
 # Extraction IA des PDF (AI.GENERATE sur les Object Tables).
 # gemini-2.5-flash n'est plus servi au projet : seul gemini-3-flash-preview répond, sur l'endpoint global.
@@ -59,6 +65,28 @@ seeds:
     movement_category_rules:
       +column_types:
         priority: int64
+    movement_categories:
+      +schema: gold_bank
+      +column_types:
+        is_income: bool
+        is_fixed_charge: bool
+        is_variable_card: bool
+        is_recurring_candidate: bool
+        is_subscription: bool
+        is_health_refund: bool
+        is_organic_budget_flow: bool
+        active_months_max: int64
+    budget_insight_rules:
+      +schema: gold_bank
+      +column_types:
+        min_safety_cushion_eur: numeric
+        savings_rounding_step_eur: numeric
+        subscription_hike_min_delta_eur: numeric
+        min_recurring_months: int64
+        min_timesfm_history_months: int64
+        neobank_lookback_months: int64
+        recent_event_lookback_days: int64
+        regulated_priority_rank: int64
     savings_offer_catalog:
       +column_types:
         base_rate_bps: int64

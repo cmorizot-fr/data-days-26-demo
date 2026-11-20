@@ -1,0 +1,2 @@
+rule_set_id,min_safety_cushion_eur,savings_rounding_step_eur,subscription_hike_min_delta_eur,min_recurring_months,min_timesfm_history_months,neobank_lookback_months,recent_event_lookback_days,regulated_priority_rank,boosted_offer_code
+ACPR_2024_R01_MOBILE_V1,100.00,10.00,1.00,2,3,2,14,1,LIV_BOOST_MAISON

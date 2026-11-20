@@ -1,0 +1,19 @@
+category,category_group,category_label_fr,category_group_label_fr,cashflow_role,is_income,is_fixed_charge,is_variable_card,is_recurring_candidate,is_subscription,is_health_refund,is_organic_budget_flow,active_months_max
+SALARY,INCOME,Salaire,Revenus,INCOME,true,false,false,true,false,false,true,12
+PENSION,INCOME,Retraite,Revenus,INCOME,true,false,false,true,false,false,true,12
+HEALTH_REFUND,INCOME,Remboursement santé,Revenus,INCOME,true,false,false,false,false,true,true,12
+EXPENSE_REFUND,INCOME,Remboursement de frais,Revenus,INCOME,true,false,false,false,false,false,true,12
+RENT,FIXED_CHARGES,Loyer,Charges fixes,FIXED_CHARGE,false,true,false,true,false,false,true,12
+ENERGY,FIXED_CHARGES,Énergie,Charges fixes,FIXED_CHARGE,false,true,false,true,false,false,true,12
+TELECOM,FIXED_CHARGES,Télécom & Internet,Charges fixes,FIXED_CHARGE,false,true,false,true,true,false,true,12
+INSURANCE,FIXED_CHARGES,Assurance,Charges fixes,FIXED_CHARGE,false,true,false,true,true,false,true,12
+TAX,FIXED_CHARGES,Impôts,Charges fixes,FIXED_CHARGE,false,true,false,true,false,false,true,10
+STREAMING_SUBSCRIPTION,FIXED_CHARGES,Abonnement streaming,Charges fixes,FIXED_CHARGE,false,true,false,true,true,false,true,12
+GROCERIES,CARD_SPENDING,Courses alimentaires,Dépenses carte,VARIABLE_CARD,false,false,true,false,false,false,true,12
+TRANSPORT,CARD_SPENDING,Transports & Carburant,Dépenses carte,VARIABLE_CARD,false,false,true,false,false,false,true,12
+FOOD_OUT,CARD_SPENDING,Restauration & Boulangerie,Dépenses carte,VARIABLE_CARD,false,false,true,false,false,false,true,12
+SHOPPING,CARD_SPENDING,Shopping & Loisirs,Dépenses carte,VARIABLE_CARD,false,false,true,false,false,false,true,12
+HEALTH_SPENDING,CARD_SPENDING,Santé & Pharmacie,Dépenses carte,VARIABLE_CARD,false,false,true,false,false,false,true,12
+INTERNAL_SAVINGS,SAVINGS,Épargne interne,Épargne,INTERNAL_SAVINGS,false,false,false,false,false,false,false,12
+NEOBANK_BROKER_TRANSFER,EXTERNAL_TRANSFER,Virement néobanque / courtier,Virements externes,NEOBANK_TRANSFER,false,false,false,false,false,false,false,12
+OTHER,OTHER,Autres opérations,Autres,OTHER,false,false,false,false,false,false,true,12

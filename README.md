@@ -21,8 +21,8 @@ La démonstration se déroule en **4 actes** (chacun représenté par un **Works
 | Couche | État |
 | :--- | :--- |
 | **RAW** (`raw_bank`) | ✅ 5 silos chargés et certifiés, cohérents entre eux (0 écart Mainframe ↔ SEPA) |
-| **SILVER** (`silver_bank`) | ✅ `dp_customer_360`, `dp_customer_timeline` (39 tests dbt) · ⏳ `dp_customer_relationship`, `dp_finance_pnb`, `dp_commercial_commitments` |
-| **GOLD** (`gold_bank`) | ⏳ `dp_budget_insight` (Démo 4), `dp_certified_pnb` (Démo 3) |
+| **SILVER** (`silver_bank`) | ✅ 5 / 5 Data Products (`dp_customer_360`, `dp_customer_timeline`, `dp_customer_relationship`, `dp_finance_pnb`, `dp_commercial_commitments`) |
+| **GOLD** (`gold_bank`) | ✅ `dp_budget_insight` (Démo 4, 5 tables dont `AI.FORECAST TimesFM 2.5`, 63/63 checks dbt) · ⏳ `dp_certified_pnb` (Démo 3) |
 
 Détail, chiffres clés et limites connues : **[`docs/DATA_STATUS.md`](./docs/DATA_STATUS.md)**.
 
