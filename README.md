@@ -81,6 +81,26 @@ npm run preview
 
 ---
 
+## 🛒 Déployer en local la Data Marketplace Knowledge Catalog (`kc_marketplace_ui`)
+
+Le dossier [`kc_marketplace_ui/`](./kc_marketplace_ui) héberge la seconde interface web (**[Knowledge Catalog Business User Interface](https://github.com/GoogleCloudPlatform/knowledge-catalog-business-user-interface)**), configurée en local pour le projet `data-days-demo` (`europe-west1`) afin de présenter les **Data Products**, leur **Documentation (`Overview`)**, leurs **Contrats (`refresh-cadence`)**, leurs **Insights Gemini** et leur **Data Lineage** aux utilisateurs métier.
+
+### Lancement en une commande (Backend `:3000` + Frontend `:5174`)
+
+```bash
+./scripts/run_kc_marketplace_local.sh
+```
+
+- **Frontend Data Marketplace** : 👉 **[http://localhost:5174](http://localhost:5174)** *(port `5174` pour cohabiter avec `stage_ui` sur `5173`)*
+- **Backend API Express** : **[http://localhost:3000/api/health](http://localhost:3000/api/health)**
+- **Connexion locale en 1 clic (`Continue with Google`)** : utilise automatiquement votre session `gcloud` / ADC active (`ENABLE_LOCAL_GCLOUD_AUTH=true` dans [`kc_marketplace_ui/backend/.env.test`](./kc_marketplace_ui/backend/.env.test)) sans nécessiter d'identifiant OAuth Client ID.
+- **Alimenter / rafraîchir les onglets `Overview`, `Contracts` et `Insights` Gemini** dans Knowledge Catalog :
+  ```bash
+  uv run python scripts/run_dataplex_documentation_scans.py
+  ```
+
+---
+
 ## 🐍 Génération déterministe des données multi-silos (`seed=2026`)
 
 Tous les générateurs Python s'appuient sur un univers client partagé (`shared_universe.py`, `seed=2026`) et sur un journal unique de la vie client (`customer_ledger.py`), garantissant des invariants financiers vérifiables au centime près d'un silo à l'autre. Architecture et règles de modification : **[`00_data_generator/README.md`](./00_data_generator/README.md)**.
@@ -190,19 +210,21 @@ uv run python 00_data_generator/validate_payments_coherence.py
 
 ## 🥈 Couche SILVER & Data Products (`Démo #2`, `dbt`)
 
-Le projet [`02_demo2_silver_dbt_dq/`](./02_demo2_silver_dbt_dq) construit les Data Products SILVER définis dans [`data_products_catalog.yaml`](./02_demo2_silver_dbt_dq/kc_products/data_products_catalog.yaml) (5 SILVER + 2 GOLD, noms techniques en anglais).
+Le projet [`02_demo2_silver_dbt_dq/`](./02_demo2_silver_dbt_dq) construit les Data Products SILVER conçus à partir du **Plan d'Occupation des Sols (`DSI-EA-POS-2026-v3.2`)** ([`banque_hexagone_pos_2026.png`](./docs/assets/banque_hexagone_pos_2026.png)) et consignés dans [`data_products_catalog.yaml`](./02_demo2_silver_dbt_dq/kc_products/data_products_catalog.yaml) (5 SILVER + 2 GOLD, noms techniques en anglais).
 
 ```bash
 gcloud auth application-default login     # une fois (profiles.yml versionné, sans secret)
 cd 02_demo2_silver_dbt_dq
-uv run dbt build --profiles-dir .         # vues stg_* dans raw_bank, tables dans silver_bank, 39 tests
+uv run dbt build --profiles-dir . --select +path:models/silver   # 104 / 104 tests PASS
 ```
 
 | Data Product | Tables `silver_bank` | État |
 | :--- | :--- | :--- |
-| `dp_customer_360` | `customers` (80 000), `accounts` (95 000) | ✅ |
-| `dp_customer_timeline` | `customer_movements` (~5,5 M), `beneficiaries` (113 936) | ✅ |
-| `dp_customer_relationship` · `dp_finance_pnb` · `dp_commercial_commitments` | `interactions` · `gl_entries` · `promo_contracts` | ⏳ |
+| `dp_customer_360` | `customers` (80 000), `accounts` (95 000), `account_monthly_balances` (1,44 M) | ✅ |
+| `dp_customer_timeline` | `customer_movements` (5,50 M), `beneficiaries` (113 936) | ✅ |
+| `dp_customer_relationship` | `interactions` (320 000, verbatim sous `CLS ALWAYS_NULL`) | ✅ |
+| `dp_finance_pnb` | `gl_entries` (1 200 000 lignes SAP / ALM) | ✅ |
+| `dp_commercial_commitments` | `promo_contracts` (250 PDF = `-14,30 M€`), `promo_contracts_pdf_tracking`, `savings_offers` | ✅ |
 
 Structure, règles de qualité et ajout d'un Data Product : **[`02_demo2_silver_dbt_dq/README.md`](./02_demo2_silver_dbt_dq/README.md)**.
 
@@ -237,12 +259,15 @@ cd 02_demo2_silver_dbt_dq && uv run dbt build --profiles-dir .   # 5. couche SIL
 │   ├── DATA_STATUS.md                        # État des données (RAW / SILVER / GOLD), chiffres clés, limites
 │   ├── DEMO_QUESTIONS_AND_FLOW.md            # Script conversationnel détaillé & skills DAK par étape
 │   ├── MAINFRAME_BIGQUERY_SCHEMA.md          # Dictionnaire des 4 tables BigLake Iceberg & 72 colonnes
-│   └── assets/                               # Schémas d'architecture & supports visuels
-├── stage_ui/                                 # Interface web scénique (React 18 + Vite + Tailwind v4)
+│   └── assets/                               # Schémas d'architecture (incl. banque_hexagone_pos_2026.png)
+├── stage_ui/                                 # Interface web scénique (React 18 + Vite + Tailwind v4, port 5173)
 │   ├── public/
 │   │   ├── demo_config.yaml                  # Configuration YAML éditable à chaud (incl. askQuestions)
 │   │   └── assets/pdf_previews/              # Vignettes haute résolution des PDF découverts (zoom UI)
 │   └── src/                                  # Composants ChatStage, AskQuestionTray, VisualCheckCard
+├── kc_marketplace_ui/                        # Data Marketplace Knowledge Catalog (React + Express, ports 5174 / 3000)
+│   ├── backend/                              # API Express + passerelle locale gcloud / ADC (server.js)
+│   └── src/                                  # Interface utilisateur métier (Data Products, Overview, Insights, Lineage)
 ├── 00_data_generator/                        # Générateurs déterministes multi-silos (seed=2026) — voir README.md
 │   ├── shared_universe.py                    # Univers partagé (80k clients, 95k comptes, 450 agences)
 │   ├── customer_ledger.py                    # Journal partagé de la vie client (source unique Mainframe + SEPA)
@@ -281,6 +306,8 @@ cd 02_demo2_silver_dbt_dq && uv run dbt build --profiles-dir .   # 5. couche SIL
 │   ├── run_demo1_pubsub_bq_cls.sh            # Replay complet Pub/Sub Nested STRUCT -> Audit PII -> CLS
 │   ├── run_demo1_payments_history_unified.sh # Historique paiements BigLake + vues unifiées + certification
 │   ├── run_demo1_aws_crm_iceberg.sh          # CRM AWS en Iceberg sur GCS + certification
+│   ├── run_dataplex_documentation_scans.py   # Scans Gemini DATA_DOCUMENTATION & publication Overview/Contracts/Insights
+│   ├── run_kc_marketplace_local.sh           # Lanceur local Data Marketplace Knowledge Catalog (:5174 + :3000)
 │   ├── load_finance_sap_bq.sh                # Chargement direct de raw_bank.raw_sap_gl_alm
 │   ├── apply_pubsub_cls_policy_tags.py       # Déploiement Taxonomie & 3 Data Policies CLS sur STRUCT
 │   ├── setup_pubsub_queues.sh                # Provisionnement Pub/Sub & BigQuery Subscriptions (--use-table-schema)
