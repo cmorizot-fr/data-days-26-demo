@@ -189,6 +189,7 @@ export interface PromptTurn {
   id: string;
   chipLabel: string;
   prompt: string;
+  promptAttachment?: VisualCheckDocPreview;
   workedDurationLabel: string;
   workGroupSummary: string;
   intermediateMessage: string;

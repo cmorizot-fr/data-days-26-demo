@@ -945,8 +945,37 @@ export const ChatStage: React.FC<ChatStageProps> = ({
                 <div key={turn.id} className="space-y-6 animate-fade-slide-up">
                   {/* 1. User Message Pill Bubble on the right */}
                   <div className="flex justify-end">
-                    <div className="max-w-[78%] rounded-[24px] bg-white px-5 py-3 text-[14.5px] text-[#111318] leading-relaxed shadow-[0_2px_14px_rgba(0,0,0,0.06)]">
-                      {userPromptText}
+                    <div className="max-w-[78%] rounded-[24px] bg-white px-5 py-3 text-[14.5px] text-[#111318] leading-relaxed shadow-[0_2px_14px_rgba(0,0,0,0.06)] space-y-2.5">
+                      {turn.promptAttachment && (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDoc(turn.promptAttachment!)}
+                          title="Cliquer pour agrandir le document joint"
+                          className="w-full text-left rounded-2xl bg-[#F4F6F9] hover:bg-[#ECEFF4] p-2.5 transition-colors cursor-pointer space-y-2"
+                        >
+                          <div className="overflow-hidden rounded-xl bg-white">
+                            <img
+                              src={turn.promptAttachment.imageUrl}
+                              alt={turn.promptAttachment.title}
+                              className="w-full max-h-44 object-contain"
+                            />
+                          </div>
+                          <div className="flex items-center justify-between gap-2 px-1">
+                            <div className="min-w-0">
+                              <div className="text-[12.5px] font-medium text-[#111318] truncate">
+                                {turn.promptAttachment.title}
+                              </div>
+                              <div className="text-[11px] text-[#5F6368] truncate">
+                                {turn.promptAttachment.subtitle}
+                              </div>
+                            </div>
+                            <span className="px-2 py-0.5 rounded-md bg-white text-[#3C4043] font-mono text-[10.5px] font-medium shrink-0">
+                              {turn.promptAttachment.metaBadge}
+                            </span>
+                          </div>
+                        </button>
+                      )}
+                      <div>{userPromptText}</div>
                     </div>
                   </div>
 
@@ -1272,6 +1301,38 @@ export const ChatStage: React.FC<ChatStageProps> = ({
               )}
 
               {/* Clean white input directly on the card */}
+              {(() => {
+                const pendingTurn =
+                  (selectedTurnIndex !== null && scenario.turns[selectedTurnIndex]) ||
+                  nextSuggestedTurn;
+                const att = !activeAskTurn ? pendingTurn?.promptAttachment : undefined;
+                if (!att) return null;
+                return (
+                  <div className="px-1 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewDoc(att)}
+                      title="Cliquer pour inspecter le document joint en plein écran"
+                      className="inline-flex items-center gap-2.5 rounded-xl bg-[#F4F6F9] hover:bg-[#ECEFF4] px-2.5 py-1.5 transition-colors cursor-pointer"
+                    >
+                      <img
+                        src={att.imageUrl}
+                        alt={att.title}
+                        className="w-9 h-6 rounded-md object-cover bg-white shrink-0"
+                      />
+                      <div className="text-left min-w-0">
+                        <div className="text-[12px] font-medium text-[#111318] truncate max-w-[260px]">
+                          {att.title}
+                        </div>
+                        <div className="text-[10.5px] text-[#5F6368] truncate max-w-[260px]">
+                          {att.highlightLabel} · Cliquer pour agrandir
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                );
+              })()}
+
               <div className="px-1 pt-0.5">
                 <textarea
                   ref={textareaRef}
@@ -1369,7 +1430,7 @@ export const ChatStage: React.FC<ChatStageProps> = ({
         </div>
       </div>
 
-      {/* Full-Resolution PDF ObjectRef Lightbox Preview */}
+      {/* Full-Resolution PDF / Diagram Lightbox Preview */}
       {previewDoc && (
         <div
           onClick={() => setPreviewDoc(null)}
@@ -1377,7 +1438,7 @@ export const ChatStage: React.FC<ChatStageProps> = ({
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="max-w-3xl w-full max-h-[92vh] rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col"
+            className="max-w-5xl w-full max-h-[92vh] rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col"
           >
             <div className="flex items-center justify-between gap-4 px-5 py-3.5 border-b border-[#ECEEF2]">
               <div className="min-w-0">

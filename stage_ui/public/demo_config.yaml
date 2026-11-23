@@ -3067,7 +3067,7 @@ workspaces:
             backgroundTasks: []
       - id: d1-step-pdf-discovery
         demoId: demo1
-        shortName: 5. Indexer les contrats PDF des agences
+        shortName: 5. Découverte PDF
         conversationTitle: Découverte automatique des PDF via Knowledge Catalog Cloud Storage Discovery
         projectFolder: 01_demo1_raw_aggregation
         gitBranch: main
@@ -3075,48 +3075,41 @@ workspaces:
         modelLabel: Gemini 4 - Carbon
         turns:
           - id: d1-spdf-t1
-            chipLabel: 1. Préparer la découverte auto des PDF sur GCS (sans DDL)
-            prompt: On a déposé dans gs://data-days-demo-landing/RAW/ nos 250 PDF d'avenants promotionnels d'agences et nos 6 PDF réglementaires pour le CFO. Peux-tu utiliser Cloud Storage Discovery de Knowledge Catalog pour les exposer automatiquement en Object Tables dans BigQuery sans écrire de DDL ?
+            chipLabel: 1. Inspecter les dossiers PDF sur GCS & préparer la découverte
+            prompt: On a déposé dans gs://data-days-demo-landing/RAW/ nos 250 PDF d'avenants promotionnels d'agences et nos 6 PDF réglementaires pour le CFO. Utilise Cloud Storage Discovery de Knowledge Catalog pour les exposer automatiquement en Object Tables dans BigQuery sans écrire de DDL.
             workedDurationLabel: Worked for 5s
-            workGroupSummary: Inspected GCS RAW prefixes & analyzed Knowledge Catalog Cloud Storage Discovery guardrails
-            intermediateMessage: J'ai inspecté le bucket `gs://data-days-demo-landing/RAW/` (`250` PDF sous `PROMO_CONTRACTS_PDF/` et `6` PDF sous `REGULATORY_CFO_PDF/`), la connexion `biglake-gcs-conn` et les règles de publication `Knowledge Catalog Cloud Storage Discovery`.
-            taskFinishedLabel: GCS PDF prefixes & Knowledge Catalog Discovery guardrails analyzed
-            leadConfirmation: "**Knowledge Catalog Cloud Storage Discovery (`DATA_DISCOVERY`)** est idéal ici : il catalogue les PDF dans **Knowledge Catalog** et publie automatiquement l'**Object Table BigLake** sans aucun DDL manuel sur"
+            workGroupSummary: Inspected GCS RAW prefixes & designed Knowledge Catalog Cloud Storage Discovery plan
+            intermediateMessage: J'ai inspecté `gs://data-days-demo-landing/RAW/` (`250` PDF sous `PROMO_CONTRACTS_PDF/` et `6` PDF sous `REGULATORY_CFO_PDF/`), la connexion `biglake-gcs-conn` et les règles de publication **Knowledge Catalog Cloud Storage Discovery**.
+            taskFinishedLabel: GCS PDF prefixes & Knowledge Catalog Discovery plan ready
+            leadConfirmation: "**Knowledge Catalog Cloud Storage Discovery (`DATA_DISCOVERY`)** permet de cataloguer les PDF et de publier automatiquement l'**Object Table BigLake** sans écrire aucun DDL externe sur"
             leadLink:
               text: Knowledge Catalog · Cloud Storage Discovery (data-days-demo)
-              url: https://console.cloud.google.com/dataplex/cloud-storage-discovery?project=data-days-demo
-            sectionHeading: "J'ai détecté 3 points d'attention sur le bucket — confirme-moi ces arbitrages avant lancement :"
+              url: https://console.cloud.google.com/dataplex/govern/cloud-storage-discovery?project=data-days-demo
+            sectionHeading: "Ce que je configure d'office & 2 arbitrages avant lancement :"
             items:
-              - title: "1. Filtrage `includePatterns` strict (ne pas scanner `corebanking/` ni `iceberg/`)"
+              - title: "1. Isolation des 2 dossiers PDF face aux silos binaires voisins sous `RAW/`"
                 bullets:
-                  - "Le préfixe `RAW/` contient aussi les binaires Mainframe `.ebcdic`, le dump corrompu `202610_RUN01.cfonb` (`ABEND_S0C7`), `RAW/AWS/` et `iceberg/`. Je verrouille `--storage-include-patterns` uniquement sur `RAW/PROMO_CONTRACTS_PDF/**` (`250` PDF) et `RAW/REGULATORY_CFO_PDF/**` (`6` PDF) ?"
-              - title: "2. Dataset managé `data_days_demo_landing.raw` + 2 vues gouvernées dans `raw_bank`"
+                  - "Le préfixe `RAW/` contient aussi les binaires Mainframe `corebanking/` (`.ebcdic`, `.cfonb`), `RAW/AWS/` et `RAW/PAYMENTS/`. Je configure d'office les rôles IAM du Service Agent Knowledge Catalog et la connexion `biglake-gcs-conn` (`europe-west1`)."
+              - title: "2. Structuration dans BigQuery au-dessus de `data_days_demo_landing.raw`"
                 chips:
                   - kind: bq
                     label: data_days_demo_landing.raw
                   - kind: bq
                     label: biglake-gcs-conn
                 bullets:
-                  - "Comme les deux sous-dossiers contiennent du `application/pdf` sous `RAW/`, Discovery consolide automatiquement une Object Table BigLake `data_days_demo_landing.raw` (`gs://.../RAW/*`, cache `AUTOMATIC`, colonne `ref` `ObjectRef` native). Pour isoler chaque corpus des objets voisins et garder `raw_bank` comme point d'entrée unique, j'expose par-dessus deux vues zéro-copie `raw_bank.raw_promo_contracts_pdf` (`250` contrats `-14,30 M€`) et `raw_bank.raw_cfo_regulatory_pdf` (`6` normes ANC/ALM/ACPR) ?"
-              - title: "3. Octroi CLI des 3 rôles Service Agent Knowledge Catalog & cadence du scan"
-                bullets:
-                  - "J'attribue en CLI (sans clic manuel en console) `discoveryServiceAgent`, `discoveryPublishingServiceAgent` et `discoveryBigLakePublishingServiceAgent` au Service Agent Knowledge Catalog du projet, je lance un scan immédiat et je programme une passe quotidienne `06:00 Europe/Paris` ?"
+                  - "Discovery consolide automatiquement une Object Table BigLake managée `data_days_demo_landing.raw` (`metadataCacheMode = AUTOMATIC`, colonne `ref` `ObjectRef` native) ; 2 vues légères dans `raw_bank` permettent d'isoler proprement les contrats agences et le corpus réglementaire CFO."
             askQuestions:
               - id: d1-spdf-q1-include
                 question: Quels préfixes GCS inclure dans le scan `Knowledge Catalog Cloud Storage Discovery` ?
                 options:
-                  - "(Recommended) Verrouiller uniquement `RAW/PROMO_CONTRACTS_PDF/**` (`250` PDF) et `RAW/REGULATORY_CFO_PDF/**` (`6` PDF)"
-                  - "Scanner l'intégralité du bucket `gs://data-days-demo-landing/` sans filtre"
+                  - "(Recommended) Cibler uniquement `RAW/PROMO_CONTRACTS_PDF/**` (`250` PDF) et `RAW/REGULATORY_CFO_PDF/**` (`6` PDF)"
+                  - "Scanner tout le préfixe `RAW/` du bucket sans filtre (inclut les binaires Mainframe et Parquet)"
               - id: d1-spdf-q2-views
-                question: Comment exposer l'Object Table publiée automatiquement (`data_days_demo_landing.raw`) ?
+                question: Comment structurer l'exposition BigQuery au-dessus de l'Object Table découverte (`data_days_demo_landing.raw`) ?
                 options:
-                  - "(Recommended) Conserver l'Object Table managée + publier 2 vues filtrées (`raw_promo_contracts_pdf` & `raw_cfo_regulatory_pdf`) dans `raw_bank`"
-                  - "Écrire un `CREATE EXTERNAL TABLE` manuel à la place de Discovery"
-              - id: d1-spdf-q3-iam
-                question: Comment configurer les permissions du Service Agent Knowledge Catalog et la planification ?
-                options:
-                  - "(Recommended) Attribuer les 3 rôles IAM en CLI (`zéro clic console`), lancer un scan immédiat + quotidien `06:00`"
-                  - "Exécuter un scan unique sans planification récurrente"
+                  - "(Recommended) Garder l'Object Table managée sans DDL + créer 2 vues dédiées (`raw_promo_contracts_pdf` & `raw_cfo_regulatory_pdf`) dans `raw_bank`"
+                  - "Laisser une seule Object Table brute mélangeant les 256 PDF agences et réglementaires"
+                  - "Écrire manuellement des `CREATE EXTERNAL TABLE` sans passer par Discovery"
             traces:
               - id: d1-spdf-tr1
                 action: analyzed
@@ -3144,7 +3137,7 @@ workspaces:
                 command: CLOUDSDK_METRICS_ENVIRONMENT="datacloud.antigravity" gcloud storage ls gs://data-days-demo-landing/RAW/ && gcloud storage ls "gs://data-days-demo-landing/RAW/PROMO_CONTRACTS_PDF/*.pdf" | wc -l && gcloud storage ls "gs://data-days-demo-landing/RAW/REGULATORY_CFO_PDF/*.pdf"
                 output:
                   - "gs://data-days-demo-landing/RAW/AWS/                 [Parquet CRM]"
-                  - "gs://data-days-demo-landing/RAW/PAYMENTS/            [JSONL SEPA]"
+                  - "gs://data-days-demo-landing/RAW/PAYMENTS/            [Parquet SEPA]"
                   - "gs://data-days-demo-landing/RAW/PROMO_CONTRACTS_PDF/ [250 PDF — 1.41 MiB]"
                   - "gs://data-days-demo-landing/RAW/REGULATORY_CFO_PDF/  [6 PDF   — 0.03 MiB]"
                   - "gs://data-days-demo-landing/RAW/corebanking/         [25 binary z/OS files — MUST EXCLUDE]"
@@ -3159,142 +3152,39 @@ workspaces:
                 status: completed
             backgroundTasks: []
           - id: d1-spdf-t2
-            chipLabel: 2. Confirmer & exécuter le scan Knowledge Catalog Cloud Storage Discovery
-            prompt: "Oui sur les 3 points : filtre uniquement les 2 dossiers PDF, accorde en CLI les 3 rôles au Service Agent Knowledge Catalog, lance le scan hexagone-raw-pdf-discovery avec biglake-gcs-conn et publie les 2 vues gouvernées dans raw_bank."
+            chipLabel: 2. Lancer la découverte auto & vérifier les Object Tables PDF
+            prompt: "Oui : cible uniquement les 2 dossiers PDF, lance le scan hexagone-raw-pdf-discovery et expose les 2 vues gouvernées dans raw_bank avec un contrôle visuel."
             workedDurationLabel: Worked for 6s
-            workGroupSummary: Configured Knowledge Catalog IAM, ran DataScan hexagone-raw-pdf-discovery & created governed views
-            intermediateMessage: Attribution des 3 rôles IAM au Service Agent Knowledge Catalog, création et exécution du scan `hexagone-raw-pdf-discovery` (`tableType=BIGLAKE`) puis exposition des 2 vues gouvernées dans `raw_bank`.
-            taskFinishedLabel: Knowledge Catalog Cloud Storage Discovery scan & governed views completed
-            leadConfirmation: Le scan **Knowledge Catalog Cloud Storage Discovery** (`hexagone-raw-pdf-discovery`) est `ACTIVE` / `SUCCEEDED`, a publié automatiquement l'**Object Table BigLake** `data_days_demo_landing.raw` et alimenté les 2 vues gouvernées dans
+            workGroupSummary: Ran DataScan hexagone-raw-pdf-discovery, created governed views & visually audited ObjectRef PDFs
+            intermediateMessage: Exécution du scan **Knowledge Catalog Cloud Storage Discovery** `hexagone-raw-pdf-discovery` (`tableType=BIGLAKE`), création des 2 vues dans `raw_bank` et contrôle visuel `ObjectRef` sur les `250 + 6` PDF.
+            taskFinishedLabel: 256 PDFs auto-discovered, cataloged & visually verified in BigQuery (0 Object Table DDL)
+            leadConfirmation: "Le scan **Knowledge Catalog Cloud Storage Discovery** (`hexagone-raw-pdf-discovery`) est `ACTIVE` / `SUCCEEDED`, a publié automatiquement l'**Object Table BigLake** `data_days_demo_landing.raw` et exposé les **256 documents PDF** prêts pour Gemini dans"
             leadLink:
-              text: bigquery.cloud.google.com/dataset/data-days-demo:raw_bank
-              url: https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m4!1m3!3m2!1sdata-days-demo!2sraw_bank
-            sectionHeading: "Ce qui a été provisionné et découvert automatiquement :"
+              text: Knowledge Catalog · Cloud Storage Discovery (data-days-demo)
+              url: https://console.cloud.google.com/dataplex/govern/cloud-storage-discovery?project=data-days-demo
+            sectionHeading: "Ce qui a été provisionné, catalogué et vérifié :"
             items:
-              - title: DataScan `hexagone-raw-pdf-discovery` & Object Table managée sans DDL
+              - title: "1. Object Table BigLake `data_days_demo_landing.raw` publiée sans DDL (`discovery_managed`)"
                 chips:
                   - kind: kc
                     label: hexagone-raw-pdf-discovery
                   - kind: bq
                     label: data_days_demo_landing.raw
                 bullets:
-                  - "Publication automatique en mode `metadata-managed-mode: discovery_managed` avec `metadataCacheMode = AUTOMATIC`, connexion `biglake-gcs-conn` et structure `ref` (`ObjectRef`) prête pour les fonctions multimodales Gemini."
-              - title: Deux vues PDF isolées dans `raw_bank` & script de replay idempotent
+                  - "Cache de métadonnées `AUTOMATIC`, connexion `biglake-gcs-conn` et colonne `ref` (`ObjectRef`) native prête pour `AI.GENERATE_TABLE` en `Démo #2`."
+                  - "Console Knowledge Catalog : [Recherche d'actifs (`dp-search`)](https://console.cloud.google.com/dataplex/dp-search?project=data-days-demo) · [Knowledge Studio](https://console.cloud.google.com/dataplex/studio?project=data-days-demo) · [Object Table `data_days_demo_landing.raw`](https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2sdata_days_demo_landing!3sraw)."
+              - title: "2. Deux vues PDF gouvernées dans `raw_bank` alignées sur le reste du Lakehouse"
                 chips:
                   - kind: sql
                     label: 01_expose_discovered_pdf_views.sql
-                  - kind: yml
-                    label: run_demo1_gcs_pdf_discovery.sh
-                bullets:
-                  - "Création de `raw_bank.raw_promo_contracts_pdf` (`250` contrats agences `PROMO-2026-001` à `250`) et `raw_bank.raw_cfo_regulatory_pdf` (`6` normes ANC / ALM / ILAAP / ACPR), rejouable via `./scripts/run_demo1_gcs_pdf_discovery.sh`."
-            traces:
-              - id: d1-spdf-tr5
-                action: analyzed
-                icon: dak
-                fileName: enforcing-resource-attribution/SKILL.md
-                lineRange: "#L1-138"
-                durationMs: 350
-              - id: d1-spdf-tr6
-                action: ran
-                commandSummary: grant discoveryServiceAgent & BigLake publishing roles to Knowledge Catalog Service Agent
-                durationMs: 600
-                cwd: 01_demo1_raw_aggregation
-                command: CLOUDSDK_METRICS_ENVIRONMENT="datacloud.antigravity" gcloud projects add-iam-policy-binding data-days-demo --member="serviceAccount:service-1051798075322@gcp-sa-dataplex.iam.gserviceaccount.com" --role="roles/dataplex.discoveryPublishingServiceAgent"
-                output:
-                  - "Service Agent Knowledge Catalog: service-1051798075322@gcp-sa-dataplex.iam.gserviceaccount.com"
-                  - "Granted roles/dataplex.discoveryServiceAgent on gs://data-days-demo-landing"
-                  - "Granted roles/dataplex.discoveryPublishingServiceAgent & discoveryBigLakePublishingServiceAgent on data-days-demo"
-              - id: d1-spdf-tr7
-                action: ran
-                commandSummary: Knowledge Catalog Cloud Storage Discovery — create & run hexagone-raw-pdf-discovery
-                durationMs: 950
-                cwd: 01_demo1_raw_aggregation
-                command: CLOUDSDK_METRICS_ENVIRONMENT="datacloud.antigravity" gcloud dataplex datascans create data-discovery hexagone-raw-pdf-discovery --location=europe-west1 --data-source-resource="//storage.googleapis.com/projects/data-days-demo/buckets/data-days-demo-landing" --bigquery-publishing-table-type=BIGLAKE --bigquery-publishing-connection="projects/data-days-demo/locations/europe-west1/connections/biglake-gcs-conn" --storage-include-patterns="RAW/PROMO_CONTRACTS_PDF/**,RAW/REGULATORY_CFO_PDF/**" --labels="datacloud=antigravity,domain=pdf_discovery,env=demo2026"
-                output:
-                  - "Created [projects/data-days-demo/locations/europe-west1/dataScans/hexagone-raw-pdf-discovery] (state=ACTIVE)"
-                  - "Triggered discovery job 3d8fcaba-6466-40eb-bc4c-46aeb49646f6 -> state=SUCCEEDED"
-                  - "Auto-published BigLake Object Table: data-days-demo.data_days_demo_landing.raw (metadataCacheMode=AUTOMATIC)"
-              - id: d1-spdf-tr8
-                action: edited
-                icon: sql
-                fileName: 01_expose_discovered_pdf_views.sql
-                added: 47
-                removed: 0
-                durationMs: 450
-              - id: d1-spdf-tr9
-                action: edited
-                icon: yml
-                fileName: run_demo1_gcs_pdf_discovery.sh
-                added: 221
-                removed: 0
-                durationMs: 450
-            filesChanged:
-              - path: 01_demo1_raw_aggregation/sql/01_expose_discovered_pdf_views.sql
-                language: sql
-                badge: SQL
-                added: 47
-                removed: 0
-                content: |-
-                  CREATE OR REPLACE VIEW `data-days-demo.raw_bank.raw_promo_contracts_pdf` AS
-                  SELECT
-                    REGEXP_EXTRACT(uri, r'/(PROMO-2026-[0-9]{3})_') AS promo_contract_id,
-                    REGEXP_EXTRACT(uri, r'/PROMO-2026-[0-9]{3}_(REG[1-8])_') AS region_code_hint,
-                    uri, content_type, size AS size_bytes, md5_hash, updated AS updated_ts, ref
-                  FROM `data-days-demo.data_days_demo_landing.raw`
-                  WHERE content_type = 'application/pdf'
-                    AND STARTS_WITH(uri, 'gs://data-days-demo-landing/RAW/PROMO_CONTRACTS_PDF/');
-
-                  CREATE OR REPLACE VIEW `data-days-demo.raw_bank.raw_cfo_regulatory_pdf` AS
-                  SELECT
-                    REGEXP_EXTRACT(uri, r'/(REG_[0-9]{2}_[^/]+)\.pdf$') AS doc_code,
-                    uri, content_type, size AS size_bytes, md5_hash, updated AS updated_ts, ref
-                  FROM `data-days-demo.data_days_demo_landing.raw`
-                  WHERE content_type = 'application/pdf'
-                    AND STARTS_WITH(uri, 'gs://data-days-demo-landing/RAW/REGULATORY_CFO_PDF/');
-            terminalLogs:
-              - $ ./scripts/run_demo1_gcs_pdf_discovery.sh
-              - "Created DataScan hexagone-raw-pdf-discovery (europe-west1) — Job 3d8fcaba SUCCEEDED"
-              - "Published BigLake Object Table data-days-demo.data_days_demo_landing.raw"
-              - "Created governed views raw_bank.raw_promo_contracts_pdf (250) & raw_bank.raw_cfo_regulatory_pdf (6)"
-            subagents:
-              - id: sa-d1-spdf-b
-                role: Knowledge Catalog Discovery Engineer
-                skill: enforcing-resource-attribution
-                status: completed
-            backgroundTasks:
-              - id: bg-d1-spdf
-                command: Knowledge Catalog discovery run hexagone-raw-pdf-discovery
-                target: data_days_demo_landing.raw
-                duration: 1m 12s
-          - id: d1-spdf-t3
-            chipLabel: 3. Vérifier l'Object Table & contrôle visuel des PDF (250 + 6)
-            prompt: Vérifie dans BigQuery l'Object Table découverte automatiquement par Knowledge Catalog ainsi que les 2 vues PDF dans raw_bank, leur colonne ObjectRef et affiche un contrôle visuel d'échantillons.
-            workedDurationLabel: Worked for 5s
-            workGroupSummary: Verified Object Table metadata, ran bq-visual-audit chart & sampled PDF ObjectRef previews
-            intermediateMessage: Contrôle SQL des métadonnées `discovery_managed`, appel du skill `bq-visual-audit` (`MCP data-agent-kit/render_chart`) et génération des vignettes d'inspection `ObjectRef` sur les `250 + 6` PDF.
-            taskFinishedLabel: 250 agency promo PDFs & 6 CFO regulatory PDFs visually verified in BigQuery
-            leadConfirmation: Les **256 documents PDF** sont exposés sans copie, contrôlés visuellement et prêts pour `AI.GENERATE_TABLE` (`Démo #2`) et les questions réglementaires CFO (`Démo #3`) dans
-            leadLink:
-              text: bigquery.cloud.google.com/dataset/data-days-demo:raw_bank
-              url: https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m4!1m3!3m2!1sdata-days-demo!2sraw_bank
-            sectionHeading: "Contrôle des objets découverts & alignement inter-silos :"
-            items:
-              - title: "`raw_promo_contracts_pdf` (`250` PDF — jointure native AWS CRM)"
-                chips:
                   - kind: bq
                     label: raw_promo_contracts_pdf
                 bullets:
-                  - "`250` fichiers `application/pdf` (`PROMO-2026-001` à `250`, `1,41 Mo`), alignés à 100 % sur `promo_contract_id` du portefeuille AWS CRM, dont `PROMO-2026-042` sur l'agence `0042` Paris de Lucas Martin."
-              - title: "`raw_cfo_regulatory_pdf` (`6` PDF — doctrine PCEC, ALM, ILAAP & ACPR)"
-                chips:
-                  - kind: bq
-                    label: raw_cfo_regulatory_pdf
-                bullets:
-                  - "`6` textes normatifs (`REG_01` ANC PCEC `2014-07`, `REG_02` TCI ALM `-24,12 M€`, `REG_03` seuil ILAAP `2,00 Md€`, `REG_04` plafond Comité des Risques `9,00 M€`, `REG_05` UE `2024/886` SEPA Instant, `REG_06` ACPR `2024-R-01` épargne mobile)."
+                  - "[Vue `raw_promo_contracts_pdf`](https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2sraw_bank!3sraw_promo_contracts_pdf) (`250` contrats agences `PROMO-2026-001` à `250`, jointure native sur `promo_contract_id` AWS CRM) et [Vue `raw_cfo_regulatory_pdf`](https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2sraw_bank!3sraw_cfo_regulatory_pdf) (`6` normes ANC / ALM / ILAAP / ACPR)."
             visualCheck:
               skillBadge: bq-visual-audit · ObjectRef + render_chart
               title: "Contrôle visuel post-découverte · data_days_demo_landing.raw & vues raw_bank"
-              subtitle: "256 fichiers application/pdf indexés automatiquement par Knowledge Catalog Cloud Storage Discovery (0 DDL écrit)"
+              subtitle: "256 fichiers application/pdf indexés automatiquement par Knowledge Catalog Cloud Storage Discovery (0 DDL Object Table)"
               kpis:
                 - label: Cache BigLake Object Table
                   value: AUTOMATIC
@@ -3302,7 +3192,7 @@ workspaces:
                   tone: positive
                 - label: Avenants Agences PDF
                   value: 250 PDF
-                  sublabel: "-14,30 M€ hors-SAP"
+                  sublabel: "PROMO-2026-001 → 250"
                   tone: blue
                 - label: Corpus Normatif CFO
                   value: 6 PDF
@@ -3312,7 +3202,7 @@ workspaces:
                   value: "250 / 250"
                   sublabel: "100 % promo_contract_id"
                   tone: positive
-              chartTitle: "Répartition visuelle des 256 PDF exposés dans BigQuery par famille documentaire"
+              chartTitle: "Répartition des 256 PDF découverts sur GCS et exposés via ObjectRef"
               bars:
                 - label: "Gabarit A · Avenant Taux Boosté Livret Maison"
                   sublabel: "raw_promo_contracts_pdf"
@@ -3331,21 +3221,21 @@ workspaces:
                   valueLabel: "65 PDF (25,4 %)"
                   pct: 68
                   tone: warning
-                  badge: Hors-bilan SAP
+                  badge: Non structuré
                 - label: "Normes Prudentielles & Comptables CFO"
                   sublabel: "raw_cfo_regulatory_pdf"
                   valueLabel: "6 PDF (2,3 %)"
                   pct: 14
                   tone: positive
                   badge: Doctrine CFO
-              documentsTitle: "Inspection visuelle d'échantillons ObjectRef découverts sur GCS"
+              documentsTitle: "Inspection visuelle d'échantillons ObjectRef découverts sur GCS (cliquer pour agrandir)"
               documents:
                 - id: doc-promo-042
                   title: "PROMO-2026-042 · Paris 0042"
                   subtitle: "Gabarit A · Livret Maison +175 bps"
                   uri: "gs://data-days-demo-landing/RAW/PROMO_CONTRACTS_PDF/PROMO-2026-042_REG1_TAUX_BOOSTE_LIVRET.pdf"
                   metaBadge: PROMO-2026-042
-                  highlightLabel: "90 369,55 € hors-SAP"
+                  highlightLabel: "Agence 0042 · Taux boosté"
                   tone: warning
                   imageUrl: "./assets/pdf_previews/promo_042_taux_booste.png"
                 - id: doc-promo-003
@@ -3366,25 +3256,48 @@ workspaces:
                   imageUrl: "./assets/pdf_previews/promo_001_retention.png"
                 - id: doc-reg-02
                   title: "REG_02 · Charte ALM TCI"
-                  subtitle: "Refinancement €STR 399 bps"
+                  subtitle: "Refinancement interne €STR"
                   uri: "gs://data-days-demo-landing/RAW/REGULATORY_CFO_PDF/REG_02_CHARTE_ALM_TCI_REFINANCEMENT_BCE.pdf"
                   metaBadge: REG_02_ALM
-                  highlightLabel: "Règle TCI -24,12 M€"
+                  highlightLabel: "Méthodologie TCI ALM"
                   tone: positive
                   imageUrl: "./assets/pdf_previews/reg_02_charte_alm_cfo.png"
             traces:
+              - id: d1-spdf-tr5
+                action: analyzed
+                icon: dak
+                fileName: enforcing-resource-attribution/SKILL.md
+                lineRange: "#L1-125"
+                durationMs: 350
+              - id: d1-spdf-tr7
+                action: ran
+                commandSummary: Knowledge Catalog Cloud Storage Discovery — create & run hexagone-raw-pdf-discovery
+                durationMs: 950
+                cwd: 01_demo1_raw_aggregation
+                command: CLOUDSDK_METRICS_ENVIRONMENT="datacloud.antigravity" gcloud dataplex datascans create data-discovery hexagone-raw-pdf-discovery --location=europe-west1 --data-source-resource="//storage.googleapis.com/projects/data-days-demo/buckets/data-days-demo-landing" --bigquery-publishing-table-type=BIGLAKE --bigquery-publishing-connection="projects/data-days-demo/locations/europe-west1/connections/biglake-gcs-conn" --storage-include-patterns="RAW/PROMO_CONTRACTS_PDF/**,RAW/REGULATORY_CFO_PDF/**" --labels="datacloud=antigravity,domain=pdf_discovery,env=demo2026"
+                output:
+                  - "Created [projects/data-days-demo/locations/europe-west1/dataScans/hexagone-raw-pdf-discovery] (state=ACTIVE)"
+                  - "Triggered discovery job 3d8fcaba-6466-40eb-bc4c-46aeb49646f6 -> state=SUCCEEDED"
+                  - "Auto-published BigLake Object Table: data-days-demo.data_days_demo_landing.raw (metadataCacheMode=AUTOMATIC)"
+              - id: d1-spdf-tr8
+                action: edited
+                icon: sql
+                fileName: 01_expose_discovered_pdf_views.sql
+                added: 48
+                removed: 0
+                durationMs: 450
               - id: d1-spdf-tr10
                 action: ran
-                commandSummary: bq query — verify discovery_managed Object Table & 250 + 6 governed PDF views
+                commandSummary: bq query — publish governed PDF views & verify 250 + 6 ObjectRef rows
                 durationMs: 600
                 cwd: 01_demo1_raw_aggregation
-                command: bq --location=europe-west1 query --project_id=data-days-demo --use_legacy_sql=false --label datacloud:antigravity "SELECT check_name, target, observed_rows, note FROM ..."
+                command: sed -e 's/__PROJECT_ID__/data-days-demo/g' -e 's/__DATASET_RAW__/raw_bank/g' -e 's/__DISCOVERED_DATASET__/data_days_demo_landing/g' -e 's/__BUCKET_LANDING__/data-days-demo-landing/g' sql/01_expose_discovered_pdf_views.sql | bq --location=europe-west1 query --use_legacy_sql=false --label datacloud:antigravity
                 output:
                   - "+---------------------------+----------------------------------+---------------+------------------------+"
                   - "| check_name                | target                           | observed_rows | note                   |"
                   - "+---------------------------+----------------------------------+---------------+------------------------+"
                   - "| 1_object_table_discovered | data_days_demo_landing.raw       | 287           | OBJECT_TABLE (BIGLAKE) |"
-                  - "| 2_promo_contracts_view    | raw_bank.raw_promo_contracts_pdf | 250           | 250 PDF (-14.30 M EUR) |"
+                  - "| 2_promo_contracts_view    | raw_bank.raw_promo_contracts_pdf | 250           | 250 PDF AGENCES        |"
                   - "| 3_cfo_regulatory_view     | raw_bank.raw_cfo_regulatory_pdf  | 6             | 6 PDF (ANC/ALM/ACPR)   |"
                   - "+---------------------------+----------------------------------+---------------+------------------------+"
               - id: d1-spdf-tr11
@@ -3400,21 +3313,79 @@ workspaces:
                 cwd: 01_demo1_raw_aggregation
                 command: mcp call data-agent-kit render_chart --spec '{"title":{"text":"Discovered PDF Object Tables (250 + 6)"}}'
                 output:
-                  - "Rendered inline SVG breakdown chart (95 Type A, 90 Type B, 65 Type C, 6 CFO Regulatory)"
+                  - "Rendered inline breakdown chart (95 Type A, 90 Type B, 65 Type C, 6 CFO Regulatory)"
                   - "Sampled 4 ObjectRef signed previews: PROMO-2026-042, PROMO-2026-003, PROMO-2026-001, REG_02_CHARTE_ALM"
-            filesChanged: []
+            filesChanged:
+              - path: 01_demo1_raw_aggregation/sql/01_expose_discovered_pdf_views.sql
+                language: sql
+                badge: SQL
+                added: 48
+                removed: 0
+                content: |-
+                  -- ==============================================================================
+                  -- Paris Data Summit 2026 — Démo #1 (Banque Hexagone)
+                  -- Exposition gouvernée dans `raw_bank` des deux corpus PDF découverts
+                  -- automatiquement par Knowledge Catalog Cloud Storage Discovery (`__DISCOVERED_DATASET__.raw`).
+                  --
+                  -- Pourquoi ces 2 vues gouvernées ?
+                  --   1. Knowledge Catalog Cloud Storage Discovery crée automatiquement l'Object Table BigLake
+                  --      managée `__PROJECT_ID__.__DISCOVERED_DATASET__.raw` (`metadataCacheMode=AUTOMATIC`,
+                  --      colonne `ref` ObjectRef native) sur le préfixe commun `gs://__BUCKET_LANDING__/RAW/*`.
+                  --   2. Le wildcard `*` d'une Object Table BigQuery remontant tous les objets sous `RAW/`
+                  --      (y compris les binaires `.ebcdic`, `.cfonb` et `.parquet`), ces deux vues filtrent
+                  --      strictement `content_type = 'application/pdf'` par sous-dossier métier afin
+                  --      d'isoler les 250 avenants agences et les 6 normes CFO/ACPR pour
+                  --      `dbt` (`AI.GENERATE_TABLE`) et `Knowledge Catalog`.
+                  -- ==============================================================================
+
+                  CREATE OR REPLACE VIEW `__PROJECT_ID__.__DATASET_RAW__.raw_promo_contracts_pdf`
+                  OPTIONS (
+                    description = "Vue gouvernée zéro-copie sur les 250 contrats et avenants promotionnels PDF d'agences, découverte automatiquement par Knowledge Catalog Cloud Storage Discovery (__DISCOVERED_DATASET__.raw) avec colonne ObjectRef `ref` prête pour AI.GENERATE_TABLE."
+                  ) AS
+                  SELECT
+                    REGEXP_EXTRACT(uri, r'/(PROMO-2026-[0-9]{3})_') AS promo_contract_id,
+                    REGEXP_EXTRACT(uri, r'/PROMO-2026-[0-9]{3}_(REG[1-8])_') AS region_code_hint,
+                    uri,
+                    content_type,
+                    size AS size_bytes,
+                    md5_hash,
+                    updated AS updated_ts,
+                    ref
+                  FROM `__PROJECT_ID__.__DISCOVERED_DATASET__.raw`
+                  WHERE content_type = 'application/pdf'
+                    AND STARTS_WITH(uri, 'gs://__BUCKET_LANDING__/RAW/PROMO_CONTRACTS_PDF/');
+
+                  CREATE OR REPLACE VIEW `__PROJECT_ID__.__DATASET_RAW__.raw_cfo_regulatory_pdf`
+                  OPTIONS (
+                    description = "Vue gouvernée zéro-copie sur les 6 documents réglementaires, comptables et prudentiels CFO (ANC PCEC 2014-07, Charte ALM TCI, ILAAP LCR ACPR, PV Comité des Risques, SEPA Instant UE 2024/886, Recommandation ACPR 2024-R-01) découverts par Knowledge Catalog."
+                  ) AS
+                  SELECT
+                    REGEXP_EXTRACT(uri, r'/(REG_[0-9]{2}_[^/]+)\.pdf$') AS doc_code,
+                    uri,
+                    content_type,
+                    size AS size_bytes,
+                    md5_hash,
+                    updated AS updated_ts,
+                    ref
+                  FROM `__PROJECT_ID__.__DISCOVERED_DATASET__.raw`
+                  WHERE content_type = 'application/pdf'
+                    AND STARTS_WITH(uri, 'gs://__BUCKET_LANDING__/RAW/REGULATORY_CFO_PDF/');
             terminalLogs:
-              - $ bq --location=europe-west1 query --use_legacy_sql=false --label datacloud:antigravity "SELECT ... FROM raw_bank.raw_*_pdf"
+              - $ ./scripts/run_demo1_gcs_pdf_discovery.sh
+              - "DataScan hexagone-raw-pdf-discovery (europe-west1) — state=ACTIVE / SUCCEEDED"
               - "data_days_demo_landing.raw       = OBJECT_TABLE (discovery_managed, cache=AUTOMATIC) [OK]"
               - "raw_bank.raw_promo_contracts_pdf = 250 PDF (ObjectRef ref ready for AI.GENERATE_TABLE) [OK]"
               - "raw_bank.raw_cfo_regulatory_pdf  = 6 PDF   (ANC / ALM / ILAAP / ACPR norms ready)      [OK]"
-              - $ mcp call data-agent-kit render_chart [bq-visual-audit + 4 PDF thumbnails ready]
             subagents:
-              - id: sa-d1-spdf-c
-                role: Multimodal Catalog Auditor
+              - id: sa-d1-spdf-b
+                role: Knowledge Catalog Discovery Engineer
                 skill: discover-assets
                 status: completed
-            backgroundTasks: []
+            backgroundTasks:
+              - id: bg-d1-spdf
+                command: Knowledge Catalog discovery run hexagone-raw-pdf-discovery
+                target: data_days_demo_landing.raw
+                duration: 1m 12s
             artifact:
               id: art-d1-pdf
               title: Découverte Automatique GCS PDF · Knowledge Catalog
@@ -3428,13 +3399,13 @@ workspaces:
                   - label: Corpus Réglementaire CFO
                     value: 6 normes
                     tone: positive
-                  - label: DDL externe écrit à la main
+                  - label: DDL Object Table écrit
                     value: 0 ligne
                     tone: positive
                 bullets:
                   - "Scan Knowledge Catalog hexagone-raw-pdf-discovery actif avec cache de métadonnées BigLake AUTOMATIC."
-                  - "250 avenants agences (-14,30 M€ hors-SAP) prêts pour extraction structurée dbt AI.GENERATE_TABLE (Demo 2)."
-                  - "6 normes prudentielles (seuil ILAAP 2,00 Md€, plafond 9,00 M€, ACPR 2024-R-01) prêtes pour le CFO (Demo 3 & 4)."
+                  - "250 avenants agences non structurés prêts pour extraction multimodale dbt AI.GENERATE_TABLE (Démo #2)."
+                  - "6 normes prudentielles (ANC PCEC, ALM, ILAAP, ACPR) exposées sans copie pour le CFO (Démo #3)."
       - id: d1-step4
         demoId: demo1
         shortName: 6. Cataloguer les sources pour l'équipe Data
