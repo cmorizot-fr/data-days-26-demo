@@ -32,48 +32,42 @@
   1. **MCP `data-agent-kit` -> `get_active_gcp_connection`** : récupère `project_id` (`data-days-demo`) et `region` (`europe-west1`).
   2. **Skill `discover-assets` & vérification du bucket existant** : confirme que le bucket `gs://data-days-demo-landing/raw/` existe déjà (aucune demande de création de bucket).
   3. **Inspection du serveur de fichiers local sur le mois passé (`202610`)** (`00_data_generator/output/corebanking/`) : lit `MANIFEST_Z_OS_DROP.ctl`, repère les binaires `.ebcdic` (`RECFM=FB`, `CP500 + COMP-3`), les Copybooks `.cpy`, et **l'incident sur octobre 2026** (`RUN01` en `ABEND_S0C7 RC=0012` vs `RUN02_RERUN` en `RC=0000`).
-* **Questions posées par `AGY` sur scène :**
-  1. **Incident sur le mois passé (`202610` : `ABEND` vs `RERUN`)** : *« Sur le serveur local, octobre 2026 comporte deux fichiers : `CFONB120_MVTS_202610_RUN01.cfonb` interrompu en crash (`STATUS=ABEND_S0C7`, `RC=0012`, `32 Mo`) et `CFONB120_MVTS_202610_RUN02_RERUN.cfonb` complet (`STATUS=OK`, `RC=0000`, `109 Mo`). On transfère les deux dans la zone `RAW` pour conserver une trace d'audit fidèle au CFT Mainframe (et laisser Spark filtrer sur `RC=0000`), ou j'exclus `RUN01` dès la copie ? »*
-  2. **Référentiels maîtres `.ebcdic` & Copybooks COBOL `.cpy` associés** : *« Pour permettre le décodage aval vers BigLake Iceberg, j'inclus également les 2 référentiels maîtres binaires (`CBK_CUSTOMERS_REF_20261112.ebcdic`, `CBK_ACCOUNTS_MSTR_20261112.ebcdic`), le bordereau `MANIFEST_Z_OS_DROP.ctl` et les 3 schémas `copybooks/*.cpy` ? »*
-  3. **Chemin cible dans le bucket existant & intégrité binaire stricte** : *« Je dépose le lot sous `gs://data-days-demo-landing/raw/corebanking/202610/` via `gcloud storage cp` parallélisé sans transcodage texte (indispensable pour préserver les octets `COMP-3`), avec attribution `datacloud.antigravity` ? »*
+* **Question d'arbitrage posée par `AGY` sur scène (1 question unique) :**
+  1. **Incident sur le mois passé (`202610` : `ABEND` vs `RERUN`)** : *« Sur le serveur local, octobre 2026 comporte deux fichiers : `CFONB120_MVTS_202610_RUN01.cfonb` interrompu en crash (`STATUS=ABEND_S0C7`, `RC=0012`, `32 Mo`) et `CFONB120_MVTS_202610_RUN02_RERUN.cfonb` complet (`STATUS=OK`, `RC=0000`, `109 Mo`). On conserve les deux en zone `RAW` pour l'auditabilité CFT (et filtrer sur `RC=0000` au chargement) ou j'exclus `RUN01` dès la copie ? »*
+  *(Les 2 référentiels maîtres `.ebcdic`, le bordereau `MANIFEST_Z_OS_DROP.ctl`, les 3 Copybooks `copybooks/*.cpy` et la copie binaire stricte sans transcodage vers `gs://data-days-demo-landing/raw/corebanking/202610/` avec attribution `datacloud.antigravity` sont retenus et annoncés d'office.)*
 * **Chip 2 (Confirmation intervenant) :**
-  > `Oui : transfère les deux fichiers d'octobre dans la zone RAW pour l'auditabilité CFT, inclus aussi les maîtres .ebcdic, le manifeste .ctl et les copybooks .cpy, en copie binaire stricte vers gs://data-days-demo-landing/raw/corebanking/202610/.`
+  > `Oui : transfère les deux fichiers d'octobre dans la zone RAW pour conserver l'auditabilité CFT, et lance la copie binaire complète vers gs://data-days-demo-landing/raw/corebanking/202610/.`
+  * **Résultat & transition proactive vers l'Étape 2 :** après copie et contrôle `CRC32C` des 8 objets, `AGY` préconise **Managed Service for Apache Spark (Serverless)** pour le parsing aval (car `bq load` ne sait pas lire un flux binaire fixe `RECFM=FB` `EBCDIC CP500 + COMP-3` sans `\n`, ni filtrer sur le trailer `99CFT_TRL` `RC=0000` et recoller par position les lignes `05` sur leur `04` parent).
 
 ---
 
-### Conversation Étape 2 — Décodage Mainframe via Dataproc Serverless Spark & Documentation BigLake Iceberg (`raw_bank`)
+### Conversation Étape 2 — Décodage Mainframe via Dataproc Serverless Spark & BigLake Iceberg (`raw_bank`)
 
-* **Skills `DAK` & outils mobilisés :** `discover-assets`, `gcp-data-pipelines`, `gcp-spark` (`biglake_iceberg.md`, `read_write_data.md`, `gcloud_dataproc.md`), `enforcing-resource-attribution` (`CLOUDSDK_METRICS_ENVIRONMENT="... datacloud.antigravity"`, `--label datacloud:antigravity`).
-* **Chip 1 — Diagnostic des Copybooks & choix du moteur :**
-  > `Explore les fichiers Mainframe déposés dans gs://data-days-demo-landing/RAW/corebanking/ et leurs copybooks .cpy. Peut-on les charger directement dans BigQuery et les documenter, ou faut-il passer par un job Spark Serverless ?`
-  * **Raisonnement d'`AGY` :** explique pourquoi `bq load` natif échoue (flux binaire fixe `RECFM=FB` sans `\n`, `EBCDIC CP500 + COMP-3` signé sur 2/3/8 octets, mix `.cfonb.gz` / `.cfonb`, trailer `99CFT_TRL` avec `202610_RUN01.cfonb` en `ABEND_S0C7` `RC=0012`, et rattachement positionnel `04 + 05` sans clé répétée) et pose les **3 questions d'arbitrage** :
-    1. **Filtrage CFT (`99CFT_TRL`)** : rejet automatique de tout fichier où `RC != 0000` (écartant `202610_RUN01.cfonb`) + contrôle de `DATA_RECORDS` et `CHECKSUM_MVTS_04` ?
-    2. **Architecture BigLake Managed Iceberg pré-documentée** : création de la connexion Cloud Resource `biglake-gcs-conn` (`europe-west1`) et pré-création documentée des 4 tables `ICEBERG` (`cbk_customers_ref`, `cbk_accounts_master`, `cbk_cfonb_balances`, `cbk_cfonb_movements` avec rattachement `04+05`) ?
-    3. **Gouvernance `RAW` sans nettoyage silencieux** : conservation intacte des anomalies métier (`66 000` dates `00000000`/`99999999`, `12,08 %` de guichets décalés `'42   '`, `650` orphelins AWS) pour `dbt` en `Démo #2`, et exécution sur **Dataproc Serverless runtime `2.2`** ?
-* **Chip 2 — Connexion BigLake & DDL documenté des 4 tables Iceberg (`72` colonnes) :**
-  > `Oui sur les 3 points ! Avant de lancer le batch Spark, crée la connexion BigLake et initialise dans raw_bank les 4 tables BigLake Managed Iceberg en documentant complètement le dataset, les tables et les 72 colonnes.`
-  * Création de `biglake-gcs-conn` avec `roles/storage.admin` (`storage.buckets.get` requis par Storage Write API sur tables Iceberg) + `roles/biglake.admin`, exécution de [`01_demo1_raw_aggregation/sql/00_create_documented_mainframe_iceberg_tables.sql`](../01_demo1_raw_aggregation/sql/00_create_documented_mainframe_iceberg_tables.sql) et génération de [`docs/MAINFRAME_BIGQUERY_SCHEMA.md`](./MAINFRAME_BIGQUERY_SCHEMA.md).
-* **Chip 3 — Batch PySpark Dataproc Serverless & script de replay :**
-  > `Parfait ! Génère maintenant le job PySpark Dataproc Serverless pour décoder l'EBCDIC/COMP-3 et les CFONB multi-lignes vers ces 4 tables Iceberg, lance le batch sur europe-west1 et crée un script pour rejouer tout cela.`
-  * Génération de [`01_demo1_raw_aggregation/spark/parse_corebanking_iceberg.py`](../01_demo1_raw_aggregation/spark/parse_corebanking_iceberg.py) (`sc.binaryRecords`, `unpack_comp3`, `sc.binaryFiles` parallélisé, écriture Storage Write API `writeMethod="direct"` `mode("append")`) et du script de replay idempotent [`scripts/run_demo1_mainframe_spark_iceberg.sh`](../scripts/run_demo1_mainframe_spark_iceberg.sh).
-* **Chip 4 — Certification SQL post-chargement (`INFORMATION_SCHEMA` & fuite `-2,42 Md€`) :**
-  > `Vérifie dans BigQuery que les 4 tables Iceberg ont les bons volumes, que les 72 colonnes sont bien documentées dans INFORMATION_SCHEMA et que la fuite vers les néobanques ressort grâce aux lignes 05.`
-  * Vérification des **7 invariants** : `79 350` clients, `94 350` comptes, `2 875 062` soldes `01`/`07`, `5 500 000` mouvements `04+05`, **`72 / 72` colonnes documentées (`100 %`)**, `66 000` dates `00000000`/`99999999` préservées en `RAW` et **`-2 420 000 000,00 €`** de virements sortants `0810` vers les BIC néobanques extraits des lignes `05`.
+* **Skills `DAK` & outils mobilisés :** `discover-assets`, `gcp-data-pipelines`, `gcp-spark` (`biglake_iceberg.md`, `read_write_data.md`, `gcloud_dataproc.md`), `enforcing-resource-attribution`, `bq-visual-audit`.
+* **Chip 1 — Analyse des Copybooks `.cpy` & 2 questions d'arbitrage :**
+  > `Parfait, suis ta recommandation : analyse les Copybooks .cpy dans gs://data-days-demo-landing/RAW/corebanking/ et prépare le chargement via Spark Serverless vers BigQuery (raw_bank) en documentant le schéma.`
+  * **Acté d'office :** rejet automatique de `202610_RUN01.cfonb` (`RC=0012`) via `99CFT_TRL` + contrôle `CHECKSUM_MVTS_04` (décision de l'Étape 1) et rattachement positionnel `CFONB 04 + 05`.
+  * **2 questions d'arbitrage :**
+    1. **Cible de stockage BigLake Managed Iceberg** : pré-création et documentation de 4 tables `ICEBERG` (`72` colonnes) via `biglake-gcs-conn` vs tables BigQuery natives non-Iceberg ?
+    2. **Gouvernance `RAW` sans nettoyage silencieux** : conservation intacte des anomalies métier (`66 000` dates `00000000`/`99999999`, `12,08 %` guichets `'42   '`, `650` orphelins AWS) pour `dbt` en `Démo #2` + exécution sur **Dataproc Serverless runtime `2.2`** ?
+* **Chip 2 — Exécution bout en bout (DDL + Batch PySpark Serverless + Certification & `bq-visual-audit`) :**
+  > `Oui sur les 2 points : crée les 4 tables BigLake Managed Iceberg documentées (72 colonnes), lance le batch PySpark Serverless en préservant les anomalies RAW, puis vérifie le chargement dans BigQuery.`
+  * Déroule visiblement le DDL documenté (`00_create_documented_mainframe_iceberg_tables.sql`), le **démarrage du runtime Dataproc Serverless `2.2` (`cold start` + allocation executors)**, le batch PySpark (`parse_corebanking_iceberg.py`) et la certification SQL + contrôle visuel (`79 350` clients, `94 350` comptes, `2 875 062` soldes, `5 500 000` mouvements `04+05`, `72/72` colonnes, `66 000` dates `00000000` préservées, **`-2 420 000 000,00 €`** de fuite 90j).
+  * **Déclenchement réel sans impact (`--dry-run`) :** à l'envoi du Chip 2, le middleware Vite (`POST /api/trigger-spark-dryrun`) soumet réellement un batch **Dataproc Serverless PySpark (`--async --dry-run`)** sur `data-days-demo` (`europe-west1`) qui décode les vrais fichiers GCS sans aucune écriture BigQuery/Iceberg, et met à jour le lien Console GCP vers ce batch en direct.
 
 ---
 
 ### Conversation Étape 3 — Fédération AWS S3 (`Borderless Lakehouse` / Catalogue `AWS Glue`)
 * Exposition sans copie des tables Iceberg `AWS Glue / S3` (`federate-lakehouse-catalog`).
 
-### Conversation Étape 4 — Streaming Temps Réel `Pub/Sub` → `BigQuery` (`100 % Nested STRUCT`) & Sécurité `CLS` (`IBAN` / `PII`)
+### Conversation Étape 4 (`4. Flux Paiements`) — Streaming Temps Réel `Pub/Sub` → `BigQuery` (`100 % Nested STRUCT`) & Sécurité `CLS` (`IBAN` / `PII`)
 * **Skills `DAK` mobilisés :** `discover-assets`, `gcp-data-pipelines`, `enforcing-resource-attribution`, `bq-visual-audit`.
-* **Chip 1 — Découverte Pub/Sub & 3 questions d'arbitrage interactives (`askQuestions` `1/3..3/3`) :**
-  1. **Schéma `100 % Nested STRUCT` (`--use-table-schema`)** vs `data JSON` opaque (interdisant le CLS par sous-champ).
-  2. **Préservation du bruit `RAW` (`~3,4 %` retries `end_to_end_id`, `~8,1 %` `RJCT`/`PDNG`)** + routage vers `sepa-payments-dlq-topic`.
-  3. **Isolement de `sepa-payments-alloydb-ops-sub`** réservée au temps réel `< 15 ms` vers AlloyDB (`Démo #4`).
-* **Chip 2 — Déploiement sans serveur & `bq-visual-audit` :** création de [`02_create_documented_pubsub_nested_tables.sql`](../01_demo1_raw_aggregation/sql/02_create_documented_pubsub_nested_tables.sql) (`55/55` chemins `STRUCT` documentés) via [`setup_pubsub_queues.sh`](../scripts/setup_pubsub_queues.sh), ingestion temps réel (`503` paiements + `79` ajouts IBAN, `0` DLQ).
-* **Chip 3 — Audit hybride `PII` in-database (`0` donnée brute extraite) & 3 questions `CLS` (`askQuestions` `1/3..3/3`) :** exécution de [`03_audit_pii_nested_pubsub.sql`](../01_demo1_raw_aggregation/sql/03_audit_pii_nested_pubsub.sql) détectant **10 sous-champs `STRUCT` sensibles** (`4` IBAN, `4` noms/IP, et **`12,9 %` de motifs santé/logement RGPD Art. 9** dans `remittance.unstructured_info` comme `CPAM SANTE`).
-* **Chip 4 — Application chirurgicale des Policy Tags `CLS` :** déploiement de la taxonomie `hexagone-cls-payments-pii` et des 3 Data Policies (`LAST_FOUR_CHARACTERS`, `SHA256`, `ALWAYS_NULL`) via [`apply_pubsub_cls_policy_tags.py`](../scripts/apply_pubsub_cls_policy_tags.py) et script de replay [`run_demo1_pubsub_bq_cls.sh`](../scripts/run_demo1_pubsub_bq_cls.sh).
+* **Chip 1 — Découverte Pub/Sub & 1 question d'architecture (`askQuestions` unique) :**
+  * **Acté d'office :** conservation du bruit `RAW` (`~3,4 %` retries `end_to_end_id`, `~8,1 %` `RJCT`/`PDNG`) + `sepa-payments-dlq-topic`, et maintien intact de `sepa-payments-alloydb-ops-sub` (`< 15 ms` Démo #4).
+  * **Question unique :** schéma **`100 % Nested STRUCT` (`--use-table-schema`)** vs `data JSON` opaque (interdisant le CLS par sous-champ) vs pipeline Dataflow.
+* **Chip 2 — Déploiement sans serveur :** création de [`02_create_documented_pubsub_nested_tables.sql`](../01_demo1_raw_aggregation/sql/02_create_documented_pubsub_nested_tables.sql) (`55/55` chemins `STRUCT` documentés) via [`setup_pubsub_queues.sh`](../scripts/setup_pubsub_queues.sh), ingestion temps réel (`503` paiements + `79` ajouts IBAN, `0` DLQ).
+* **Chip 3 — Audit hybride `PII` in-database (`0` donnée brute extraite) & 1 question `CLS` (`askQuestions` unique) :** exécution de [`03_audit_pii_nested_pubsub.sql`](../01_demo1_raw_aggregation/sql/03_audit_pii_nested_pubsub.sql) détectant **10 sous-champs `STRUCT` sensibles** (`4` IBAN, `4` noms/IP, et **`12,9 %` de motifs santé/logement RGPD Art. 9** dans `remittance.unstructured_info` comme `CPAM SANTE`) → arbitrage unique sur le masquage gradué (`LAST_FOUR_CHARACTERS`, `SHA256`, `ALWAYS_NULL`) en laissant `agent_bic` en clair.
+* **Chip 4 — Application chirurgicale des Policy Tags `CLS` & `bq-visual-audit` :** déploiement de la taxonomie `hexagone-cls-payments-pii` et des 3 Data Policies via [`apply_pubsub_cls_policy_tags.py`](../scripts/apply_pubsub_cls_policy_tags.py) + contrôle visuel final de couverture `CLS`.
 
 ### Conversation Étape 5 — Découverte automatique GCS PDF via `Dataplex Cloud Storage Discovery` (`Object Tables`)
 * **Skills `DAK` mobilisés :** `discover-assets`, `gcp-data-pipelines`, `accidental-data-loss-prevention`, `enforcing-resource-attribution`.

@@ -123,11 +123,66 @@ export interface VisualCheckBlock {
   footerNote?: string;
 }
 
+export interface PubSubPayloadField {
+  key: string;
+  value: string;
+  bqType: string;
+  tag?: string;
+  tone?: VisualTone;
+}
+
+export interface PubSubPayloadGroup {
+  structName: string;
+  subtitle?: string;
+  fields: PubSubPayloadField[];
+}
+
+export interface PubSubSampleMessage {
+  id: string;
+  label: string;
+  badge: string;
+  tone?: VisualTone;
+  publishTime: string;
+  rawJson: string;
+  groups: PubSubPayloadGroup[];
+}
+
+export interface PubSubTopicQueueSpec {
+  id: string;
+  topicName: string;
+  roleLabel: string;
+  rateLabel: string;
+  consumersLabel: string;
+  structCountLabel: string;
+  tone?: VisualTone;
+  samples: PubSubSampleMessage[];
+}
+
+export interface PubSubInspectorBlock {
+  title: string;
+  subtitle?: string;
+  dlqTopicName?: string;
+  preservedConsumerLabel?: string;
+  topics: PubSubTopicQueueSpec[];
+  footerNote?: string;
+}
+
 export interface AskQuestionItem {
   id: string;
   question: string;
   isMultiSelect?: boolean;
   options: string[];
+}
+
+export interface InlineCodeBlock {
+  label: string;
+  language: string;
+  code: string;
+  resultTable?: string[];
+  actionLink?: {
+    label: string;
+    url: string;
+  };
 }
 
 export interface PromptTurn {
@@ -145,6 +200,8 @@ export interface PromptTurn {
   };
   sectionHeading: string;
   items: EditorialSectionItem[];
+  codeBlock?: InlineCodeBlock;
+  pubsubInspector?: PubSubInspectorBlock;
   visualCheck?: VisualCheckBlock;
   askQuestions?: AskQuestionItem[];
   traces: ExecutionStepTrace[];

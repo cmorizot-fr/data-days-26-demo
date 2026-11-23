@@ -455,6 +455,11 @@ def parse_args() -> argparse.Namespace:
         default="direct",
         help="Méthode d'écriture du connecteur Spark BigQuery (défaut: direct = Storage Write API)",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Exécute le décodage PySpark distribué complet et valide les volumes sans écrire dans BigQuery/Iceberg",
+    )
     return parser.parse_args()
 
 
@@ -464,11 +469,12 @@ def main() -> None:
     ingest_ts = datetime.now(timezone.utc)
 
     logger.info(
-        "Démarrage du job Dataproc Serverless : source=%s -> cible=%s.%s.* (writeMethod=%s)",
+        "Démarrage du job Dataproc Serverless : source=%s -> cible=%s.%s.* (writeMethod=%s, dryRun=%s)",
         raw_base_uri,
         args.project_id,
         args.dataset,
         args.write_method,
+        args.dry_run,
     )
 
     spark = (
@@ -481,6 +487,23 @@ def main() -> None:
         "mapreduce.input.fileinputformat.split.maxsize", "33554432"
     )
 
+    def emit_or_validate(df: DataFrame, table_name: str) -> None:
+        full_table_id = f"{args.project_id}.{args.dataset}.{table_name}"
+        if args.dry_run:
+            row_count = df.count()
+            logger.info(
+                "[DRY-RUN] Décodage validé sans écriture pour %s : %d lignes (0 mutation BigQuery/Iceberg).",
+                full_table_id,
+                row_count,
+            )
+            return
+        write_to_biglake_iceberg_table(
+            df=df,
+            full_table_id=full_table_id,
+            write_method=args.write_method,
+            temp_gcs_bucket=args.temp_gcs_bucket,
+        )
+
     # 1. Référentiel Clients EBCDIC CP500 + COMP-3 (RECFM=FB, LRECL=140)
     customers_uri = f"{raw_base_uri}/CBK_CUSTOMERS_REF_20261112.ebcdic"
     logger.info("[1/4] Décodage binaire RECFM=FB (LRECL=140) : %s", customers_uri)
@@ -488,12 +511,7 @@ def main() -> None:
         lambda part: decode_customer_partition(part, customers_uri, ingest_ts)
     )
     customers_df = spark.createDataFrame(customers_rdd, schema=CUSTOMERS_SCHEMA)
-    write_to_biglake_iceberg_table(
-        df=customers_df,
-        full_table_id=f"{args.project_id}.{args.dataset}.cbk_customers_ref",
-        write_method=args.write_method,
-        temp_gcs_bucket=args.temp_gcs_bucket,
-    )
+    emit_or_validate(customers_df, "cbk_customers_ref")
 
     # 2. Référentiel Comptes EBCDIC CP500 + COMP-3 (RECFM=FB, LRECL=150)
     accounts_uri = f"{raw_base_uri}/CBK_ACCOUNTS_MSTR_20261112.ebcdic"
@@ -502,12 +520,7 @@ def main() -> None:
         lambda part: decode_account_partition(part, accounts_uri, ingest_ts)
     )
     accounts_df = spark.createDataFrame(accounts_rdd, schema=ACCOUNTS_SCHEMA)
-    write_to_biglake_iceberg_table(
-        df=accounts_df,
-        full_table_id=f"{args.project_id}.{args.dataset}.cbk_accounts_master",
-        write_method=args.write_method,
-        temp_gcs_bucket=args.temp_gcs_bucket,
-    )
+    emit_or_validate(accounts_df, "cbk_accounts_master")
 
     # 3 & 4. Relevés multi-lignes CFONB 120 (.cfonb.gz 2025 + .cfonb 2026)
     cfonb_glob = f"{raw_base_uri}/CFONB120_MVTS_*"
@@ -525,27 +538,20 @@ def main() -> None:
         lambda item: item[1]
     )
     balances_df = spark.createDataFrame(balances_rdd, schema=BALANCES_SCHEMA)
-    write_to_biglake_iceberg_table(
-        df=balances_df,
-        full_table_id=f"{args.project_id}.{args.dataset}.cbk_cfonb_balances",
-        write_method=args.write_method,
-        temp_gcs_bucket=args.temp_gcs_bucket,
-    )
+    emit_or_validate(balances_df, "cbk_cfonb_balances")
 
-    logger.info("[4/4] Écriture des mouvements CFONB '04' enrichis des compléments SEPA '05'...")
+    logger.info("[4/4] Traitement des mouvements CFONB '04' enrichis des compléments SEPA '05'...")
     movements_rdd = cfonb_tagged_rdd.filter(lambda item: item[0] == "M").map(
         lambda item: item[1]
     )
     movements_df = spark.createDataFrame(movements_rdd, schema=MOVEMENTS_SCHEMA)
-    write_to_biglake_iceberg_table(
-        df=movements_df,
-        full_table_id=f"{args.project_id}.{args.dataset}.cbk_cfonb_movements",
-        write_method=args.write_method,
-        temp_gcs_bucket=args.temp_gcs_bucket,
-    )
+    emit_or_validate(movements_df, "cbk_cfonb_movements")
 
     cfonb_tagged_rdd.unpersist()
-    logger.info("Job PySpark Mainframe -> BigLake Managed Iceberg terminé avec succès.")
+    logger.info(
+        "Job PySpark Mainframe -> BigLake Managed Iceberg terminé avec succès (dryRun=%s).",
+        args.dry_run,
+    )
     spark.stop()
 
 

@@ -52,6 +52,7 @@ Ce skill reprend la méthode suivie pour les Démos 1 et 2 de la Banque Hexagone
   - `filesChanged[].language` : `sql`, `yaml`, `python`, `markdown` ;
   - `tone` : `neutral`, `positive`, `warning`, `ruby`, `blue` ;
   - `subagents[].status` : `completed`, `running`.
+- Graphique `visualCheck.bars` (dessiné comme les graphiques natifs d'Antigravity) : le `tone` d'une barre donne sa couleur **et** le libellé de sa pilule de filtre (`positive` = OK, `warning` = À surveiller, `ruby` = Alerte, `blue` = Info, `neutral` = Neutre). Le `label` est coupé au-delà d'environ 45 caractères (texte complet au clic sur la ligne) : garder un libellé court et mettre le détail dans `sublabel`, affiché en annotation de la ligne sélectionnée. Le `badge` s'affiche sous le libellé.
 
 ## 3. Écrire les questions d'arbitrage (règle d'or AGENTS.md §4.2)
 L'agent ne décide jamais en silence face à un piège de données, un choix de schéma ou un risque PII.

@@ -17,6 +17,8 @@ dist/
 build/
 node_modules/
 stage_ui/dist/
+kc_marketplace_ui/dist/
+kc_marketplace_ui/.env
 *.tsbuildinfo
 
 # Generated demo data (heavy local artifacts)

@@ -107,6 +107,18 @@ for (const ws of cfg.workspaces ?? []) {
         (vc.kpis ?? []).forEach((k) => inEnum(k.tone, 'tone', `${tw} · visualCheck.kpis`));
         (vc.bars ?? []).forEach((b) => inEnum(b.tone, 'tone', `${tw} · visualCheck.bars`));
       }
+      const psi = turn.pubsubInspector;
+      if (psi) {
+        (psi.topics ?? []).forEach((tp) => {
+          inEnum(tp.tone, 'tone', `${tw} · pubsubInspector.topics`);
+          (tp.samples ?? []).forEach((sm) => {
+            inEnum(sm.tone, 'tone', `${tw} · pubsubInspector.samples`);
+            (sm.groups ?? []).forEach((gr) =>
+              (gr.fields ?? []).forEach((fl) => inEnum(fl.tone, 'tone', `${tw} · pubsubInspector.fields`))
+            );
+          });
+        });
+      }
       (turn.filesChanged ?? []).forEach((f) => {
         inEnum(f.language, 'language', `${tw} · ${f.path}`);
         const repoFile = resolve(ROOT, f.path ?? '');

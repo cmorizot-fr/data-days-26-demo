@@ -98,23 +98,12 @@ uv run --project "${ROOT_DIR}" python "${ROOT_DIR}/scripts/apply_pubsub_cls_poli
   --dataset "${BQ_DATASET_RAW}"
 
 echo "======================================================================"
-echo "[demo1-step4] 5/5 Vérification SQL du masquage dynamique CLS en direct..."
+echo "[demo1-step4] 5/5 Vérification SQL du masquage dynamique CLS (profil Data Analyst)..."
 echo "======================================================================"
-bq --location="${REGION}" query \
-  --project_id="${PROJECT_ID}" \
-  --use_legacy_sql=false \
-  --label datacloud:antigravity \
-  "SELECT
-     header.end_to_end_id,
-     settlement.payment_scheme,
-     settlement.tx_status,
-     instructed_amount.amount_eur,
-     debtor.customer_id,
-     debtor.iban AS debtor_iban_cls,
-     SUBSTR(debtor.full_name, 1, 16) || '...' AS debtor_name_sha256,
-     creditor.agent_bic,
-     creditor.iban AS creditor_iban_cls,
-     remittance.unstructured_info AS remittance_redacted
-   FROM \`${PROJECT_ID}.${BQ_DATASET_RAW}.raw_sepa_payments_pubsub_stream\`
-   WHERE debtor.customer_id = 'CUST00002026'
-   ORDER BY header.end_to_end_id;"
+CLOUDSDK_METRICS_ENVIRONMENT="${CLOUDSDK_METRICS_ENVIRONMENT:+$CLOUDSDK_METRICS_ENVIRONMENT }datacloud.antigravity" \
+CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT="hexagone-data-analyst@${PROJECT_ID}.iam.gserviceaccount.com" \
+  bq --location="${REGION}" query \
+    --project_id="${PROJECT_ID}" \
+    --use_legacy_sql=false \
+    --label datacloud:antigravity \
+    < "${ROOT_DIR}/01_demo1_raw_aggregation/sql/07_verify_cls_masking.sql"

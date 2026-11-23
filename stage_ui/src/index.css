@@ -49,3 +49,45 @@
 .animate-fade-slide-up {
   animation: fadeSlideUp 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+@keyframes workingDotOne {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: scale(0.82);
+  }
+  20%,
+  45% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  65% {
+    opacity: 0.2;
+    transform: scale(0.82);
+  }
+}
+
+@keyframes workingDotTwo {
+  0%,
+  35% {
+    opacity: 0.2;
+    transform: scale(0.82);
+  }
+  55%,
+  80% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  100% {
+    opacity: 0.2;
+    transform: scale(0.82);
+  }
+}
+
+.animate-working-dot-1 {
+  animation: workingDotOne 1.1s ease-in-out infinite;
+}
+
+.animate-working-dot-2 {
+  animation: workingDotTwo 1.1s ease-in-out infinite;
+}

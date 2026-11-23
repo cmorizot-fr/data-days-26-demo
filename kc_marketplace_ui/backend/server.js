@@ -1,0 +1,3331 @@
+// server.js
+const express = require('express');
+const fs = require('fs').promises;
+const { GoogleAuth, OAuth2Client } = require('google-auth-library');
+const { google } = require('googleapis');
+const { CatalogServiceClient, DataScanServiceClient, protos, DataplexServiceClient } = require('@google-cloud/dataplex');
+const { LineageClient } = require('@google-cloud/lineage');
+const { ProjectsClient } = require('@google-cloud/resource-manager');
+const { DataCatalogClient } = require('@google-cloud/datacatalog');
+const path = require('path');
+const cors = require('cors');
+const compression = require('compression');
+const { querySampleFromBigQuery } = require('./utility');
+const { sendAccessRequestEmail, sendFeedbackEmail, sendDataplexAccessRequest } = require('./services/emailService');
+const { BigQuery } = require('@google-cloud/bigquery');
+const rateLimit = require('express-rate-limit');
+const { default: axios } = require('axios');
+const crypto = require('crypto');
+const { googleAuthMiddleware } = require('./middleware/googleAuth');
+const { parseLocationList, locationFromResourceName, resolveLineageLocations } = require('./lineageLocations');
+
+
+class CustomGoogleAuth extends GoogleAuth {
+  constructor(token) {
+    super();
+    this.token = token;
+  }
+
+  async getClient() {
+    const client = new OAuth2Client();
+    client.setCredentials({ access_token: this.token });
+    return client;
+  }
+
+  // Add getUniverseDomain() stub to fix gax compatibility
+  async getUniverseDomain() {
+    return 'googleapis.com'; // default public cloud domain
+  }
+}
+
+// When IS_SERVICE_ACCOUNT=true, all Google Cloud service clients authenticate
+// with the runtime's service account (Application Default Credentials) or, in
+// local dev with ENABLE_LOCAL_GCLOUD_AUTH=true, fall back to `gcloud auth print-access-token`.
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
+
+const SERVICE_ACCOUNT_SCOPES = ['https://www.googleapis.com/auth/cloud-platform'];
+let serviceAccountAuth = null;
+let cachedLocalCliToken = null; // { token, expiresAt, email }
+
+function isServiceAccountMode() {
+  return process.env.IS_SERVICE_ACCOUNT === 'true';
+}
+
+function isLocalGcloudAuthEnabled() {
+  return process.env.ENABLE_LOCAL_GCLOUD_AUTH === 'true';
+}
+
+async function mintLocalGcloudSession() {
+  if (cachedLocalCliToken && cachedLocalCliToken.expiresAt > Date.now() + 120000) {
+    return cachedLocalCliToken;
+  }
+  // 1. Try ADC first unless it throws (e.g. expired RAPT on workstation)
+  try {
+    const adc = new GoogleAuth({ scopes: SERVICE_ACCOUNT_SCOPES });
+    const token = await adc.getAccessToken();
+    if (token) {
+      const info = await new OAuth2Client().getTokenInfo(token).catch(() => ({}));
+      cachedLocalCliToken = {
+        token,
+        expiresAt: info.expiry_date || Date.now() + 45 * 60 * 1000,
+        email: info.email || process.env.LOCAL_AUTH_EMAIL || 'local-user@gcp.local',
+      };
+      return cachedLocalCliToken;
+    }
+  } catch (_adcErr) {
+    // Fall through to gcloud CLI active account
+  }
+
+  // 2. Fallback to active gcloud CLI session
+  const gcloudCandidates = [
+    process.env.GCLOUD_BIN,
+    'gcloud',
+    path.join(process.env.HOME || '', 'google-cloud-sdk/bin/gcloud'),
+  ].filter(Boolean);
+
+  let lastErr = null;
+  for (const bin of gcloudCandidates) {
+    try {
+      const { stdout } = await execFileAsync(bin, ['auth', 'print-access-token'], {
+        env: {
+          ...process.env,
+          CLOUDSDK_METRICS_ENVIRONMENT: 'datacloud.antigravity',
+        },
+        timeout: 10000,
+      });
+      const token = String(stdout || '').trim();
+      if (token) {
+        const info = await new OAuth2Client().getTokenInfo(token).catch(() => ({}));
+        cachedLocalCliToken = {
+          token,
+          expiresAt: info.expiry_date || Date.now() + 45 * 60 * 1000,
+          email: info.email || process.env.LOCAL_AUTH_EMAIL || 'local-user@gcp.local',
+        };
+        return cachedLocalCliToken;
+      }
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr || new Error('Unable to obtain Google Cloud access token from ADC or gcloud CLI.');
+}
+
+class LocalDynamicGoogleAuth extends GoogleAuth {
+  async getClient() {
+    const session = await mintLocalGcloudSession();
+    const client = new OAuth2Client();
+    client.setCredentials({ access_token: session.token });
+    return client;
+  }
+
+  async getAccessToken() {
+    const session = await mintLocalGcloudSession();
+    return session.token;
+  }
+
+  async getUniverseDomain() {
+    return 'googleapis.com';
+  }
+}
+
+function getServiceAccountAuth() {
+  if (!serviceAccountAuth) {
+    serviceAccountAuth = isLocalGcloudAuthEnabled()
+      ? new LocalDynamicGoogleAuth()
+      : new GoogleAuth({ scopes: SERVICE_ACCOUNT_SCOPES });
+  }
+  return serviceAccountAuth;
+}
+
+// Returns the auth object passed as `auth`/`authClient` to Google Cloud
+// service clients. Service-account mode ignores the caller's token.
+function getAuthClient(accessToken) {
+  return isServiceAccountMode() ? getServiceAccountAuth() : new CustomGoogleAuth(accessToken);
+}
+
+// Returns a raw OAuth access token string for direct REST (axios) calls.
+// In service-account mode this mints a token from the service account;
+// otherwise it returns the caller's forwarded access token.
+async function getRequestAccessToken(accessToken) {
+  return isServiceAccountMode() ? await getServiceAccountAuth().getAccessToken() : accessToken;
+}
+const searchEntries = async (dataplexClientv1, query, parent) => {
+  try {
+      let query  = `fully_qualified_name=${fqn}`;
+
+      // Construct the request for the Knowledge Catalog API
+      const request = {
+        // The name of the project and location to search within
+        name: parent,
+        query: query,
+        pageSize:1, // Limit the number of results returned
+      };
+
+      console.log('Performing Knowledge Catalog search with query:', query);
+
+      // Call the searchEntries method of the Knowledge Catalog client
+      const [response] = await dataplexClientv1.searchEntries(request);
+      console.log('Search response:', response);
+
+      return response;
+  } catch (error) { 
+      throw new Error(error.message);
+  }
+};
+const getEntryByName = async (dataplexClientv1, entryName) => {
+  try {
+    if (!entryName) {
+        reject([null, 'FQN is not provided or incorrect']);
+    }
+    console.log('Found entry name calling getEntry:', entryName);
+
+    // The getEntry method returns an entry.
+    const [entry] = await dataplexClientv1.getEntry({ name: entryName, view: protos.google.cloud.dataplex.v1.EntryView.ALL });
+    return entry;
+
+  } catch (error) {
+    return [null, error.message];
+  }
+};
+
+const app = express();
+const PORT = process.env.PORT || 8080;
+
+// Define the rate limiting options
+const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 1000, // limit each IP to 100 requests per windowMs
+    message: 'Too many requests from this IP, please try again after 15 minutes',
+    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
+
+//app.use(apiLimiter);
+
+
+
+const whitelist = []; // Your allowed origins
+// Use the cors middleware with options for all routes
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  const host = req.headers.host.split(':')[0]; // Get the server's current host (no port)
+
+  cors({
+    origin: (requestOrigin, callback) => {
+      if (!requestOrigin) return callback(null, true);
+      
+      const requestHostname = new URL(requestOrigin).hostname;
+
+      // Automatically allow if the origin hostname matches the host header
+      if (requestHostname === host || whitelist.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        callback(new Error('CORS unauthorized'));
+      }
+    },
+    credentials: true
+  })(req, res, next);
+});
+
+
+
+
+
+// gzip responses. Mounted before the routes so it covers every API payload.
+// /get-projects in particular can be ~4.5 MB uncompressed for a 40k-project org,
+// which compresses to roughly a tenth of that given how repetitive the shape is.
+app.use(compression());
+
+// Middleware to parse JSON request bodies
+app.use(express.json());
+
+// Verify the Google OAuth access token on every backend API request.
+// Mounted on /api so it protects all /api/* routes while leaving static asset
+// serving and the SPA catch-all untouched. Public endpoints (health checks)
+// are skipped inside the middleware.
+app.use('/api', googleAuthMiddleware);
+
+// Serve static files from the React build folder
+const staticFilesPath = path.join(__dirname, 'dist'); 
+
+// ---------------------------------------------------------------------------
+// Caching policy for the frontend (so a redeploy reaches every client):
+//  - index.html (direct or via the SPA fallback) and version.json: never cached.
+//    They are what tells the browser - and open tabs - which build is current.
+//  - Content-hashed build output directly under dist/assets (Vite names these
+//    <name>-<8 char hash>.<ext>): cached for a year, immutable. A new build gets
+//    new names; the entry JS/CSS that entrypoint.sh rewrites at startup are also
+//    referenced with ?v=<deployId>, so a config-only redeploy changes the URL too.
+//  - Everything else (unhashed files copied from public/, e.g. assets/svg/*):
+//    revalidated on every use (ETag), so a changed image is picked up at once.
+//  - A missing file is a 404 (never index.html), so a stale page asking for a
+//    removed asset fails fast instead of parsing HTML as JavaScript.
+// ---------------------------------------------------------------------------
+const NO_STORE_CACHE_CONTROL = 'no-store, no-cache, must-revalidate, max-age=0';
+const HASHED_ASSET_RE = /-[A-Za-z0-9_-]{8}\.[A-Za-z0-9]+$/;
+const hashedAssetsDir = path.join(staticFilesPath, 'assets');
+
+function setNoStoreHeaders(res) {
+  res.setHeader('Cache-Control', NO_STORE_CACHE_CONTROL);
+  res.setHeader('Pragma', 'no-cache'); // For backward compatibility with HTTP/1.0
+  res.setHeader('Expires', '0'); // For backward compatibility
+}
+
+// Serve static files with custom headers
+app.use(express.static(staticFilesPath, {
+    index: 'index.html', // Ensure index.html is served for directory requests
+    setHeaders: (res, filePath) => {
+        const fileName = path.basename(filePath);
+        if (fileName === 'index.html' || fileName === 'version.json') {
+            setNoStoreHeaders(res);
+        } else if (path.dirname(filePath) === hashedAssetsDir && HASHED_ASSET_RE.test(fileName)) {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable'); // Cache for 1 year
+        } else {
+            res.setHeader('Cache-Control', 'no-cache'); // Revalidate (ETag) on every use
+        }
+    }
+}));
+
+// A request for a file (path with an extension) that express.static did not
+// find must not fall through to the SPA fallback: return a non-cacheable 404.
+app.use((req, res, next) => {
+  if ((req.method === 'GET' || req.method === 'HEAD') && !req.path.startsWith('/api/') && path.extname(req.path)) {
+    setNoStoreHeaders(res);
+    return res.status(404).send('Not found');
+  }
+  next();
+});
+
+// --- File Path for Local Data ---
+const dataFilePath = path.join(__dirname, 'configData.json');
+
+function checkErrorAndSendResponse(res, error, customMessage) {
+    console.error(customMessage, error);
+    if (error?.code === 403 || ((error.message).toLowerCase().includes('permission_denied')) || (error.errors && error.errors[0] && error.errors[0].reason === 'FORBIDDEN')) {
+      return res.status(403).json({
+          error: 'Permission Denied: The service account does not have the necessary permissions to perform this action.',
+          details: error.message
+      });
+    }
+    else if (error.code === 401 || ((error.message).toLowerCase().includes('unauthorized')) || (error.errors && error.errors[0] && error.errors[0].reason === 'UNAUTHENTICATED')) {
+      return res.status(401).json({ error: 'Unauthorized: Authentication is required and has failed or has not yet been provided.', details: error.message });
+    }
+    else if (error.code === 404 || ((error.message).toLowerCase().includes('notFound'))) {
+      return res.status(404).json({ error: 'Resource Not Found: The specified resource could not be found.', details: error.message });
+    }
+    else if (error.code === 400 || (error.errors && error.errors[0] && error.errors[0].reason === 'badRequest')) {
+      return res.status(400).json({ error: 'Bad Request: The request was invalid or cannot be served.', details: error.message });
+    }
+    else{
+      return res.status(500).json({ error: 'An internal server error occurred.', details: error.message });
+    }
+}
+
+
+/**
+ * POST /check-permissions
+ * Checks if the authenticated user has all the specified IAM permissions on the project
+ * using the Cloud Resource Manager testIamPermissions API.
+ *
+ * Request Body:
+ * {
+    * "permissions": ["dataplex.entries.get", "dataplex.entries.list", ...] // Array of IAM permissions to check (user must have ALL)
+ * }
+ *
+ * Response:
+ * {
+ * "hasPermission": true, // or false
+ * "grantedPermissions": [...],
+ * "missingPermissions": [...],
+ * "message": "..."
+ * }
+ */
+
+app.post('/api/v1/check-permissions', async (req, res) => {
+
+    const { permissions } = req.body;
+    const accessToken = req.headers.authorization?.split(' ')[1];
+    const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
+
+    // --- Input Validation ---
+    if (!projectId || typeof projectId !== 'string' || projectId.trim() === '') {
+        return res.status(400).json({ error: 'projectId is required and must be a non-empty string.' });
+    }
+    if (!Array.isArray(permissions) || permissions.length === 0 || !permissions.every(p => typeof p === 'string' && p.trim() !== '')) {
+        return res.status(400).json({ error: 'permissions is required and must be a non-empty array of strings.' });
+    }
+
+    try {
+        const oauth2Client = getAuthClient(accessToken);
+
+        // Get the Cloud Resource Manager API client
+        const cloudResourceManager = google.cloudresourcemanager({
+            version: 'v1',
+            auth: oauth2Client,
+        });
+
+        // Use testIamPermissions to check the user's effective permissions
+        console.log(`Testing ${permissions.length} permissions for project: ${projectId}`);
+        const response = await cloudResourceManager.projects.testIamPermissions({
+            resource: projectId,
+            requestBody: { permissions },
+        });
+
+        const grantedPermissions = response.data.permissions || [];
+        const missingPermissions = permissions.filter(p => !grantedPermissions.includes(p));
+        const hasPermission = missingPermissions.length === 0;
+
+        console.log(`Granted ${grantedPermissions.length}/${permissions.length} permissions for project ${projectId}.`);
+        if (missingPermissions.length > 0) {
+            console.log(`Missing permissions:`, missingPermissions);
+        }
+
+        return res.json({
+            hasPermission,
+            grantedPermissions,
+            missingPermissions,
+            message: hasPermission
+                ? `User has all required permissions on project ${projectId}.`
+                : `User is missing ${missingPermissions.length} permission(s) on project ${projectId}.`,
+        });
+
+    } catch (error) {
+        console.error('Error checking permissions:', error.message);
+        if (error.code === 403 || (error.errors && error.errors[0] && error.errors[0].reason === 'FORBIDDEN')) {
+            return res.status(403).json({
+                error: 'Permission Denied: Unable to test permissions for this project.',
+                details: error.message
+            });
+        }
+        return checkErrorAndSendResponse(res, error, 'An error occurred while checking permissions:');
+    }
+});
+
+/**
+ * POST /api/v1/search
+ * A protected endpoint to search for entries in Google Cloud Knowledge Catalog.
+ * The user must be authenticated.
+ *
+ * Request Body:
+ * {
+ * "query": "The search query string for Knowledge Catalog. Supports structured search like 'type=TABLE name:customer'."
+ * }
+ */
+app.post('/api/v1/search', async (req, res) => {
+  const { query, pageSize, pageToken, orderBy } = req.body;
+
+  // Validate that a search query was provided
+  if (!query) {
+    return res.status(400).json({ message: 'Bad Request: A "query" field is required in the request body.' });
+  }
+
+  try {
+    const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
+    const location = process.env.GCP_LOCATION;
+    const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+    const oauth2Client = getAuthClient(accessToken);
+
+    const dataplexClientv1 = new CatalogServiceClient({
+        auth: oauth2Client,
+    });
+
+
+    if (!projectId || !location) {
+        return res.status(500).json({ message: 'Server Configuration Error: GOOGLE_CLOUD_PROJECT_ID and GCP_LOCATION must be set in the .env file.' });
+    }
+
+    // Construct the request for the Knowledge Catalog API
+    const request = {
+      // The name of the project and location to search within
+      name: `projects/${projectId}/locations/${location}`,
+      query: query,
+      pageSize: pageSize ?? 20,
+      pageToken: pageToken ?? '',
+      orderBy: orderBy ?? '',
+    };
+
+    console.log('Performing Knowledge Catalog search with query:', query);
+
+    // Call the searchEntries method of the Knowledge Catalog client
+    const [data, requestData, response] = await dataplexClientv1.searchEntries(request, { autoPaginate: false });
+
+    // Send the search results back to the client
+    res.json({data : data, requestData : requestData, results : response});
+
+  } catch (error) {
+    console.error('Error during Knowledge Catalog search:', error);
+    // Return a generic error message to the client
+    return checkErrorAndSendResponse( res, error, 'An error occurred while searching Knowledge Catalog.');
+  }
+});
+
+/**
+ * POST /api/aspects
+ * A protected endpoint to fetch all aspects (detailed metadata like schema) for a specific Knowledge Catalog entry.
+ * The user must be authenticated.
+ *
+ * Request Body:
+ * {
+ * "entryName": "The full resource name of the Knowledge Catalog entry. e.g., projects/{p}/locations/{l}/entryGroups/{eg}/entries/{e}"
+ * }
+ */
+app.post('/api/v1/aspects', async (req, res) => {
+  const { entryName } = req.body;
+  const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+  // Validate that an entryName was provided
+  if (!entryName) {
+    return checkErrorAndSendResponse( res, error, 'Bad Request: An "entryName" field is required in the request body.' );
+  }
+
+  try {
+
+    const oauth2Client = getAuthClient(accessToken);
+
+    const dataplexClientv1 = new CatalogServiceClient({
+        auth: oauth2Client,
+    });
+    // Construct the request to get a specific entry.
+    // The `view` is set to 'FULL' to ensure all aspects are returned.
+    const request = {
+      name: entryName,
+      view: 'FULL',
+    };
+
+    console.log(`Fetching aspects for entry: ${entryName}`);
+
+    // Call the getEntry method of the Knowledge Catalog client
+    const [entry] = await dataplexClientv1.getEntry(request);
+
+    // The aspects are contained within the 'aspects' property of the entry object.
+    // If the property exists, return it, otherwise return an empty object.
+    res.json(entry.aspects || {});
+
+  } catch (error) {
+    console.error(`Error fetching aspects for entry ${entryName}:`, error);
+    // Return a generic error message to the client
+    return checkErrorAndSendResponse(res, error, 'An error occurred while fetching aspects from Knowledge Catalog.');
+  }
+});
+
+/**
+ * POST /api/v1/batch-entry-aspects
+ * A protected endpoint to fetch the `aspects` map for many Knowledge Catalog
+ * entries at once (e.g. to populate an "Aspect Value" column for a page of
+ * search/browse results). One failing/inaccessible entry does not fail the
+ * whole batch - its value comes back as null.
+ *
+ * Request Body:
+ * {
+ * "entryNames": ["The full resource name of each entry", ...]
+ * }
+ */
+app.post('/api/v1/batch-entry-aspects', async (req, res) => {
+  const { entryNames } = req.body;
+  const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+  if (!entryNames || !Array.isArray(entryNames)) {
+    return checkErrorAndSendResponse(res, error, 'Bad Request: An "entryNames" field (array of strings) is required.');
+  }
+
+  try {
+    const oauth2Client = getAuthClient(accessToken);
+
+    const dataplexClientv1 = new CatalogServiceClient({
+        auth: oauth2Client,
+    });
+
+    console.log(`Fetching aspects for a batch of ${entryNames.length} entries.`);
+
+    const results = await Promise.allSettled(
+      entryNames.map((name) => dataplexClientv1.getEntry({ name, view: protos.google.cloud.dataplex.v1.EntryView.ALL }))
+    );
+
+    const aspectsByEntry = {};
+    results.forEach((result, index) => {
+      const entryName = entryNames[index];
+      if (result.status === 'fulfilled') {
+        aspectsByEntry[entryName] = result.value?.[0]?.aspects || {};
+      } else {
+        console.error(`Error fetching aspects for entry ${entryName}:`, result.reason);
+        aspectsByEntry[entryName] = null;
+      }
+    });
+
+    res.json(aspectsByEntry);
+
+  } catch (error) {
+    console.error('Error fetching aspects for a batch of entries:', error);
+    return checkErrorAndSendResponse(res, error, 'An error occurred while fetching aspects for the batch.');
+  }
+});
+
+app.post('/api/v1/batch-aspects', async (req, res) => {
+    const { entryNames } = req.body;
+    const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+    // Validate that entryNames is provided and is an array
+    if (!entryNames || !Array.isArray(entryNames)) {
+        return checkErrorAndSendResponse(res, error, 'Bad Request: An "entryNames" field (array of strings) is required.' );
+    }
+
+    // if (entryNames.length === 0) {
+    //     return res.json([]);
+    // }
+
+    try {
+
+        const oauth2Client = getAuthClient(accessToken);
+
+        const dataplexClientv1 = new CatalogServiceClient({
+            auth: oauth2Client,
+        });
+        console.log(`Fetching aspects for a batch of ${entryNames.length} entries.`);
+
+        // Create an array of promises, where each promise fetches one entry
+        const promises = entryNames.map(n => {
+            //const request = { name, view: protos.google.cloud.dataplex.v1.EntryView.ALL };
+            return dataplexClientv1.getAspectType({ name:n });
+        });
+
+        // Execute all promises concurrently
+        const results = await Promise.all(promises);
+
+        // Map the results to a more user-friendly format
+        let aspectsResponse = {};
+        results.forEach(([aspectType], index) => {
+            aspectsResponse[aspectType.displayName ?? entryNames[index]] = aspectType.metadataTemplate?.recordFields?.map(f =>f.name);
+        });
+
+        res.json(aspectsResponse);
+
+    } catch (error) {
+        console.error('Error fetching aspects for batch:', error);
+        return checkErrorAndSendResponse(res, error, 'An error occurred while fetching aspects for the batch.');
+    }
+});
+
+/**
+ * GET /api/aspect-types
+ * A protected endpoint to list all available Aspect Types in a given location.
+ * The user must be authenticated.
+ */
+app.get('/api/v1/aspect-types', async (req, res) => {
+  try {
+    const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
+    const location = process.env.GCP_LOCATION;
+    const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+    const oauth2Client = getAuthClient(accessToken);
+
+    const dataplexClientv1 = new CatalogServiceClient({
+        auth: oauth2Client,
+    });
+
+    if (!projectId || !location) {
+        return res.status(500).json({ message: 'Server Configuration Error: GOOGLE_CLOUD_PROJECT_ID and GCP_LOCATION must be set in the .env file.' });
+    }
+
+    const parent = `projects/${projectId}/locations/${location}`;
+    console.log(`Listing aspect types for parent: ${parent}`);
+
+    // The listAspectTypes method returns an iterable. We'll collect all results into an array.
+    const [aspects] = await dataplexClientv1.listAspectTypes({ parent });
+
+    res.json(aspects);
+
+  } catch (error) {
+    console.error('Error listing aspect types:', error);
+    return checkErrorAndSendResponse(res, error, 'An error occurred while listing aspect types from Knowledge Catalog.');
+  }
+});
+
+/**
+ * GET /api/entry-list
+ * A protected endpoint to list all available Aspect Types in a given location.
+ * The user must be authenticated.
+ */
+app.get('/api/v1/entry-list', async (req, res) => {
+  try {
+    const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
+    const location = process.env.GCP_LOCATION;
+    const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+    const oauth2Client = getAuthClient(accessToken);
+
+    const dataplexClientv1 = new CatalogServiceClient({
+        auth: oauth2Client,
+    });
+
+    if (!projectId || !location) {
+        return res.status(500).json({ message: 'Server Configuration Error: GOOGLE_CLOUD_PROJECT_ID and GCP_LOCATION must be set in the .env file.' });
+    }
+
+    const parent = `projects/${projectId}/locations/${location}`;
+    console.log(`Listing aspect types for parent: ${parent}`);
+
+    // The listAspectTypes method returns an iterable. We'll collect all results into an array.
+    const [entries] = await dataplexClientv1.listEntries({ parent });
+
+    res.json(entries);
+
+  } catch (error) {
+    console.error('Error listing aspect types:', error);
+    return checkErrorAndSendResponse(res, error, 'An error occurred while listing aspect types from Knowledge Catalog.');
+  }
+});
+
+/**
+ * GET /api/aspect-types
+ * A protected endpoint to list all available Aspect Types in a given location.
+ * The user must be authenticated.
+ */
+app.get('/api/v1/entry-types', async (req, res) => {
+  try {
+    const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
+    const location = process.env.GCP_LOCATION;
+    const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+    const oauth2Client = getAuthClient(accessToken);
+
+    const dataplexClientv1 = new CatalogServiceClient({
+        auth: oauth2Client,
+    });
+
+    if (!projectId || !location) {
+        return res.status(500).json({ message: 'Server Configuration Error: GOOGLE_CLOUD_PROJECT_ID and GCP_LOCATION must be set in the .env file.' });
+    }
+
+    const parent = `projects/${projectId}/locations/${location}`;
+    console.log(`Listing aspect types for parent: ${parent}`);
+
+    // The listEntryTypes method returns an iterable. We'll collect all results into an array.
+    const [entries] = await dataplexClientv1.listEntryTypes({ parent });
+
+    res.json(entries);
+
+  } catch (error) {
+    console.error('Error listing aspect types:', error);
+    return checkErrorAndSendResponse(res, error, 'An error occurred while listing aspect types from Knowledge Catalog.');
+  }
+});
+
+
+/**
+ * GET /api/get-entry
+ * A protected endpoint to list all available Aspect Types in a given location.
+ * The user must be authenticated.
+ */
+app.get('/api/v1/get-entry', async (req, res) => {
+  try {
+
+    const entryName = req.query.entryName; // Get entryName from query parameters
+    const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+    const oauth2Client = getAuthClient(accessToken);
+
+    const dataplexClientv1 = new CatalogServiceClient({
+        auth: oauth2Client,
+    });
+
+    if (!entryName) {
+        return  checkErrorAndSendResponse(res, error, 'Entry name is required');
+    }
+
+    // The getEntry method returns an entry.
+    const [entry] = await dataplexClientv1.getEntry({ name: entryName, view: protos.google.cloud.dataplex.v1.EntryView.ALL });
+
+    res.json(entry);
+
+  } catch (error) {
+    console.error('Error fetching entry', error);
+    return checkErrorAndSendResponse(res, error, 'An error occurred while fetching entry from Knowledge Catalog.');
+  }
+});
+
+/**
+ * GET /api/v1/check-entry-access
+ * A lightweight endpoint that checks if the user has access to a Knowledge Catalog entry.
+ * Uses EntryView.BASIC to minimize payload — returns only access status, not full entry data.
+ */
+app.get('/api/v1/check-entry-access', async (req, res) => {
+  try {
+    const entryName = req.query.entryName;
+    const accessToken = req.headers.authorization?.split(' ')[1];
+
+    const oauth2Client = getAuthClient(accessToken);
+    const dataplexClientv1 = new CatalogServiceClient({
+      auth: oauth2Client,
+    });
+
+    if (!entryName) {
+      return res.status(400).json({ error: 'Entry name is required' });
+    }
+
+    const [entry] = await dataplexClientv1.getEntry({
+      name: entryName,
+      view: protos.google.cloud.dataplex.v1.EntryView.BASIC,
+    });
+
+    return res.json({ accessible: true, name: entry.name, entryType: entry.entryType });
+
+  } catch (error) {
+    console.error('Error checking entry access', error);
+    return checkErrorAndSendResponse(res, error, 'An error occurred while checking entry access.');
+  }
+});
+
+/**
+ * GET /api/get-entry-by-fqn
+ * A protected endpoint to list all available Aspect Types in a given location.
+ * The user must be authenticated.
+ */
+app.get('/api/v1/get-entry-by-fqn', async (req, res) => {
+  try {
+
+    let query  = `fully_qualified_name=${req.query.fqn}`;
+
+    const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
+    const location = process.env.GCP_LOCATION;
+    const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+    const oauth2Client = getAuthClient(accessToken);
+
+    const dataplexClientv1 = new CatalogServiceClient({
+        auth: oauth2Client,
+    });
+
+
+    if (!projectId || !location) {
+        return res.status(500).json({ message: 'Server Configuration Error: GOOGLE_CLOUD_PROJECT_ID and GCP_LOCATION must be set in the .env file.' });
+    }
+
+    // Construct the request for the Knowledge Catalog API
+    const request = {
+      // The name of the project and location to search within
+      name: `projects/${projectId}/locations/${location}`,
+      query: query,
+      pageSize:10, // Limit the number of results returned
+    };
+
+    console.log('Performing Knowledge Catalog search with query:', query);
+
+    // Call the searchEntries method of the Knowledge Catalog client
+    const [response] = await dataplexClientv1.searchEntries(request);
+
+
+    const entryName = response.length > 0 ? response[0].dataplexEntry.name : null ; // Get entryName from query parameters
+
+    if (!entryName) {
+        return checkErrorAndSendResponse(res, error, 'FQN is not provided or incorrect' );
+    }
+
+    // The getEntry method returns an entry.
+    const [entry] = await dataplexClientv1.getEntry({ name: entryName, view: protos.google.cloud.dataplex.v1.EntryView.ALL });
+
+    res.json(entry);
+
+  } catch (error) {
+    console.error('Error fetching entry', error);
+    return checkErrorAndSendResponse(res, error, 'An error occurred while fetching entry from Knowledge Catalog.');
+  }
+});
+
+app.get('/api/v1/lookup-entry', async (req, res) => {
+  try {
+
+    const entryName = req.query.entryName; // Get entryName from query parameters
+    const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+    const oauth2Client = getAuthClient(accessToken);
+
+    const dataplexClientv1 = new CatalogServiceClient({
+        auth: oauth2Client,
+    });
+
+    if (!entryName) {
+        return checkErrorAndSendResponse(res, error, 'Entry name is required');
+    }
+
+    // The getEntry method returns an entry.
+    const [entry] = await dataplexClientv1.lookupEntry({ name: entryName, view: protos.google.cloud.dataplex.v1.EntryView.ALL });
+
+    res.json(entry);
+
+  } catch (error) {
+    console.error('Error fetching entry', error);
+    return checkErrorAndSendResponse(res, error, 'An error occurred while fetching entry from Knowledge Catalog.');
+  }
+});
+
+app.get('/api/v1/lookup-entry-links', async (req, res) => {
+  try {
+    const entryName = req.query.entryName; // full entry resource name
+    const accessToken = req.headers.authorization?.split(' ')[1];
+
+    if (!entryName) {
+      return res.status(400).json({ error: 'entryName is required' });
+    }
+
+    // entryName format: projects/<p>/locations/<loc>/entryGroups/<eg>/entries/<id...>
+    // The `lookupEntryLinks` service must be called at the same location as
+    // the entry (e.g. `us` for BigQuery US entries). The entry-link-types
+    // and entry-mode params are required for definition (term-to-asset) links.
+    const match = entryName.match(/^projects\/([^/]+)\/locations\/([^/]+)\//);
+    if (!match) {
+      return res.status(400).json({ error: 'Invalid entryName format' });
+    }
+    const [, project, location] = match;
+
+    const oauth2Client = getAuthClient(accessToken);
+    const dataplexClientv1 = new CatalogServiceClient({ auth: oauth2Client });
+
+    const url = `https://dataplex.googleapis.com/v1/projects/${project}/locations/${location}:lookupEntryLinks`;
+    const bearerToken = await getRequestAccessToken(accessToken);
+
+    const response = await axios.get(url, {
+      params: {
+        entry: entryName,
+        entry_link_types:
+          'projects/dataplex-types/locations/global/entryLinkTypes/definition',
+        entry_mode: 'SOURCE',
+        page_size: 50,
+      },
+      headers: {
+        Authorization: `Bearer ${bearerToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const entryLinks = response.data?.entryLinks || [];
+
+    // Collect unique TARGET entry names (the glossary term entries). The same
+    // term can be linked multiple times (asset-level + column-level), so
+    // dedupe by resource name while preserving the `path`s we see.
+    const targetsMap = new Map(); // name -> { name, paths: string[] }
+    entryLinks.forEach((link) => {
+      const refs = link.entryReferences || [];
+      const source = refs.find((r) => r.type === 'SOURCE');
+      const target = refs.find((r) => r.type === 'TARGET');
+      if (!target?.name) return;
+      const path = source?.path || '';
+      if (!targetsMap.has(target.name)) {
+        targetsMap.set(target.name, { name: target.name, paths: path ? [path] : [] });
+      } else if (path) {
+        const existing = targetsMap.get(target.name);
+        if (!existing.paths.includes(path)) existing.paths.push(path);
+      }
+    });
+
+    // Fetch each target term's details in parallel (same pattern as
+    // fetchItemDetails for glossary terms, using getEntry with the full name).
+    const targets = Array.from(targetsMap.values());
+    const termEntries = await Promise.all(
+      targets.map(async ({ name, paths }) => {
+        try {
+          const [entry] = await dataplexClientv1.getEntry({
+            name,
+            view: protos.google.cloud.dataplex.v1.EntryView.ALL,
+          });
+          return { entry, paths };
+        } catch (err) {
+          console.warn('Failed to fetch term entry', name, err?.message || err);
+          return null;
+        }
+      })
+    );
+
+    const terms = termEntries
+      .filter(Boolean)
+      .map(({ entry, paths }) => ({ ...entry, linkedPaths: paths }));
+
+    res.json({ entryLinks, terms });
+  } catch (error) {
+    console.error('Error fetching entry links', error?.response?.data || error);
+    const err = error?.response?.data?.error || error;
+    return checkErrorAndSendResponse(
+      res,
+      err,
+      'An error occurred while fetching entry links from Knowledge Catalog.'
+    );
+  }
+});
+
+
+
+/**
+ * GET /api/v1/data-products
+ * Lists the Dataplex data products for the configured (or supplied) project.
+ * Proxies the Dataplex `dataProducts` REST API.
+ *
+ * Query params:
+ *   projectId (optional) - overrides GOOGLE_CLOUD_PROJECT_ID
+ */
+// ---------------------------------------------------------------------------
+// Performance helpers (Data Products route)
+// ---------------------------------------------------------------------------
+
+/** Admin-configured project ids from configData.json (de-duplicated). */
+async function readConfiguredProjectIds() {
+  try {
+    const raw = await fs.readFile(dataFilePath, 'utf8');
+    const cfg = raw ? JSON.parse(raw) : {};
+    if (Array.isArray(cfg.projects)) {
+      return [...new Set(cfg.projects.map((id) => String(id).trim()).filter(Boolean))];
+    }
+  } catch (err) {
+    console.error('Could not read configData.json:', err.message);
+  }
+  return [];
+}
+
+// Project id <-> number is immutable, so it is cached process-wide in a bounded
+// LRU with no TTL. Only identity is stored (never anything user-specific);
+// access is still enforced by the Dataplex calls made with the caller's token.
+const PROJECT_IDENTITY_MAX = 100000;
+const projectIdentityCache = new Map(); // key (id or number) -> { projectId, projectNumber, displayName }
+const projectIdentityInFlight = new Map();
+const isProjectNumber = (s) => /^\d+$/.test(String(s || ''));
+
+function rememberProjectIdentity(identity) {
+  if (!identity?.projectId || !identity?.projectNumber) return;
+  [identity.projectId, identity.projectNumber].forEach((k) => {
+    projectIdentityCache.delete(k); // refresh LRU position
+    projectIdentityCache.set(k, identity);
+  });
+  while (projectIdentityCache.size > PROJECT_IDENTITY_MAX) {
+    projectIdentityCache.delete(projectIdentityCache.keys().next().value);
+  }
+}
+
+function getCachedProjectIdentity(idOrNumber) {
+  return projectIdentityCache.get(String(idOrNumber)) || null;
+}
+
+/** Resolve a project id or number to its identity (cached, in-flight de-duplicated). */
+async function resolveProjectIdentity(idOrNumber, accessToken) {
+  const key = String(idOrNumber || '');
+  if (!key) return null;
+  const cached = getCachedProjectIdentity(key);
+  if (cached) return cached;
+  if (projectIdentityInFlight.has(key)) return projectIdentityInFlight.get(key);
+  const promise = (async () => {
+    const client = new ProjectsClient({ auth: getAuthClient(accessToken) });
+    const [project] = await client.getProject({ name: `projects/${key}` });
+    const identity = {
+      projectId: project?.projectId,
+      projectNumber: (project?.name || '').split('/')[1],
+      displayName: project?.displayName || project?.projectId,
+    };
+    rememberProjectIdentity(identity);
+    return identity.projectId ? identity : null;
+  })().finally(() => projectIdentityInFlight.delete(key));
+  projectIdentityInFlight.set(key, promise);
+  return promise;
+}
+
+/**
+ * Best-effort resolution of many projects within a time budget. Never throws;
+ * projects the caller cannot read (or that take too long) are simply skipped.
+ */
+async function resolveProjectIdentitiesWithBudget(keys, accessToken, { budgetMs = 1500, concurrency = 8 } = {}) {
+  const pending = [...new Set(keys.map(String).filter(Boolean))].filter((k) => !getCachedProjectIdentity(k));
+  if (pending.length) {
+    const queue = [...pending];
+    const worker = async () => {
+      while (queue.length) {
+        const k = queue.shift();
+        await resolveProjectIdentity(k, accessToken).catch(() => null);
+      }
+    };
+    const workers = Promise.all(Array.from({ length: Math.min(concurrency, queue.length) }, worker));
+    await Promise.race([workers, new Promise((r) => setTimeout(r, budgetMs))]);
+  }
+  const out = new Map();
+  keys.forEach((k) => {
+    const id = getCachedProjectIdentity(k);
+    if (id) out.set(String(k), id);
+  });
+  return out;
+}
+
+// Short-TTL per-user response cache with in-flight de-duplication, so rapid
+// revisits / double mounts share one upstream call. Keyed by the verified user
+// email (googleAuth middleware) or, if auth is disabled, a hash of the token.
+const userResponseCache = new Map(); // key -> { expiresAt, value }
+const userResponseInFlight = new Map();
+const USER_RESPONSE_CACHE_MAX = 2000;
+
+function userCacheIdentity(req) {
+  if (req.user?.email) return `u:${req.user.email}`;
+  const token = req.headers.authorization?.split(' ')[1] || '';
+  return `t:${crypto.createHash('sha256').update(token).digest('hex').slice(0, 32)}`;
+}
+
+async function cachedPerUser(req, namespace, ttlMs, producer) {
+  const key = `${namespace}|${userCacheIdentity(req)}`;
+  const hit = userResponseCache.get(key);
+  if (hit && hit.expiresAt > Date.now() && req.query?.fresh !== '1') return hit.value;
+  if (userResponseInFlight.has(key)) return userResponseInFlight.get(key);
+  const promise = (async () => {
+    // Producers throw on failure; a producer that degrades gracefully (returns
+    // a partial result) calls skipCache() so the partial result is not reused.
+    let cacheable = true;
+    const value = await producer(() => { cacheable = false; });
+    if (!cacheable) return value;
+    userResponseCache.set(key, { value, expiresAt: Date.now() + ttlMs });
+    while (userResponseCache.size > USER_RESPONSE_CACHE_MAX) {
+      userResponseCache.delete(userResponseCache.keys().next().value);
+    }
+    return value;
+  })().finally(() => userResponseInFlight.delete(key));
+  userResponseInFlight.set(key, promise);
+  return promise;
+}
+
+const DATA_PRODUCTS_CACHE_TTL_MS = 60 * 1000;
+const GET_PROJECTS_CACHE_TTL_MS = 10 * 60 * 1000;
+
+/** Split `projects/{p}/locations/{l}/dataProducts/{id}` into parts. */
+function parseDataProductName(name) {
+  const m = String(name || '').match(/^projects\/([^/]+)\/locations\/([^/]+)\/dataProducts\/([^/]+)$/);
+  return m ? { project: m[1], location: m[2], dataProductId: m[3] } : null;
+}
+
+app.get('/api/v1/data-products', async (req, res) => {
+  try {
+    const accessToken = req.headers.authorization?.split(' ')[1];
+
+    // The configured project list is read here, on the server, rather than being
+    // sent up by the browser as ?projectIds. The client used to derive it from
+    // appConfig, which meant a page whose config had not loaded yet sent nothing
+    // and silently fell back to a single project - a different list for the same
+    // action. The server already owns configData.json, so it is the only source.
+    //
+    // De-duplicated: a project repeated here was previously fetched twice and
+    // both results concatenated, listing its products twice.
+    let projectIds = await readConfiguredProjectIds();
+
+    // No configured projects means "no restriction". Today that still resolves to
+    // the deployment's own project; widening it to every project the caller can
+    // access is a separate decision (it changes the fan-out size materially).
+    if (!projectIds.length) {
+      projectIds = [req.query.projectId || process.env.GOOGLE_CLOUD_PROJECT_ID];
+    }
+
+    if (!projectIds.length || !projectIds[0]) {
+      return res.status(500).json({ message: 'Server Configuration Error: GOOGLE_CLOUD_PROJECT_ID must be set in the .env file.' });
+    }
+
+    const payload = await cachedPerUser(req, `data-products:${projectIds.join(',')}`, DATA_PRODUCTS_CACHE_TTL_MS, async (skipCache) => {
+      const bearerToken = await getRequestAccessToken(accessToken);
+
+      // Fetch data products for each project in parallel, and resolve each
+      // project's id <-> number alongside (cached, so usually free). Every
+      // product is tagged with both so the client can de-duplicate against the
+      // catalog search WITHOUT the org-wide /get-projects list.
+      const results = await Promise.all(
+        projectIds.map(async (pid) => {
+          const [products, identity] = await Promise.all([
+            axios.get(`https://dataplex.googleapis.com/v1/projects/${pid}/locations/-/dataProducts`, {
+              headers: { Authorization: `Bearer ${bearerToken}`, 'Content-Type': 'application/json' },
+            })
+              .then((r) => r.data.dataProducts || [])
+              .catch((err) => {
+                console.warn(`Error fetching data products for project ${pid}:`, err?.response?.data || err.message);
+                skipCache(); // never cache a partial/empty list caused by an error
+                return [];
+              }),
+            resolveProjectIdentity(pid, accessToken).catch((err) => {
+              console.warn(`Could not resolve project identity for ${pid}:`, err?.message);
+              return null;
+            }),
+          ]);
+
+          return products.map((p) => {
+            const segment = (p?.name || '').split('/')[1] || '';
+            let projectNumber = identity?.projectNumber || (isProjectNumber(segment) ? segment : null);
+            let projectId = identity?.projectId || (!isProjectNumber(pid) ? pid : (!isProjectNumber(segment) ? segment : null));
+            // The request id + response number is itself a free mapping.
+            if (projectId && projectNumber) rememberProjectIdentity({ projectId, projectNumber, displayName: identity?.displayName || projectId });
+            return { ...p, projectId, projectNumber };
+          });
+        })
+      );
+
+      const dataProducts = results.flat();
+      const projects = new Map();
+      dataProducts.forEach((p) => {
+        if (p.projectId && p.projectNumber) {
+          const cached = getCachedProjectIdentity(p.projectId);
+          projects.set(p.projectId, { projectId: p.projectId, projectNumber: p.projectNumber, displayName: cached?.displayName || p.projectId });
+        }
+      });
+      return { dataProducts, projects: [...projects.values()] };
+    });
+
+    res.json(payload);
+  } catch (error) {
+    console.error('Error listing data products', error?.response?.data || error);
+    const err = error?.response?.data?.error || error;
+    return checkErrorAndSendResponse(res, err, 'An error occurred while listing data products.');
+  }
+});
+
+/**
+ * GET /api/v1/data-products/search
+ * Org-wide catalog search for data products, scoped server-side to the
+ * admin-configured projects (configData.json) when set. Returns normalized
+ * items tagged with projectNumber and (best-effort) projectId so the client can
+ * merge them with /data-products without the org-wide project list.
+ */
+app.get('/api/v1/data-products/search', async (req, res) => {
+  try {
+    const accessToken = req.headers.authorization?.split(' ')[1];
+    const searchProject = process.env.GOOGLE_CLOUD_PROJECT_ID;
+    if (!searchProject) {
+      return res.status(500).json({ message: 'Server Configuration Error: GOOGLE_CLOUD_PROJECT_ID must be set in the .env file.' });
+    }
+    const configuredProjectIds = await readConfiguredProjectIds();
+    let query = '(type=DATA_PRODUCT)';
+    if (configuredProjectIds.length > 0) {
+      query += ` (projectid=(${configuredProjectIds.join('|')}))`;
+    }
+
+    const payload = await cachedPerUser(req, `data-products-search:${query}`, DATA_PRODUCTS_CACHE_TTL_MS, async () => {
+      const bearerToken = await getRequestAccessToken(accessToken);
+      const url = `https://dataplex.googleapis.com/v1/projects/${searchProject}/locations/global:searchEntries`;
+      const results = [];
+      let pageToken;
+      let pages = 0;
+      do {
+        const body = { query, orderBy: 'relevance', pageSize: 1000 };
+        if (pageToken) body.pageToken = pageToken;
+        const response = await axios.post(url, body, {
+          headers: { Authorization: `Bearer ${bearerToken}`, 'Content-Type': 'application/json' },
+        });
+        (response.data?.results || []).forEach((r) => results.push(r));
+        pageToken = response.data?.nextPageToken;
+        pages += 1;
+      } while (pageToken && pages < 5);
+
+      const items = results
+        .map((r) => {
+          const entry = r?.dataplexEntry || {};
+          const source = entry.entrySource || {};
+          const resource = source.resource || '';
+          const segment = (resource.match(/^projects\/([^/]+)\//) || [])[1] || '';
+          if (!resource || !segment) return null;
+          return {
+            resource,
+            projectSegment: segment,
+            displayName: source.displayName ?? null,
+            description: source.description ?? null,
+            createTime: entry.createTime ?? null,
+            updateTime: entry.updateTime ?? null,
+            labels: source.labels ?? null,
+          };
+        })
+        .filter(Boolean);
+
+      // Best-effort id<->number for display; never blocks for long.
+      const identities = await resolveProjectIdentitiesWithBudget(items.map((i) => i.projectSegment), accessToken);
+      return {
+        items: items.map(({ projectSegment, ...rest }) => {
+          const identity = identities.get(projectSegment);
+          return {
+            ...rest,
+            projectNumber: identity?.projectNumber || (isProjectNumber(projectSegment) ? projectSegment : null),
+            projectId: identity?.projectId || (!isProjectNumber(projectSegment) ? projectSegment : null),
+          };
+        }),
+        truncated: Boolean(pageToken),
+      };
+    });
+
+    res.json(payload);
+  } catch (error) {
+    console.error('Error searching data products', error?.response?.data || error);
+    const err = error?.response?.data?.error || error;
+    return checkErrorAndSendResponse(res, err, 'An error occurred while searching data products.');
+  }
+});
+
+/**
+ * GET /api/v1/data-product-details
+ * Looks up the full Dataplex entry for a data product. Proxies the Dataplex
+ * `:lookupEntry` REST API.
+ *
+ * Query params:
+ *   project  - project id of the data product
+ *   location - location of the data product
+ *   entry    - fully-qualified entry name to look up
+ */
+app.get('/api/v1/data-product-details', async (req, res) => {
+  try {
+    let { project, location, entry } = req.query;
+    const { dataProduct } = req.query;
+    const accessToken = req.headers.authorization?.split(' ')[1];
+
+    // Preferred form: ?dataProduct=projects/{id|number}/locations/{l}/dataProducts/{id}.
+    // The entry name needs the project NUMBER; it is resolved here (cached)
+    // so the client no longer needs the org-wide project list to build it.
+    if (dataProduct) {
+      const parsed = parseDataProductName(dataProduct);
+      if (!parsed) {
+        return res.status(400).json({ message: 'Bad Request: "dataProduct" must be projects/{p}/locations/{l}/dataProducts/{id}.' });
+      }
+      let projectNumber = isProjectNumber(parsed.project) ? parsed.project : null;
+      if (!projectNumber) {
+        const identity = await resolveProjectIdentity(parsed.project, accessToken).catch(() => null);
+        projectNumber = identity?.projectNumber || parsed.project;
+      }
+      project = parsed.project;
+      location = parsed.location;
+      entry = `projects/${project}/locations/${location}/entryGroups/@dataplex/entries/projects/${projectNumber}/locations/${location}/dataProducts/${parsed.dataProductId}`;
+    }
+
+    if (!project || !location || !entry) {
+      return res.status(400).json({ message: 'Bad Request: "project", "location" and "entry" query params are required.' });
+    }
+
+    const bearerToken = await getRequestAccessToken(accessToken);
+    const url = `https://dataplex.googleapis.com/v1/projects/${project}/locations/${location}:lookupEntry`;
+
+    const response = await axios.get(url, {
+      params: { entry, view: 'ALL' },
+      headers: { Authorization: `Bearer ${bearerToken}`, 'Content-Type': 'application/json' },
+    });
+
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error fetching data product details', error?.response?.data || error);
+    const err = error?.response?.data?.error || error;
+    return checkErrorAndSendResponse(res, err, 'An error occurred while fetching data product details.');
+  }
+});
+
+/**
+ * GET /api/v1/data-product-assets
+ * Lists the data assets that belong to a data product. Proxies the Dataplex
+ * `dataAssets` REST API.
+ *
+ * Query params:
+ *   dataProduct - data product resource path
+ *                 (projects/{p}/locations/{l}/dataProducts/{id})
+ */
+app.get('/api/v1/data-product-assets', async (req, res) => {
+  try {
+    const { dataProduct } = req.query;
+    const accessToken = req.headers.authorization?.split(' ')[1];
+
+    if (!dataProduct) {
+      return res.status(400).json({ message: 'Bad Request: A "dataProduct" query param is required.' });
+    }
+
+    const parsed = parseDataProductName(dataProduct);
+    if (!parsed) {
+      return res.status(400).json({ message: 'Bad Request: "dataProduct" must be projects/{p}/locations/{l}/dataProducts/{id}.' });
+    }
+    // Prefer the project id form (what the client used to swap in from the
+    // project list); fall back to whatever was sent if it cannot be resolved.
+    let project = parsed.project;
+    if (isProjectNumber(project)) {
+      const identity = await resolveProjectIdentity(project, accessToken).catch(() => null);
+      project = identity?.projectId || project;
+    }
+    const bearerToken = await getRequestAccessToken(accessToken);
+    const url = `https://dataplex.googleapis.com/v1/projects/${project}/locations/${parsed.location}/dataProducts/${parsed.dataProductId}/dataAssets`;
+
+    const response = await axios.get(url, {
+      headers: { Authorization: `Bearer ${bearerToken}`, 'Content-Type': 'application/json' },
+    });
+
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error listing data product assets', error?.response?.data || error);
+    const err = error?.response?.data?.error || error;
+    return checkErrorAndSendResponse(res, err, 'An error occurred while listing data product assets.');
+  }
+});
+
+/**
+ * GET /api/v1/glossary-children
+ * Lists the categories and terms directly under a glossary/category. Proxies
+ * the Dataplex `{parent}/categories` and `{parent}/terms` REST APIs.
+ *
+ * Query params:
+ *   parent - glossary/category resource path
+ *            (projects/{p}/locations/{l}/glossaries/{g}[/categories/{c}])
+ */
+app.get('/api/v1/glossary-children', async (req, res) => {
+  try {
+    const { parent } = req.query;
+    const accessToken = req.headers.authorization?.split(' ')[1];
+
+    if (!parent) {
+      return res.status(400).json({ message: 'Bad Request: A "parent" query param is required.' });
+    }
+
+    const bearerToken = await getRequestAccessToken(accessToken);
+    const headers = { Authorization: `Bearer ${bearerToken}`, 'Content-Type': 'application/json' };
+
+    // An explicit 403 is the ONLY thing that means "you cannot read this glossary".
+    // An empty result does not: a glossary with no categories and no terms is a
+    // perfectly normal, readable glossary. Nor does a single failing leg - if terms
+    // are readable but categories are denied, the glossary is still readable.
+    //
+    // This distinction matters because the client marks search matches as locked,
+    // and it previously had to *infer* that from absence - locking items the user
+    // could actually open.
+    //
+    // Each leg also follows nextPageToken to completion. Dataplex's
+    // categories.list/terms.list paginate by default (previously this took
+    // only the first page, so a glossary with more categories or terms than
+    // one page fit in silently lost the rest - with no signal to the client
+    // that anything was missing).
+    const fetchLeg = async (path, key) => {
+      let items = [];
+      let pageToken;
+      do {
+        try {
+          const { data } = await axios.get(
+            `https://dataplex.googleapis.com/v1/${parent}/${path}`,
+            { headers, params: { pageSize: 1000, ...(pageToken ? { pageToken } : {}) } }
+          );
+          items = items.concat(data[key] || []);
+          pageToken = data.nextPageToken;
+        } catch (err) {
+          // A failure on the very first page (nothing fetched yet) is the only
+          // case that can mean "denied" - a later page failing mid-pagination
+          // still means access was already proven, so keep what was fetched
+          // and just stop rather than discarding it.
+          return { forbidden: items.length === 0 && err?.response?.status === 403, data: items };
+        }
+      } while (pageToken);
+      return { forbidden: false, data: items };
+    };
+
+    const [categoriesRes, termsRes] = await Promise.all([
+      fetchLeg('categories', 'categories'),
+      fetchLeg('terms', 'terms'),
+    ]);
+
+    // Only when BOTH legs are explicitly denied do we report the glossary itself
+    // as inaccessible. Every other failure still degrades to an empty list, as
+    // before (surfacing those is tracked separately).
+    if (categoriesRes.forbidden && termsRes.forbidden) {
+      return res.status(403).json({
+        error: 'Permission Denied: You do not have access to this glossary.',
+        details: `Listing categories and terms was denied for ${parent}.`,
+      });
+    }
+
+    res.json({
+      categories: categoriesRes.data,
+      terms: termsRes.data,
+    });
+  } catch (error) {
+    console.error('Error fetching glossary children', error?.response?.data || error);
+    const err = error?.response?.data?.error || error;
+    return checkErrorAndSendResponse(res, err, 'An error occurred while fetching glossary children.');
+  }
+});
+
+/**
+ * GET /api/v1/lookup-entry-rest
+ * Looks up a full Knowledge Catalog entry. Proxies the Dataplex `:lookupEntry`
+ * REST API.
+ *
+ * Query params:
+ *   project  - project id in whose location scope to look up
+ *   location - location scope
+ *   entry    - fully-qualified entry name to look up
+ *   view     - optional entry view (defaults to ALL)
+ */
+app.get('/api/v1/lookup-entry-rest', async (req, res) => {
+  try {
+    const { project, location, entry, view } = req.query;
+    const accessToken = req.headers.authorization?.split(' ')[1];
+
+    if (!project || !location || !entry) {
+      return res.status(400).json({ message: 'Bad Request: "project", "location" and "entry" query params are required.' });
+    }
+
+    const bearerToken = await getRequestAccessToken(accessToken);
+    const url = `https://dataplex.googleapis.com/v1/projects/${project}/locations/${location}:lookupEntry`;
+
+    const response = await axios.get(url, {
+      params: { entry, view: view || 'ALL' },
+      headers: { Authorization: `Bearer ${bearerToken}`, 'Content-Type': 'application/json' },
+    });
+
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error looking up entry', error?.response?.data || error);
+    const err = error?.response?.data?.error || error;
+    return checkErrorAndSendResponse(res, err, 'An error occurred while looking up the entry.');
+  }
+});
+
+/**
+ * POST /api/v1/search-entries
+ * Searches Knowledge Catalog entries. Proxies the Dataplex `:searchEntries`
+ * REST API.
+ *
+ * Body:
+ *   project  - optional project id (defaults to GOOGLE_CLOUD_PROJECT_ID)
+ *   location - optional location scope (defaults to "global")
+ *   ...rest  - forwarded as the searchEntries request body (query, pageSize, orderBy, pageToken, ...)
+ */
+app.post('/api/v1/search-entries', async (req, res) => {
+  try {
+    const { project, location, ...searchBody } = req.body || {};
+    const accessToken = req.headers.authorization?.split(' ')[1];
+    const proj = project || process.env.GOOGLE_CLOUD_PROJECT_ID;
+    const loc = location || 'global';
+
+    if (!proj) {
+      return res.status(500).json({ message: 'Server Configuration Error: GOOGLE_CLOUD_PROJECT_ID must be set in the .env file.' });
+    }
+    if (!searchBody.query) {
+      return res.status(400).json({ message: 'Bad Request: A "query" field is required.' });
+    }
+
+    const bearerToken = await getRequestAccessToken(accessToken);
+    const url = `https://dataplex.googleapis.com/v1/projects/${proj}/locations/${loc}:searchEntries`;
+
+    const response = await axios.post(url, searchBody, {
+      headers: { Authorization: `Bearer ${bearerToken}`, 'Content-Type': 'application/json' },
+    });
+
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error searching entries', error?.response?.data || error);
+    const err = error?.response?.data?.error || error;
+    return checkErrorAndSendResponse(res, err, 'An error occurred while searching entries.');
+  }
+});
+
+app.get('/api/v1/get-sample-data', async (req, res) => {
+  try {
+
+    const fqn = req.query.fqn; // Get entryName from query parameters
+    const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+    if (!fqn) {
+        return checkErrorAndSendResponse(res, error, 'fqn is required');
+    }
+
+    const projectId = fqn.split(':')[1].split('.')[0];
+    let bigquery;
+    if (isServiceAccountMode() && !isLocalGcloudAuthEnabled()) {
+        // Service account (ADC) — no caller token needed.
+        bigquery = new BigQuery({ projectId });
+    } else {
+        const authClient = await getAuthClient(accessToken).getClient();
+        bigquery = new BigQuery({ authClient, projectId });
+    }
+
+    const rows = await querySampleFromBigQuery(bigquery, fqn.split(':')[1], 10);
+
+    res.json(rows);
+
+  } catch (error) {
+    console.error('Error fetching entry', error);
+    return checkErrorAndSendResponse(res, error, 'An error occurred while fetching sample data from bigquery.');
+  }
+});
+
+/**
+ * POST /api/lineage
+ * A protected endpoint to fetch data lineage for a specific resource.
+ *
+ * Request Body:
+ * {
+ * "resourceName": "The fully qualified name of the target resource (e.g., //bigquery.googleapis.com/projects/p/datasets/d/tables/t)"
+ * }
+ */
+app.post('/api/v1/lineage', async (req, res) => {
+  const { parent, fqn } = req.body;
+
+  if (!fqn && !parent) {
+    return res.status(400).json({ message: 'Bad Request: A "fqn and parent" field is required.' });
+  }
+
+  try {
+    const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+    const oauth2Client = getAuthClient(accessToken);
+
+    const dataplexLineageClientv1 = new LineageClient({
+        auth: oauth2Client,
+    });
+
+    //const parent = `projects/${projectId}/locations/us`;
+    console.log(`Searching for lineage links targeting resource: ${fqn}`);
+
+    // The searchLinks method returns an iterable. We'll collect all results.
+    const source = dataplexLineageClientv1.searchLinks({
+      parent: parent,
+      source: {
+        fullyQualifiedName: fqn,
+      }
+    });
+    const target = dataplexLineageClientv1.searchLinks({
+      parent: parent,
+      target: {
+        fullyQualifiedName: fqn,
+      }
+    });
+
+    const [sourceLinks, targetLinks] = await Promise.all([
+        source, target
+    ]);
+
+    const links = [...sourceLinks[0].map(s => s.name), ...targetLinks[0].map(t => t.name)];
+    //let batchData = [];
+    let sourceData = sourceLinks[0];
+    let targetData = targetLinks[0];
+    if(links.length > 0){
+        const batchProcess = dataplexLineageClientv1.batchSearchLinkProcesses({
+            parent:parent,
+            links:links,
+            pageSize:20
+        });
+
+        const [batchProcessLinks] = await Promise.all([
+            batchProcess
+        ]);
+
+        if(batchProcessLinks[0].length > 0){
+            batchData = batchProcessLinks[0];
+            const linkToProcessMap = {};
+
+            batchProcessLinks[0].forEach(f => {
+                f.links.forEach(l => {
+                    linkToProcessMap[l.link] = f.process;
+                });
+            });
+            sourceData = sourceLinks[0].map(s => ({
+                ...s,
+                process: linkToProcessMap[s.name] || ""
+            }));
+            
+            targetData = targetLinks[0].map(s => ({
+                ...s,
+                process: linkToProcessMap[s.name] || ""
+            }));
+        }
+    }
+
+
+    res.json({sourceLinks:sourceData, targetLinks:targetData});//, batchSearchLinkProcesses : batchData});
+
+  } catch (error) {
+    console.error('Error searching for lineage links:', error);
+    return checkErrorAndSendResponse(res, error, 'An error occurred while fetching data lineage.');
+  }
+});
+
+app.post('/api/v1/lineage-downstream', async (req, res) => {
+  const { parent, fqn } = req.body;
+
+  if (!fqn && !parent) {
+    return res.status(400).json({ message: 'Bad Request: A "fqn and parent" field is required.' });
+  }
+
+  try {
+    const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+    const oauth2Client = getAuthClient(accessToken);
+
+    const dataplexLineageClientv1 = new LineageClient({
+        auth: oauth2Client,
+    });
+
+    //const parent = `projects/${projectId}/locations/us`;
+    console.log(`Searching for lineage links targeting resource: ${fqn}`);
+
+    // The searchLinks method returns an iterable. We'll collect all results.
+    const [sourceLinks] = await dataplexLineageClientv1.searchLinks({
+      parent: parent,
+      source: {
+        fullyQualifiedName: fqn,
+      }
+    });
+
+    res.json({sourceLinks : sourceLinks[0]});
+
+  } catch (error) {
+    console.error('Error searching for lineage links:', error);
+    return checkErrorAndSendResponse(res, error, 'An error occurred while fetching data lineage.');
+  }
+});
+
+app.post('/api/v1/lineage-upstream', async (req, res) => {
+  const { parent, fqn } = req.body;
+
+  if (!fqn && !parent) {
+    return res.status(400).json({ message: 'Bad Request: A "fqn and parent" field is required.' });
+  }
+
+  try {
+    const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+    const oauth2Client = getAuthClient(accessToken);
+
+    const dataplexLineageClientv1 = new LineageClient({
+        auth: oauth2Client,
+    });
+
+    //const parent = `projects/${projectId}/locations/us`;
+    console.log(`Searching for lineage links targeting resource: ${fqn}`);
+
+    // The searchLinks method returns an iterable. We'll collect all results.
+    const [targetLinks] = await dataplexLineageClientv1.searchLinks({
+      parent: parent,
+      target: {
+        fullyQualifiedName: fqn,
+      }
+    });
+
+    res.json({targetLinks : targetLinks[0]});//, batchSearchLinkProcesses : batchProcessLinks});
+
+  } catch (error) {
+    console.error('Error searching for lineage links:', error);
+    return checkErrorAndSendResponse(res, error, 'An error occurred while fetching data lineage.');
+  }
+});
+
+app.post('/api/v1/lineage-processes', async (req, res) => {
+  const { parent } = req.body;
+
+  if (!parent) {
+    return res.status(400).json({ message: 'Bad Request: A "parent" field is required.' });
+  }
+
+  try {
+    const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+    const oauth2Client = getAuthClient(accessToken);
+
+    const dataplexLineageClientv1 = new LineageClient({
+        auth: oauth2Client,
+    });
+
+    //const parent = `projects/${projectId}/locations/us`;
+    console.log(`Searching for lineage links targeting resource: ${fqn}`);
+
+    // The searchLinks method returns an iterable. We'll collect all results.
+    const [processes] = await dataplexLineageClientv1.listProcesses({
+      parent: parent
+    });
+
+    res.json({processes:processes});
+
+  } catch (error) {
+    console.error('Error searching for lineage links:', error);
+    return checkErrorAndSendResponse(res, error, 'An error occurred while fetching data lineage.');
+  }
+});
+
+app.post('/api/v1/get-process-and-job-details', async (req, res) => {
+  const { process } = req.body;
+
+  if (!process) {
+    return res.status(400).json({ message: 'Bad Request: A "process" field is required.' });
+  }
+
+  try {
+    const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+    const oauth2Client = getAuthClient(accessToken);
+
+    const dataplexLineageClientv1 = new LineageClient({
+        auth: oauth2Client,
+    });
+
+    // The searchLinks method returns an iterable. We'll collect all results.
+
+    const getProcess = dataplexLineageClientv1.getProcess({
+      name: process
+    });
+    const listProcessRuns = dataplexLineageClientv1.listRuns({
+        parent:process,
+        pageSize:50
+    });
+
+    const [processDetails, processRuns] = await Promise.all([
+        getProcess, listProcessRuns
+    ]);
+    const projectId = processDetails[0].origin.name.split(':')[0];
+    
+    const bigquery = new BigQuery({
+        authClient: oauth2Client,
+        projectId: projectId,
+    });
+    const jobId = processDetails[0].attributes.bigquery_job_id.stringValue;
+
+    const jobDetails = await bigquery.job(jobId).get();
+
+    res.json({processDetails:processDetails[0], processRuns: processRuns[0], jobDetails:jobDetails});//, batchSearchLinkProcesses : batchProcessLinks});
+
+  } catch (error) {
+    console.error('Error searching for lineage links:', error);
+    return checkErrorAndSendResponse(res, error, 'An error occurred while fetching data lineage query.');
+  }
+});
+
+/**
+ * POST /api/lineage-column-level
+ * A protected endpoint to fetch data lineage for a specific resource.
+ *
+ * Request Body:
+ * {
+ * "fqn": "The fully qualified name of the target resource (e.g., //bigquery.googleapis.com/projects/p/datasets/d/tables/t)"
+ * }
+ */
+
+async function fetchAllLineage(dataplexLineageClientv1, parent, fqn, type, results = []) {
+  let param={};
+  if(type === 'source'){
+    param={
+      parent: parent,
+      source: {
+        fullyQualifiedName: fqn,
+      }
+    }
+  } else if (type === 'target'){
+    param={
+      parent: parent,
+      target: {
+        fullyQualifiedName: fqn,
+      }
+    }
+  }
+  const response = await dataplexLineageClientv1.searchLinks(param);
+
+  results.children = [];
+  console.log(`Found ${response[0].length} ${type} links for FQN: ${fqn}`);
+
+  for (const child of response[0]) {
+    // Recursively fetch grandchildren
+    console.log(`Fetching lineage for child FQN: ${type === 'source' ? child.target.fullyQualifiedName : child.source.fullyQualifiedName}`);
+    const childWithChildren = await fetchAllLineage(dataplexLineageClientv1, parent, fqn, type, results);
+    results.children.push(childWithChildren);
+  }
+  return results;
+}
+
+function getAllLinks(node, result = []) {
+  if (!node) return result;
+
+  if (node.name) {
+    result.push(node.name);
+  }
+
+  if (Array.isArray(node.children)) {
+    for (const child of node.children) {
+      getAllLinks(child, result);
+    }
+  }
+
+  return result;
+}
+
+function getAllFQNs(node, type, result = []) {
+  if (!node) return result;
+
+  if (node.name && type=='source') {
+    result.push(node.source.fullyQualifiedName);
+  }
+  else if (node.name && type=='target') {
+    result.push(node.target.fullyQualifiedName);
+  }
+
+  if (Array.isArray(node.children)) {
+    for (const child of node.children) {
+      getAllFQNs(child, result, type);
+    }
+  }
+
+  return result;
+}
+
+function setProcessByValue(node, targetValue, processValueArray, type) {
+  if (!node) return;
+
+  node.process = '';
+
+  if (node.name === targetValue && type == 'source') {
+    node.process = processValueArray[targetValue] || '';
+  }
+  else if (node.name === targetValue && type == 'target') {
+    node.process = processValueArray[targetValue] || '';
+  }
+
+  if (Array.isArray(node.children)) {
+    for (const child of node.children) {
+      setProcessByValue(child, targetValue, processValueArray, type);
+    }
+  }
+
+  return node;
+}
+
+app.post('/api/v1/lineage-column-level', async (req, res) => {
+  const { parent, fqn } = req.body;
+
+  if (!fqn && !parent) {
+    return res.status(400).json({ message: 'Bad Request: A "fqn and parent" field is required.' });
+  }
+
+  try {
+    const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+    const oauth2Client = getAuthClient(accessToken);
+
+    const dataplexClinetv1 = new CatalogServiceClient({
+        auth: oauth2Client,
+    });
+
+    const dataplexLineageClientv1 = new LineageClient({
+        auth: oauth2Client,
+    });
+
+    //const parent = `projects/${projectId}/locations/us`;
+    console.log(`Searching for lineage links targeting resource: ${fqn}`);
+
+    // The searchLinks method returns an iterable. We'll collect all results.
+    const source = dataplexLineageClientv1.searchLinks({
+      parent: parent,
+      source: {
+        fullyQualifiedName: fqn,
+      }
+    });
+    const target = dataplexLineageClientv1.searchLinks({
+      parent: parent,
+      target: {
+        fullyQualifiedName: fqn,
+      }
+    });
+
+    const [sourceLinks, targetLinks] = await Promise.all([
+      source, target
+    ]);
+
+    let sourceFQNs = sourceLinks[0].map(s => s.target.fullyQualifiedName);
+    let targetFQNs = targetLinks[0].map(t => t.source.fullyQualifiedName);
+
+    let sourceLineagePromises = sourceFQNs.map(sFQN => fetchAllLineage(dataplexLineageClientv1, parent, sFQN, 'source', sourceLinks[0].filter(s => (s.target.fullyQualifiedName === sFQN))[0]));
+    let targetLineagePromises = targetFQNs.map(tFQN => fetchAllLineage(dataplexLineageClientv1, parent, tFQN, 'target', targetLinks[0].filter(t => (t.source.fullyQualifiedName === tFQN))[0]));
+
+    const [sourceLineageResults, targetLineageResults] = await Promise.all([
+      Promise.all(sourceLineagePromises),
+      Promise.all(targetLineagePromises)
+    ]);
+    
+    let sFQNs = [];
+    let tFQNs = [];
+    
+    let sLinks = [];
+    let tLinks = [];
+
+    sourceLineageResults.forEach(s =>{
+      sFQNs.push(...getAllFQNs(s, 'target'))
+      sLinks.push(...getAllLinks(s))
+    })
+
+    targetLineageResults.forEach(s =>{
+      tFQNs.push(...getAllFQNs(s, 'source'))
+      tLinks.push(...getAllLinks(s))
+    })
+    
+    let fqnArray = [...sFQNs, ...tFQNs];
+    fqnArray = fqnArray.length > 20 ? fqnArray.slice(0,20) : fqnArray;
+    console.log('fqn', fqnArray);
+    
+    const links = [...sLinks, ...tLinks];
+    console.log('links' , links);
+    //const links = [...sourceLinks[0].map(s => s.name), ...targetLinks[0].map(t => t.name)];
+    let sourceData = sourceLinks[0];
+    let targetData = targetLinks[0];
+    let results = [];
+    if(links.length > 0){
+        const batchProcess = dataplexLineageClientv1.batchSearchLinkProcesses({
+            parent:parent,
+            links:links,
+            pageSize:20
+        });
+
+        const [batchProcessLinks] = await Promise.all([
+            batchProcess
+        ]);
+
+        results = await Promise.allSettled(
+          fqnArray.map(async (item) =>{
+              let query  = `fully_qualified_name=${item}`;
+
+              // Construct the request for the Knowledge Catalog API
+              const request = {
+                // The name of the project and location to search within
+                name: parent,
+                query: query,
+                pageSize:1, // Limit the number of results returned
+              };
+
+              // Call the searchEntries method of the Knowledge Catalog client
+              const [searchResponse] = await dataplexClinetv1.searchEntries(request);
+              if(searchResponse.length > 0){
+                const entryName = searchResponse.length > 0 ? searchResponse[0].dataplexEntry.name : null ;
+                const [entry] = await dataplexClinetv1.getEntry({ name: entryName, view: protos.google.cloud.dataplex.v1.EntryView.ALL });
+                return entry;
+              }else{
+                return null;
+              }
+            }
+          )
+        );
+
+        const successes = results
+          .filter(r => r.status === 'fulfilled')
+          .map(r => r.value);
+
+        // const failures = results
+        //   .filter(r => r.status === 'rejected')
+        //   .map(r => r.reason);
+
+        if(batchProcessLinks[0].length > 0){
+            //batchData = batchProcessLinks[0];
+            const linkToProcessMap = {};
+
+            batchProcessLinks[0].forEach(f => {
+                f.links.forEach(l => {
+                    linkToProcessMap[l.link] = f.process;
+                });
+            });
+            // Object.keys(linkToProcessMap).forEach((key) => {
+            //     sourceData = setProcessByValue(sourceLineageResults[0], key, linkToProcessMap);
+            //     targetData = setProcessByValue(targetLineageResults[0], key, linkToProcessMap);
+            // })
+            sourceData = sourceLineageResults.map(s => {
+               let sData = {};
+                Object.keys(linkToProcessMap).forEach((key) => {
+                    if(s.name === key)
+                      sData = setProcessByValue(s, key, linkToProcessMap, 'source');
+                })
+                return sData;
+            });
+            
+            targetData = targetLineageResults.map(s => {
+                let tData = {};
+                Object.keys(linkToProcessMap).forEach((key) => {
+                    if(s.name === key)
+                      tData = setProcessByValue(s, key, linkToProcessMap, 'target');
+                })
+                return tData;
+            });
+        }
+
+        if(successes.length > 0){
+            const fqnToEntryMap = {};
+            successes.forEach(entry => {
+                fqnToEntryMap[entry.fullyQualifiedName] = entry;
+            });
+
+            sourceData = sourceData.map(s => ({
+                ...s,
+                targetEntry: fqnToEntryMap[s.target.fullyQualifiedName] || null
+            }));
+            targetData = targetData.map(s => ({
+                ...s,
+                sourceEntry: fqnToEntryMap[s.source.fullyQualifiedName] || null
+            }));
+        }
+    }
+
+
+    res.json({sourceLinks:sourceData, targetLinks:targetData});//, batchSearchLinkProcesses : batchData});
+
+  } catch (error) {
+    console.error('Error searching for lineage links:', error);
+    return checkErrorAndSendResponse(res, error, 'An error occurred while fetching data lineage.');
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Data Lineage REST (Knowledge Catalog) proxy routes
+//
+// Thin pass-through routes used by the "Data Lineage" tab. They call the
+// Data Lineage REST API (https://datalineage.googleapis.com/v1) directly with
+// axios instead of the gRPC client library, authenticating with either the
+// caller's forwarded OAuth token or the runtime service account
+// (see getRequestAccessToken).
+// ---------------------------------------------------------------------------
+const DATALINEAGE_BASE = 'https://datalineage.googleapis.com/v1';
+const BIGQUERY_REST_BASE = 'https://bigquery.googleapis.com/bigquery/v2';
+// projects/{p}/locations/{l}[/{collection}/{id}...]
+const LINEAGE_RESOURCE_NAME_RE = /^projects\/[^/\s]+\/locations\/[^/\s]+(\/[A-Za-z]+\/[^/\s]+)*$/;
+const LINEAGE_PARENT_RE = /^projects\/[^/\s]+\/locations\/[^/\s]+$/;
+const SAFE_ID_RE = /^[\w.:-]+$/;
+
+async function lineageRest(req, method, url, { data, params } = {}) {
+  const token = await getRequestAccessToken(req.headers.authorization?.split(' ')[1]);
+  const response = await axios({
+    method,
+    url,
+    data,
+    params,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  });
+  return response.data;
+}
+
+const LOOKER_LOCATIONS_CACHE_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Best-effort discovery of the locations that hold Looker entries (and thus
+ * Looker lineage, which is written in the Looker instance's region). Scoped to
+ * the admin-configured projects when set; cached per user. Never throws.
+ * Disable with DATA_LINEAGE_DISCOVER_LOOKER_LOCATIONS=false.
+ */
+async function discoverLookerLineageLocations(req) {
+  if (process.env.DATA_LINEAGE_DISCOVER_LOOKER_LOCATIONS === 'false') return [];
+  const searchProject = process.env.GOOGLE_CLOUD_PROJECT_ID;
+  if (!searchProject) return [];
+  try {
+    const projectIds = await readConfiguredProjectIds();
+    let query = 'system=looker';
+    if (projectIds.length > 0) query += ` (projectid=(${projectIds.join('|')}))`;
+    return await cachedPerUser(req, `lineage-looker-locations:${query}`, LOOKER_LOCATIONS_CACHE_TTL_MS, async () => {
+      const token = await getRequestAccessToken(req.headers.authorization?.split(' ')[1]);
+      const url = `https://dataplex.googleapis.com/v1/projects/${searchProject}/locations/global:searchEntries`;
+      const found = new Set();
+      let pageToken;
+      let pages = 0;
+      do {
+        const body = { query, pageSize: 500 };
+        if (pageToken) body.pageToken = pageToken;
+        const { data } = await axios.post(url, body, {
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        });
+        (data?.results || []).forEach((r) => {
+          const loc = locationFromResourceName(r?.dataplexEntry?.name);
+          if (loc) found.add(loc);
+        });
+        pageToken = data?.nextPageToken;
+        pages += 1;
+      } while (pageToken && pages < 3);
+      return [...found];
+    });
+  } catch (error) {
+    console.warn(
+      'Looker lineage location discovery failed; continuing without it:',
+      error?.response?.data?.error?.message || error?.message,
+    );
+    return [];
+  }
+}
+
+// Axios errors carry HTTP statuses (not gRPC codes), so they need their own mapper.
+function sendGoogleRestError(res, error, message) {
+  const status = error?.response?.status || 500;
+  const googleError = error?.response?.data?.error
+    || (Array.isArray(error?.response?.data) ? error.response.data[0]?.error : undefined);
+  console.error(message, googleError || error?.message);
+  return res.status(status).json({
+    error: message,
+    status: googleError?.status,
+    details: googleError?.message || error?.message,
+  });
+}
+
+/**
+ * POST /api/v1/data-lineage/search-lineage
+ * Wraps projects.locations.searchLineageStreaming. The REST transport returns
+ * server-streamed messages as a JSON array; they are flattened into a single
+ * { links, unreachable, truncated } response.
+ */
+app.post('/api/v1/data-lineage/search-lineage', async (req, res) => {
+  const { parent, locations, rootCriteria, direction, filters, limits } = req.body || {};
+  if (!parent || !LINEAGE_PARENT_RE.test(parent)) {
+    return res.status(400).json({ error: 'Bad Request: a valid "parent" (projects/{p}/locations/{l}) is required.' });
+  }
+  if (!rootCriteria?.entities?.entities?.length) {
+    return res.status(400).json({ error: 'Bad Request: "rootCriteria.entities.entities" is required.' });
+  }
+  if (!['UPSTREAM', 'DOWNSTREAM'].includes(direction)) {
+    return res.status(400).json({ error: 'Bad Request: "direction" must be UPSTREAM or DOWNSTREAM.' });
+  }
+  try {
+    const location = parent.split('/')[3];
+    // Cross-location lineage (e.g. BigQuery "us" -> Looker "us-central1") is only
+    // returned for locations listed here, so add configured + discovered ones.
+    const body = {
+      locations: resolveLineageLocations({
+        parentLocation: location,
+        requested: Array.isArray(locations) ? locations : [],
+        configured: parseLocationList(process.env.DATA_LINEAGE_EXTRA_LOCATIONS),
+        discovered: await discoverLookerLineageLocations(req),
+      }),
+      rootCriteria,
+      direction,
+    };
+    if (filters && Object.keys(filters).length) body.filters = filters;
+    if (limits && Object.keys(limits).length) body.limits = limits;
+
+    const data = await lineageRest(req, 'post', `${DATALINEAGE_BASE}/${parent}:searchLineageStreaming`, { data: body });
+    const chunks = Array.isArray(data) ? data : [data];
+    const links = [];
+    const unreachable = new Set();
+    chunks.forEach((chunk) => {
+      (chunk?.links || []).forEach((l) => links.push(l));
+      (chunk?.unreachable || []).forEach((u) => unreachable.add(u));
+    });
+    const maxResults = limits?.maxResults || 1000;
+    res.json({
+      links,
+      unreachable: [...unreachable],
+      truncated: links.length >= maxResults,
+      searchedLocations: body.locations,
+    });
+  } catch (error) {
+    return sendGoogleRestError(res, error, 'An error occurred while searching data lineage.');
+  }
+});
+
+/**
+ * POST /api/v1/data-lineage/search-links
+ * Wraps projects.locations.searchLinks (single hop) and drains pagination.
+ */
+app.post('/api/v1/data-lineage/search-links', async (req, res) => {
+  const { parent, source, target, pageSize = 100, maxPages = 10 } = req.body || {};
+  if (!parent || !LINEAGE_PARENT_RE.test(parent)) {
+    return res.status(400).json({ error: 'Bad Request: a valid "parent" is required.' });
+  }
+  if (!source?.fullyQualifiedName && !target?.fullyQualifiedName) {
+    return res.status(400).json({ error: 'Bad Request: "source" or "target" entity reference is required.' });
+  }
+  try {
+    const links = [];
+    let pageToken;
+    let pages = 0;
+    do {
+      const body = { pageSize: Math.min(Number(pageSize) || 100, 100) };
+      if (source?.fullyQualifiedName) body.source = source;
+      else body.target = target;
+      if (pageToken) body.pageToken = pageToken;
+      const data = await lineageRest(req, 'post', `${DATALINEAGE_BASE}/${parent}:searchLinks`, { data: body });
+      (data?.links || []).forEach((l) => links.push(l));
+      pageToken = data?.nextPageToken;
+      pages += 1;
+    } while (pageToken && pages < Math.min(Number(maxPages) || 10, 50));
+    res.json({ links, truncated: Boolean(pageToken) });
+  } catch (error) {
+    return sendGoogleRestError(res, error, 'An error occurred while searching lineage links.');
+  }
+});
+
+/**
+ * POST /api/v1/data-lineage/link-processes
+ * Wraps projects.locations.batchSearchLinkProcesses; chunks links by 100.
+ */
+app.post('/api/v1/data-lineage/link-processes', async (req, res) => {
+  const { parent, links } = req.body || {};
+  if (!parent || !LINEAGE_PARENT_RE.test(parent)) {
+    return res.status(400).json({ error: 'Bad Request: a valid "parent" is required.' });
+  }
+  if (!Array.isArray(links) || links.length === 0) {
+    return res.json({ processLinks: [] });
+  }
+  try {
+    const processLinks = [];
+    for (let i = 0; i < links.length; i += 100) {
+      const chunk = links.slice(i, i + 100);
+      let pageToken;
+      let pages = 0;
+      do {
+        const body = { links: chunk, pageSize: 100 };
+        if (pageToken) body.pageToken = pageToken;
+        const data = await lineageRest(req, 'post', `${DATALINEAGE_BASE}/${parent}:batchSearchLinkProcesses`, { data: body });
+        (data?.processLinks || []).forEach((p) => processLinks.push(p));
+        pageToken = data?.nextPageToken;
+        pages += 1;
+      } while (pageToken && pages < 10);
+    }
+    res.json({ processLinks });
+  } catch (error) {
+    return sendGoogleRestError(res, error, 'An error occurred while fetching lineage processes.');
+  }
+});
+
+/** GET /api/v1/data-lineage/process?name=projects/.../processes/... */
+app.get('/api/v1/data-lineage/process', async (req, res) => {
+  const { name } = req.query;
+  if (!name || !LINEAGE_RESOURCE_NAME_RE.test(name) || !name.includes('/processes/')) {
+    return res.status(400).json({ error: 'Bad Request: a valid process "name" is required.' });
+  }
+  try {
+    const data = await lineageRest(req, 'get', `${DATALINEAGE_BASE}/${name}`);
+    res.json(data);
+  } catch (error) {
+    return sendGoogleRestError(res, error, 'An error occurred while fetching the lineage process.');
+  }
+});
+
+/** GET /api/v1/data-lineage/runs?process=...&pageToken=&pageSize= */
+app.get('/api/v1/data-lineage/runs', async (req, res) => {
+  const { process, pageToken, pageSize = 25 } = req.query;
+  if (!process || !LINEAGE_RESOURCE_NAME_RE.test(process) || !process.includes('/processes/')) {
+    return res.status(400).json({ error: 'Bad Request: a valid "process" is required.' });
+  }
+  try {
+    const params = { pageSize: Math.min(Number(pageSize) || 25, 100) };
+    if (pageToken) params.pageToken = pageToken;
+    const data = await lineageRest(req, 'get', `${DATALINEAGE_BASE}/${process}/runs`, { params });
+    res.json({ runs: data?.runs || [], nextPageToken: data?.nextPageToken });
+  } catch (error) {
+    return sendGoogleRestError(res, error, 'An error occurred while fetching lineage runs.');
+  }
+});
+
+/** GET /api/v1/data-lineage/lineage-events?run=...&pageToken= */
+app.get('/api/v1/data-lineage/lineage-events', async (req, res) => {
+  const { run, pageToken, pageSize = 50 } = req.query;
+  if (!run || !LINEAGE_RESOURCE_NAME_RE.test(run) || !run.includes('/runs/')) {
+    return res.status(400).json({ error: 'Bad Request: a valid "run" is required.' });
+  }
+  try {
+    const params = { pageSize: Math.min(Number(pageSize) || 50, 100) };
+    if (pageToken) params.pageToken = pageToken;
+    const data = await lineageRest(req, 'get', `${DATALINEAGE_BASE}/${run}/lineageEvents`, { params });
+    res.json({ lineageEvents: data?.lineageEvents || [], nextPageToken: data?.nextPageToken });
+  } catch (error) {
+    return sendGoogleRestError(res, error, 'An error occurred while fetching lineage events.');
+  }
+});
+
+/**
+ * GET /api/v1/data-lineage/bigquery-job?projectId=&jobId=&location=
+ * Fetches a BigQuery job (jobs.get) and returns a trimmed summary used by the
+ * process "Query runs" panel (SQL text + statistics).
+ */
+app.get('/api/v1/data-lineage/bigquery-job', async (req, res) => {
+  const { projectId, jobId, location } = req.query;
+  if (!projectId || !jobId || !SAFE_ID_RE.test(projectId) || !SAFE_ID_RE.test(jobId) || (location && !SAFE_ID_RE.test(location))) {
+    return res.status(400).json({ error: 'Bad Request: valid "projectId" and "jobId" are required.' });
+  }
+  try {
+    const params = location ? { location } : undefined;
+    const job = await lineageRest(
+      req, 'get',
+      `${BIGQUERY_REST_BASE}/projects/${encodeURIComponent(projectId)}/jobs/${encodeURIComponent(jobId)}`,
+      { params }
+    );
+    const stats = job?.statistics || {};
+    const query = job?.configuration?.query || {};
+    res.json({
+      id: job?.id,
+      jobId: job?.jobReference?.jobId,
+      projectId: job?.jobReference?.projectId,
+      location: job?.jobReference?.location,
+      userEmail: job?.user_email,
+      state: job?.status?.state,
+      errorResult: job?.status?.errorResult,
+      query: query.query,
+      statementType: stats?.query?.statementType,
+      destinationTable: query.destinationTable,
+      referencedTables: stats?.query?.referencedTables || [],
+      creationTime: stats.creationTime,
+      startTime: stats.startTime,
+      endTime: stats.endTime,
+      totalBytesProcessed: stats.totalBytesProcessed || stats?.query?.totalBytesProcessed,
+      totalSlotMs: stats.totalSlotMs || stats?.query?.totalSlotMs,
+      cacheHit: stats?.query?.cacheHit,
+      finalExecutionDurationMs: stats.finalExecutionDurationMs,
+    });
+  } catch (error) {
+    return sendGoogleRestError(res, error, 'An error occurred while fetching the BigQuery job.');
+  }
+});
+
+app.get('/api/v1/projects', async (req, res) => {
+  try {
+    console.log('Listing all accessible GCP projects.');
+    const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+    const oauth2Client = getAuthClient(accessToken);
+
+    const resourceManagerClient = new ProjectsClient({
+        auth: oauth2Client,
+    });
+
+    // The searchProjects method returns an iterable. We'll collect all results into an array.
+    const projects = await resourceManagerClient.searchProjects();
+
+    res.json(projects[0]); // The response is an array where the first element contains the list of projects.
+
+  } catch (error) {
+    console.error('Error listing projects:', error);
+    return checkErrorAndSendResponse(res, error, 'An error occurred while listing projects.');
+  }
+});
+
+/**
+ * GET /api/tag-templates
+ * A protected endpoint to list all Tag Templates in a given location using Data Catalog.
+ */
+app.get('/api/v1/tag-templates', async (req, res) => {
+  try {
+    const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
+    const location = process.env.GCP_LOCATION;
+
+    if (!projectId || !location) {
+        return res.status(500).json({ message: 'Server Configuration Error: GOOGLE_CLOUD_PROJECT_ID and GCP_LOCATION must be set in the .env file.' });
+    }
+
+    // The parent for Data Catalog resources includes the project and location.
+    const parent = `projects/${projectId}/locations/${location}`;
+    console.log(`Listing tag templates for parent: ${parent}`);
+    const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+    const oauth2Client = getAuthClient(accessToken);
+
+    const dataCatalogClientv1 = new DataCatalogClient({
+        auth: oauth2Client,
+    });
+
+
+    // The listTagTemplates method returns an iterable. We'll collect all results into an array.
+    const [templates] = await dataCatalogClientv1.listTagTemplates({ parent });
+
+    res.json(templates);
+
+  } catch (error) {
+    console.error('Error listing tag templates:', error);
+    return checkErrorAndSendResponse(res, error, 'An error occurred while listing tag templates.');
+  }
+});
+
+app.post('/api/v1/get-aspect-detail', async (req, res) => {
+    const { name } = req.body;
+
+    if (!name) {
+        return res.status(400).json({ message: 'Bad Request: A "name" field is required.' });
+    }
+
+    try {
+    const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+    const oauth2Client = getAuthClient(accessToken);
+
+    const dataplexClientv1 = new CatalogServiceClient({
+        auth: oauth2Client,
+    });
+
+    const [aspectType] = await dataplexClientv1.getAspectType({ name:name });
+
+
+    res.json(aspectType);
+
+  } catch (error) {
+    console.error('Error listing configs:', error);
+    return checkErrorAndSendResponse(res, error, 'An error occurred while getting aspect detail.');
+  }
+});
+
+app.get('/api/v1/app-configs', async (req, res) => {
+    try {
+    const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
+    const location = process.env.GCP_LOCATION;
+    const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+    const oauth2Client = getAuthClient(accessToken);
+
+    const dataplexClientv1 = new CatalogServiceClient({
+        auth: oauth2Client,
+    });
+
+    const resourceManagerClientv1 = new ProjectsClient({
+        auth: oauth2Client,
+    });
+
+    if (!projectId || !location) {
+        return res.status(500).json({ message: 'Server Configuration Error: GOOGLE_CLOUD_PROJECT_ID and GCP_LOCATION must be set in the .env file.' });
+    }
+
+    const parent = `projects/${projectId}/locations/${location}`;
+    const aspectQuery = `type=projects/dataplex-types/locations/global/entryTypes/aspecttype`
+
+    // Construct the request for the Knowledge Catalog API
+    const request = {
+      // The name of the project and location to search within
+      name: parent,
+      query: aspectQuery,
+      // Page size only, not a cap: auto-pagination stays ON below so the list is
+      // complete. Set high purely to cut round trips, mirroring /get-projects.
+      pageSize:999,
+    };
+
+    
+    let projects = aspects = [];
+    let configData = {};
+    try{
+      const defaultConfigData = await fs.readFile(dataFilePath, 'utf8').catch(() => '');
+      configData = defaultConfigData ? JSON.parse(defaultConfigData) : {};
+      const hasProjectRestriction = Array.isArray(configData.projects) && configData.projects.length > 0;
+
+      const [aspectsList, projectList, currentProject] = await Promise.all([
+          dataplexClientv1.searchEntries(request),
+          hasProjectRestriction
+            ? Promise.resolve([[]])
+            : resourceManagerClientv1.searchProjects({pageSize:2000}, { autoPaginate: false}),
+          resourceManagerClientv1.getProject({ name: `projects/${projectId}` }),
+      ]);
+      aspects = aspectsList[0] || [];
+      let p = projectList[0] ? projectList[0].filter(pr => pr.projectId !== projectId) : [];
+      projects = [ currentProject[0], ...p];
+    } catch(err){
+      console.error('Error listing projects for app config:', err);
+    }
+
+    // Resolve the admin-configured project IDs to their project numbers.
+    // The UI scopes aspects by matching `projects/{number}`, and deriving those
+    // numbers from the full project list is fragile: that list can be truncated
+    // or partially fetched, and an unresolved project silently HIDES aspects.
+    // This set is admin-sized (a handful), so resolve it directly — it is then
+    // always complete, or explicitly flagged as not.
+    const configuredProjectIds = configData.projects || [];
+    const configuredProjects = [];
+    let configuredProjectsComplete = true;
+
+    if (configuredProjectIds.length > 0) {
+      const resolved = await Promise.allSettled(
+        configuredProjectIds.map((id) =>
+          resourceManagerClientv1.getProject({ name: `projects/${id}` })
+        )
+      );
+
+      // One retry for whichever calls failed - absorbs a transient blip (rate
+      // limit, brief 5xx) instead of permanently flagging
+      // configuredProjectsComplete false for the rest of the session over
+      // something that would have succeeded a moment later. A persistently
+      // failing id still correctly ends up incomplete below.
+      const failedIndexes = resolved
+        .map((r, i) => (r.status === 'rejected' ? i : -1))
+        .filter((i) => i !== -1);
+      if (failedIndexes.length > 0) {
+        const retried = await Promise.allSettled(
+          failedIndexes.map((i) =>
+            resourceManagerClientv1.getProject({ name: `projects/${configuredProjectIds[i]}` })
+          )
+        );
+        failedIndexes.forEach((i, j) => { resolved[i] = retried[j]; });
+      }
+
+      resolved.forEach((result, i) => {
+        const project = result.status === 'fulfilled' ? result.value?.[0] : null;
+        const projectNumber = (project?.name || '').split('/')[1] || '';
+        if (projectNumber) {
+          configuredProjects.push({
+            projectId: project.projectId || configuredProjectIds[i],
+            projectNumber,
+          });
+          rememberProjectIdentity({ projectId: project.projectId || configuredProjectIds[i], projectNumber, displayName: project.displayName });
+        } else {
+          // Flag rather than silently returning a short list: the client must
+          // know not to filter on an incomplete set.
+          configuredProjectsComplete = false;
+          console.error(
+            `Could not resolve configured project ${configuredProjectIds[i]}:`,
+            result.reason?.message || result.reason
+          );
+        }
+      });
+    }
+
+    // Guarded against a malformed entry - without this, one bad aspect in the
+    // response fails the whole /app-configs call (500), which blocks the
+    // entire app's bootstrap (Glossaries, Browse by Aspect, project scoping
+    // all wait on this endpoint).
+    const reduceAspect = (dataplexEntry) => {
+      const e = dataplexEntry || {};
+      return { name: e.name, fullyQualifiedName: e.fullyQualifiedName, entrySource: e.entrySource, entryType: e.entryType };
+    };
+
+    const configs = {
+        aspects: aspects.map((a) => ({ dataplexEntry: reduceAspect(a?.dataplexEntry) })),
+        projects: projects.map(({ projectId, name, displayName }) => ({ projectId, name, displayName })),
+        projectsRestricted: !!(configData.projects && configData.projects.length > 0),
+        configuredProjectIds: configData.projects || [],
+        configuredProjects,
+        configuredProjectsComplete,
+        defaultSearchProduct: configData.products || 'All',
+        defaultSearchAssets: configData.assets || '',
+        browseByAspectTypes: configData.aspectType || []
+    };
+
+    res.json(configs);
+
+  } catch (error) {
+    console.error('Error listing configs:', error);
+    return checkErrorAndSendResponse(res, error, 'An error occurred while generating app configs.');
+  }
+});
+
+
+app.post('/api/v1/send-feedback', async (req, res) => {
+  
+  try {
+    const { message, requesterEmail, projectId, projectAdmin } = req.body;
+    
+    if (!requesterEmail || typeof requesterEmail !== 'string' || requesterEmail.trim() === '') {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Requester email is required and must be a non-empty string' 
+      });
+    }
+    
+    if (!projectId || typeof projectId !== 'string' || projectId.trim() === '') {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Project ID is required and must be a non-empty string' 
+      });
+    }
+
+    if (projectAdmin && (!Array.isArray(projectAdmin) || !projectAdmin.every(email => typeof email === 'string'))) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Emails should array of email strings' 
+      });
+    }
+    
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(requesterEmail)) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid email format' 
+      });
+    }
+    
+    console.log('Send feedback received:', {
+      message: message ? 'Message provided' : 'No message',
+      requesterEmail,
+      projectId,
+      projectAdmin: projectAdmin || [],
+      timestamp: new Date().toISOString()
+    }); 
+
+    const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+    // Send feedback email
+    console.log('About to send feedback email...');
+    const emailResult = await sendFeedbackEmail(
+      accessToken,
+      message || '',
+      requesterEmail,
+      projectId,
+      projectAdmin || [] // Pass projectAdmin emails
+    );
+    
+    console.log('Email result:', emailResult);
+    
+    if (emailResult.success) {
+      // Log successful access request
+      console.log('Access request processed successfully:', {
+        requesterEmail,
+        projectId,
+        projectAdmin: projectAdmin || [],
+        messageId: emailResult.messageId,
+        timestamp: new Date().toISOString()
+      });
+      
+      return res.status(200).json({
+        success: true,
+        message: 'Feedback submitted successfully',
+        data: {
+          requesterEmail,
+          projectId,
+          projectAdmin: projectAdmin || [],
+          messageId: emailResult.messageId,
+          submittedAt: new Date().toISOString()
+        }
+      });
+    } else {
+      console.error('Failed to send feedback email:', emailResult.error);
+      const errorResponse = {
+        success: false,
+        error: 'Failed to feedback email',
+        details: emailResult.error
+      };
+      console.log('Error response:', errorResponse);
+      return res.status(500).json(errorResponse);
+    }
+    
+  } catch (error) {
+    console.error('Error processing access request:', error);
+    console.log('Sending 500 error response from catch block...');
+    const errorResponse = {
+      success: false,
+      error: 'Internal server error',
+      message: 'Failed to process access request',
+      details: error.message
+    };
+    console.log('Catch block error response:', errorResponse);
+    return res.status(500).json(errorResponse);
+  }
+});
+
+app.get('/api/v1/get-projects', async (req, res) => {
+    try {
+    const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
+    const location = process.env.GCP_LOCATION;
+    const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+    const oauth2Client = getAuthClient(accessToken);
+
+    const resourceManagerClientv1 = new ProjectsClient({
+        auth: oauth2Client,
+    });
+
+    if (!projectId || !location) {
+        return res.status(500).json({ message: 'Server Configuration Error: GOOGLE_CLOUD_PROJECT_ID and GCP_LOCATION must be set in the .env file.' });
+    }
+    
+    // The configured project is fetched explicitly and pinned first, mirroring
+    // /app-configs: searchProjects does not always surface it, and this list is
+    // the single source the UI uses to map project numbers to project ids.
+    //
+    // pageSize is set explicitly (auto-pagination stays ON, so the list is still
+    // complete) purely to cut round trips: the server default is ~300/page, so a
+    // 40k-project org needs 130+ dependent calls instead of ~40.
+    //
+    // Deliberately NOT wrapped in a swallow-and-continue try/catch: returning
+    // HTTP 200 with a partial or empty array is indistinguishable from "this org
+    // has no projects", and the client uses this list to decide what to show.
+    // A failure must surface as a failure.
+    //
+    // Cached per user for 10 minutes (with in-flight de-duplication): for large
+    // orgs this walk takes tens of seconds, and the result rarely changes.
+    // Failures are never cached. ?fresh=1 bypasses the cache.
+    const payload = await cachedPerUser(req, 'get-projects', GET_PROJECTS_CACHE_TTL_MS, async () => {
+      const configuredIds = await readConfiguredProjectIds();
+      if (configuredIds.length > 0) {
+        const idsToFetch = [...new Set([projectId, ...configuredIds].filter(Boolean))];
+        const settled = await Promise.allSettled(
+          idsToFetch.map((id) => resourceManagerClientv1.getProject({ name: `projects/${id}` }))
+        );
+        const mapped = settled
+          .filter((r) => r.status === 'fulfilled' && r.value?.[0])
+          .map((r) => {
+            const { projectId: pid, name, displayName } = r.value[0];
+            return { projectId: pid, name, displayName };
+          });
+        mapped.forEach((p) => rememberProjectIdentity({ projectId: p.projectId, projectNumber: (p.name || '').split('/')[1], displayName: p.displayName }));
+        return mapped;
+      }
+
+      const [ projectList, currentProject ] = await Promise.all([
+        resourceManagerClientv1.searchProjects({ pageSize: 1000 }),
+        resourceManagerClientv1.getProject({ name: `projects/${projectId}` }),
+      ]);
+      const rest = projectList[0] ? projectList[0].filter(pr => pr.projectId !== projectId) : [];
+      const projects = currentProject && currentProject[0] ? [ currentProject[0], ...rest ] : rest;
+      const mapped = projects.map(({ projectId, name, displayName }) => ({ projectId, name, displayName }));
+      // Seed the identity cache from the full list for free.
+      mapped.forEach((p) => rememberProjectIdentity({ projectId: p.projectId, projectNumber: (p.name || '').split('/')[1], displayName: p.displayName }));
+      return mapped;
+    });
+
+    res.json(payload);
+
+  } catch (error) {
+    console.error('Error listing projects:', error);
+    return checkErrorAndSendResponse(res, error, 'An error occurred while generating app configs.');
+  }
+});
+
+/**
+ * GET /api/data-scans
+ * A protected endpoint to list all data quality scans in the configured location.
+ */
+app.get('/api/v1/data-scans', async (req, res) => {
+    const { project } = req.query;
+    try {
+        const projectId = (project != '' && project != null && project != "undefined") ? project : process.env.GOOGLE_CLOUD_PROJECT_ID;
+        const location = process.env.GCP_LOCATION;
+
+        if (!projectId || !location) {
+            return res.status(500).json({ message: 'Server Configuration Error: GOOGLE_CLOUD_PROJECT_ID and GCP_LOCATION must be set in the .env file.' });
+        }
+
+        const parent = `projects/${projectId}/locations/-`;
+        console.log(`Listing data scans for parent: ${parent}`);
+
+        const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+        const oauth2Client = getAuthClient(accessToken);
+
+        const dataplexDataScanClientv1 = new DataScanServiceClient({
+            auth: oauth2Client,
+        });
+
+        const [scans] = await dataplexDataScanClientv1.listDataScans({ parent });
+        res.json(scans);
+
+    } catch (error) {
+        console.error('Error listing data quality scans:', error);
+        return checkErrorAndSendResponse(res, error, 'An error occurred while listing data quality scans.');
+    }
+});
+
+/**
+ * GET /api/data-quality-scan-jobs/:scanId
+ * A protected endpoint to list the jobs (runs and results) for a specific data quality scan.
+ */
+app.get('/api/v1/data-quality-scan-jobs/:scanId', async (req, res) => {
+    const { scanId } = req.params;
+
+    if (!scanId) {
+        return res.status(400).json({ message: 'Bad Request: A "scanId" URL parameter is required.' });
+    }
+
+    try {
+        const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
+        const location = process.env.GCP_LOCATION;
+
+        if (!projectId || !location) {
+            return res.status(500).json({ message: 'Server Configuration Error: GOOGLE_CLOUD_PROJECT_ID and GCP_LOCATION must be set in the .env file.' });
+        }
+
+        const parent = `projects/${projectId}/locations/${location}/dataScans/${scanId}`;
+        console.log(`Listing data quality scan jobs for parent: ${parent}`);
+
+        const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+        const oauth2Client = getAuthClient(accessToken);
+
+        const dataplexDataScanClientv1 = new DataScanServiceClient({
+            auth: oauth2Client,
+        });
+
+        // The listDataScanJobs method returns recent jobs. The result of each job contains the quality metrics.
+        const [jobs] = await dataplexDataScanClientv1.listDataScanJobs({ parent });
+        res.json(jobs);
+
+    } catch (error) {
+        console.error(`Error listing data quality scan jobs for scan ${scanId}:`, error);
+        return checkErrorAndSendResponse(res, error, 'An error occurred while listing data quality scan jobs.');
+    }
+});
+
+/**
+ * GET /api/v1/get-data-scan-jobs
+ * A protected endpoint to list the jobs (runs and results) for a specific data quality scan.
+ */
+app.get('/api/v1/get-data-scan-jobs', async (req, res) => {
+    const { parent } = req.query;
+
+    if (!parent) {
+        return res.status(400).json({ message: 'Bad Request: A "scanId" URL parameter is required.' });
+    }
+
+    try {
+        const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
+        const location = process.env.GCP_LOCATION;
+
+        if (!projectId || !location) {
+            return res.status(500).json({ message: 'Server Configuration Error: GOOGLE_CLOUD_PROJECT_ID and GCP_LOCATION must be set in the .env file.' });
+        }
+
+        //const parent = `projects/${projectId}/locations/${location}/dataScans/${scanId}`;
+        console.log(`Listing data quality scan jobs for parent: ${parent}`);
+
+        const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+        const oauth2Client = getAuthClient(accessToken);
+
+        const dataplexDataScanClientv1 = new DataScanServiceClient({
+            auth: oauth2Client,
+        });
+
+        // The listDataScanJobs method returns recent jobs. The result of each job contains the quality metrics.
+        const [jobs] = await dataplexDataScanClientv1.listDataScanJobs({ parent: parent });
+
+        const bearerToken = await getRequestAccessToken(accessToken);
+        for (const job of jobs) {
+            //const [jobDetails] = await dataplexDataScanClientv1.getDataScanJob({ name: job.name, view:'FULL' });
+            const jobDetails = await axios.get(`https://dataplex.googleapis.com/v1/${job.name}?view=FULL`, {
+                headers: {
+                    'Authorization': `Bearer ${bearerToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            //console.log(`Fetched details for job ${job.name}`, jobDetails);
+            job.full_details = jobDetails.data;
+        }
+        res.json(jobs);
+
+    } catch (error) {
+        console.error(`Error listing data quality scan jobs for scan ${parent}:`, error);
+        checkErrorAndSendResponse(res, error, 'An error occurred while getting data quality scan jobs.');
+    }
+});
+
+/**
+ * POST /api/entry-data-quality
+ * A protected endpoint to fetch data quality scan results for a specific Knowledge Catalog entry.
+ */
+app.post('/api/v1/entry-data-quality', async (req, res) => {
+    const { name, resourceName, parent } = req.body;
+
+    if (!name) {
+        return res.status(400).json({ message: 'Bad Request: An "resourceName" field is required.' });
+    }
+
+    try {
+        // const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
+        // const location = process.env.GCP_LOCATION;
+
+        // if (!projectId || !location) {
+        //     return res.status(500).json({ message: 'Server Configuration Error: GOOGLE_CLOUD_PROJECT_ID and GCP_LOCATION must be set.' });
+        // }
+
+        const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+        const oauth2Client = getAuthClient(accessToken);
+
+        const dataplexDataScanClientv1 = new DataScanServiceClient({
+            auth: oauth2Client,
+        });
+
+        //const parent = `projects/${projectId}/locations/${location}`;
+        console.log(`Listing all data quality scans in ${parent} to find a match.`);
+        const [scans] = await dataplexDataScanClientv1.listDataScans({ parent });
+        //console.log(`Data quality scans`, scans);
+
+        const matchingScan = scans.filter(scan => (scan.data.resource === name && scan.type === 'DATA_QUALITY') );
+        //console.log(`Data quality scan matching resource: ${resourceName}`, matchingScan);
+
+        // if (!matchingScan) {
+        //     return res.status(200).json({ message: `No data quality scan found for resource: ${resourceName}` });
+        // }
+        const scanIds = matchingScan.map(scan => scan.name);
+        //console.log(`Fetching jobs for ${scanIds.length} matching data quality scans.`, scanIds);
+        const promises = scanIds.map(scanId => {
+            const parent = scanId;
+            return dataplexDataScanClientv1.listDataScanJobs({ parent });
+        });
+
+        const results = await Promise.all(promises);
+
+        const jobsResponse = results.map(([jobs], index) => ({
+            scanId: scanIds[index],
+            jobs: jobs,
+        }));
+        // const jobIds = results.map(job => job.scanId);
+        res.json({"scans":scans, "matchingScan":matchingScan, "jobs": jobsResponse});
+
+    } catch (error) {
+        console.error(`Error fetching data quality for entry ${resourceName}:`, error);
+        return checkErrorAndSendResponse(res, error, 'An error occurred while fetching data quality for the entry.');
+    }
+});
+
+/**
+ * POST /api/get-data-scan
+ * A protected endpoint to fetch data quality scan results for a specific Knowledge Catalog entry.
+ */
+app.get('/api/v1/get-data-scan', async (req, res) => {
+    const { name } = req.query;
+
+    if (!name) {
+        return res.status(400).json({ message: 'Bad Request: An "name" field is required.' });
+    }
+
+    try {
+
+        const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+        const oauth2Client = getAuthClient(accessToken);
+
+        const dataplexDataScanClientv1 = new DataScanServiceClient({
+            auth: oauth2Client,
+        });
+
+        const getScan = dataplexDataScanClientv1.getDataScan({name: name, view:'FULL'});
+        const listjobs = dataplexDataScanClientv1.listDataScanJobs({ parent:name});
+        const [scan, jobs] = await Promise.all([getScan, listjobs]);
+        const jobLists = jobs[0];
+        const jobNames = jobLists.map(job => job.name);
+        //console.log(`Fetching jobs for ${scanIds.length} matching data quality scans.`, scanIds);
+        const promises = jobNames.map(jobName => {
+            return dataplexDataScanClientv1.getDataScanJob({ name:jobName, view:'FULL' });
+        });
+
+        const results = await Promise.all(promises);
+
+        const jobsResponse = results.map(([jobs], index) => (jobs));
+        res.json({"scan":scan[0], "jobs": jobsResponse });
+
+    } catch (error) {
+        console.error(`Error fetching data scan for scan ${name}:`, error);
+        return checkErrorAndSendResponse(res, error, 'An error occurred while fetching data scan for scan ${name}.');
+    }
+});
+
+/**
+ * POST /api/get-data-scan
+ * A protected endpoint to fetch data quality scan results for a specific Knowledge Catalog entry.
+ */
+app.post('/api/v1/get-jobs-scan', async (req, res) => {
+    const { jobs } = req.body;
+
+    if (!jobs) {
+        return res.status(400).json({ message: 'Bad Request: An "name" field is required.' });
+    }
+
+    try {
+
+        const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+        const oauth2Client = getAuthClient(accessToken);
+
+        const dataplexDataScanClientv1 = new DataScanServiceClient({
+            auth: oauth2Client,
+        });
+
+        const getScan = dataplexDataScanClientv1.getDataScan({name: name, view:'FULL'});
+        const listjobs = dataplexDataScanClientv1.listDataScanJobs({ parent:name });
+        const [scan, jobs] = await Promise.all([getScan, listjobs]);
+        res.json({"scan":scan[0], "jobs": jobs[0] });
+
+    } catch (error) {
+        console.error(`Error fetching data scan for scan ${name}:`, error);
+        return checkErrorAndSendResponse(res, error, 'An error occurred while fetching data scan for scan ${name}.');
+    }
+});
+
+
+/**
+ * POST /api/batch-data-quality-scan-jobs
+ * A protected endpoint to fetch jobs for a list of data quality scan IDs.
+ */
+app.post('/api/batch-data-quality-scan-jobs', async (req, res) => {
+    const { scanIds } = req.body;
+
+    if (!scanIds || !Array.isArray(scanIds)) {
+        return res.status(400).json({ message: 'Bad Request: A "scanIds" field (array of strings) is required.' });
+    }
+
+    if (scanIds.length === 0) {
+        return res.json([]);
+    }
+
+    try {
+        const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+        const oauth2Client = getAuthClient(accessToken);
+
+        const dataplexDataScanClientv1 = new DataScanServiceClient({
+            auth: oauth2Client,
+        });
+
+        console.log(`Fetching jobs for a batch of ${scanIds.length} data quality scans.`);
+
+        const promises = scanIds.map(scanId => {
+            const parent = `projects/${projectId}/locations/${location}/dataScans/${scanId}`;
+            return dataplexDataScanClientv1.listDataScanJobs({ parent });
+        });
+
+        const results = await Promise.all(promises);
+
+        const jobsResponse = results.map(([jobs], index) => ({
+            scanId: scanIds[index],
+            jobs: jobs,
+        }));
+
+        res.json(jobsResponse);
+
+    } catch (error) {
+        console.error('Error fetching data quality scan jobs for batch:', error);
+        return checkErrorAndSendResponse(res, error, 'An error occurred while fetching data quality scan jobs for the batch.');
+    }
+});
+
+app.post('/api/v1/get-dataset-entries', async (req, res) => {
+    const { parent } = req.body;
+
+    if (!parent) {
+        return res.status(400).json({ message: 'Bad Request: An "parent" field is required.' });
+    }
+
+    try {
+        const accessToken = req.headers.authorization?.split(' ')[1]; // Expect
+
+        const oauth2Client = getAuthClient(accessToken);
+
+        const dataplexCatalogClientv1 = new CatalogServiceClient({
+            auth: oauth2Client,
+        });
+
+        //const parent = `projects/${projectId}/locations/${location}/entryGroups/${entryGroupId}`;
+        console.log(`Listing entries for parent: ${parent}`);
+        let request = req.body.filter ? {
+                parent:parent,
+                filter: req.body.filter
+            } : {
+            parent: parent
+        }
+
+        const [entries] = await dataplexCatalogClientv1.getEntryGroup({name:parent});
+        res.json(entries);
+
+    } catch (error) {
+        console.error(`Error listing entries for parent ${parent}:`, error);
+        return checkErrorAndSendResponse(res, error, 'An error occurred while listing entries.');
+    }
+});
+
+
+
+app.post('/api/v1/access-request', async (req, res) => {
+  
+  try {
+    console.log('INCOMING BODY FROM FRONTEND:', req.body);
+    const { 
+      assetName, message, requesterEmail, projectId, projectAdmin, 
+      isDataProductRequest, accessGroup, 
+      projectNumber, locationId, dataProductId 
+    } = req.body;
+    
+    // Validation
+    if (!assetName || typeof assetName !== 'string' || assetName.trim() === '') {
+      console.log('Validation failed: Asset name is missing or invalid');
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Asset name is required and must be a non-empty string' 
+      });
+    }
+    
+    if (!requesterEmail || typeof requesterEmail !== 'string' || requesterEmail.trim() === '') {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Requester email is required and must be a non-empty string' 
+      });
+    }
+    
+    if (!projectId || typeof projectId !== 'string' || projectId.trim() === '') {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Project ID is required and must be a non-empty string' 
+      });
+    }
+
+    if (projectAdmin && (!Array.isArray(projectAdmin) || !projectAdmin.every(email => typeof email === 'string'))) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Project admin must be an array of email strings' 
+      });
+    }
+    
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(requesterEmail)) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid email format' 
+      });
+    }
+    
+    console.log('Access request received:', {
+      assetName,
+      message: message ? 'Message provided' : 'No message',
+      requesterEmail,
+      projectId,
+      projectAdmin: projectAdmin || [],
+      timestamp: new Date().toISOString()
+    }); 
+
+    const accessToken = req.headers.authorization?.split(' ')[1];
+
+    if (isDataProductRequest) {
+      console.log('Processing as a Dataplex data product access request...');
+      if (!projectNumber || !locationId || !dataProductId || !accessGroup?.accessGroupId) {
+        console.log('Validation failed: Missing required Dataplex parameters for data product access request');
+        return res.status(400).json({
+          success: false,
+          error: 'Missing required Dataplex parameters (projectNumber, locationId, dataProductId, or accessGroupId)'
+        });
+      }
+
+      console.log('Sending Dataplex access request API call...');
+      const dataplexResult = await sendDataplexAccessRequest(
+        accessToken,
+        projectNumber,
+        locationId,
+        dataProductId,
+        accessGroup.accessGroupId,
+        requesterEmail,
+        message || ''
+      );
+
+      if (!dataplexResult.success) {
+        console.error('Failed to create Dataplex access request:', dataplexResult.error);
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to create Dataplex access request',
+          details: dataplexResult.error
+        });
+      }
+      
+      console.log('Dataplex access request created successfully:', dataplexResult.data);
+      
+      return res.status(200).json({
+        success: true,
+        message: 'Dataplex access request submitted successfully',
+        data: {
+          assetName,
+          requesterEmail,
+          projectId,
+          submittedAt: new Date().toISOString()
+        }
+      });
+    }
+
+    // Send access request email
+    console.log('About to send access request email...');
+    const emailResult = await sendAccessRequestEmail(
+      accessToken,
+      assetName,
+      message || '',
+      requesterEmail,
+      projectId,
+      projectAdmin || [],
+      isDataProductRequest || false,
+      accessGroup || null
+    );
+    
+    console.log('Email result:', emailResult);
+    
+    if (emailResult.success) {
+      // Log successful access request
+      console.log('Access request processed successfully:', {
+        assetName,
+        requesterEmail,
+        projectId,
+        projectAdmin: projectAdmin || [],
+        messageId: emailResult.messageId,
+        timestamp: new Date().toISOString()
+      });
+      
+      return res.status(200).json({
+        success: true,
+        message: 'Access request submitted successfully',
+        data: {
+          assetName,
+          requesterEmail,
+          projectId,
+          projectAdmin: projectAdmin || [],
+          messageId: emailResult.messageId,
+          submittedAt: new Date().toISOString()
+        }
+      });
+    } else {
+      console.error('Failed to send access request email:', emailResult.error);
+      const errorResponse = {
+        success: false,
+        error: 'Failed to send access request email',
+        details: emailResult.error
+      };
+      console.log('Error response:', errorResponse);
+      return res.status(500).json(errorResponse);
+    }
+    
+  } catch (error) {
+    console.error('Error processing access request:', error);
+    console.log('Sending 500 error response from catch block...');
+    const errorResponse = {
+      success: false,
+      error: 'Internal server error',
+      message: 'Failed to process access request',
+      details: error.message
+    };
+    console.log('Catch block error response:', errorResponse);
+    return res.status(500).json(errorResponse);
+  }
+});
+
+/**
+ * GET /api/access-request/health
+ * Health check endpoint for access request service
+ */
+app.get('/api/access-request/health', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'Access request service is healthy',
+    timestamp: new Date().toISOString(),
+    service: 'email-service',
+    version: '1.0.0'
+  });
+});
+
+// Local development session endpoint backed by ADC / gcloud CLI
+app.get('/api/v1/local-auth/session', async (req, res) => {
+  if (!isLocalGcloudAuthEnabled()) {
+    return res.status(404).json({ error: 'Local gcloud authentication is disabled.' });
+  }
+  try {
+    const session = await mintLocalGcloudSession();
+    const localPart = (session.email || 'user').split('@')[0] || 'User';
+    const displayName = localPart.charAt(0).toUpperCase() + localPart.slice(1);
+    return res.status(200).json({
+      accessToken: session.token,
+      email: session.email,
+      name: displayName,
+      expiresAt: session.expiresAt,
+    });
+  } catch (err) {
+    console.error('Failed to mint local gcloud session:', err?.message || err);
+    return res.status(500).json({
+      error: 'LocalAuthError',
+      message: 'Impossible de récupérer un jeton Google Cloud local (vérifiez gcloud auth login).',
+      details: err?.message || String(err),
+    });
+  }
+});
+
+// Basic health check endpoint
+app.get('/api/health', (req, res) => {
+    res.status(200).send('API is running!');
+});
+// Basic health check endpoint
+app.get('/', (req, res) => {
+    res.redirect('/home'); // Redirects to the /home route
+});
+
+// For any other routes, serve the React index.html - never cached, so a reload
+// after a redeploy always picks up the new build's asset URLs.
+app.get('/*\w', (req, res) => {
+  setNoStoreHeaders(res);
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'), { cacheControl: false, lastModified: false });
+});
+
+// Start the server
+app.listen(PORT, () => {
+    console.log(`Server listening on port ${PORT}`);
+    console.log('API Endpoints:');
+    console.log(`  POST /api/v1/check-permissions`);
+    console.log(`  POST /api/v1/search`);
+    console.log(`  GET /api/health`);
+    console.log(`process.env.GOOGLE_CLOUD_PROJECT_ID: ${process.env.GOOGLE_CLOUD_PROJECT_ID || 'Not set'}`);
+});
+

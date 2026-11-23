@@ -41,8 +41,11 @@ const SPEED_FACTORS: Record<AnimationSpeed, number> = {
   fast: 0.32,   // Mode accéléré pour répétitions
 };
 
-function scaleWorkedLabel(label: string, factor: number): string {
-  return label.replace(/(\d+)s\b/, (_, sec) => `${Math.max(1, Math.round(Number(sec) * factor))}s`);
+function scaleWorkedLabel(label: string, factor: number, extraSec = 0): string {
+  return label.replace(
+    /(\d+)s\b/,
+    (_, sec) => `${Math.max(1, Math.round(Number(sec) * factor) + extraSec)}s`
+  );
 }
 
 export const App: React.FC = () => {
@@ -97,24 +100,84 @@ export const App: React.FC = () => {
     }
 
     const speedFactor = SPEED_FACTORS[speedMode];
+    const thinkingMs = speedMode === 'fast' ? 1600 : 5000;
     const scaledTurn: PromptTurn = {
       ...turn,
-      workedDurationLabel: scaleWorkedLabel(turn.workedDurationLabel, speedFactor),
+      workedDurationLabel: scaleWorkedLabel(
+        turn.workedDurationLabel,
+        speedFactor,
+        Math.round(thinkingMs / 1000)
+      ),
     };
 
     const initialEntry: ExecutedTurn = {
       turn: scaledTurn,
       userPromptText: customText || turn.prompt,
-      status: 'streaming',
-      visibleTraceCount: 1,
+      status: 'thinking',
+      visibleTraceCount: 0,
     };
 
     setHistoryByConv((prev) => ({
       ...prev,
-      [targetConvId]: [...(prev[targetConvId] || []).filter((t) => t.turn.id !== turn.id), initialEntry],
+      [targetConvId]: [
+        ...(prev[targetConvId] || []).filter((t) => t.turn.id !== turn.id),
+        initialEntry,
+      ],
     }));
 
-    let cumulativeMs = 0;
+    // Real read-only Dataproc Serverless Spark trigger on Step 2 Turn 2 (0 BigQuery/Iceberg writes)
+    if (turn.id === 'd1-s2-t2') {
+      fetch('/api/trigger-spark-dryrun', { method: 'POST' })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data: { batchId?: string; consoleUrl?: string } | null) => {
+          if (!data?.batchId || !data?.consoleUrl) return;
+          const liveBatchId = data.batchId;
+          const liveUrl = data.consoleUrl;
+          setHistoryByConv((prev) => ({
+            ...prev,
+            [targetConvId]: (prev[targetConvId] || []).map((item) => {
+              if (item.turn.id !== turn.id) return item;
+              return {
+                ...item,
+                turn: {
+                  ...item.turn,
+                  leadLink: {
+                    text: `console.cloud.google.com/dataproc/batches/europe-west1/${liveBatchId}`,
+                    url: liveUrl,
+                  },
+                  traces: item.turn.traces.map((tr) =>
+                    tr.action === 'ran' && tr.output
+                      ? {
+                          ...tr,
+                          output: tr.output.map((line: string) =>
+                            line.replace(/cbk-mainframe-iceberg-[0-9-]+/g, liveBatchId)
+                          ),
+                        }
+                      : tr
+                  ),
+                },
+              };
+            }),
+          }));
+        })
+        .catch(() => {
+          // Graceful fallback when running offline or from static dist without Vite middleware
+        });
+    }
+
+    // After 5s of "Working • •", start streaming the Work Tree traces
+    setTimeout(() => {
+      setHistoryByConv((prev) => ({
+        ...prev,
+        [targetConvId]: (prev[targetConvId] || []).map((item) =>
+          item.turn.id === turn.id
+            ? { ...item, status: 'streaming', visibleTraceCount: 1 }
+            : item
+        ),
+      }));
+    }, thinkingMs);
+
+    let cumulativeMs = thinkingMs;
 
     turn.traces.forEach((tr, idx) => {
       if (idx === 0) return;

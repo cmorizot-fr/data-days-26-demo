@@ -1,0 +1,556 @@
+import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { URLS } from '../../constants/urls';
+import axios, { AxiosError } from 'axios';
+import type { Project } from '../projects/projectsSlice';
+import { findProjectByNumber } from '../../utils/resourceUtils';
+//import mockSearchData from '../../mocks/mockSearchData';
+
+// Builds the `projectId.location.aspectType` form of an aspect name.
+// The aspect itself comes from appConfig; the project number -> id mapping
+// comes from /get-projects (the single source for project identity).
+// Exported so components can resolve the same aspectTypeId client-side (to
+// derive a displayed aspect value from a cached raw-aspects map) without a
+// thunk round-trip - see fetchEntryAspects below.
+export const getAspectName = (name: string, appConfig: any, projectsList: Project[]) => {
+  const resource: string[] = appConfig?.aspects
+    ?.find((a: any) => a.dataplexEntry?.entrySource?.displayName === name)
+    ?.dataplexEntry?.entrySource?.resource?.split('/') ?? [];
+  // resource is `projects/{projectNumber}/locations/{location}/.../{aspectType}`
+  if (resource.length !== 6) return resource.toString();
+  // Previously this did `projectId.length` on an unmatched lookup, throwing a
+  // TypeError inside the thunk whenever the project wasn't in the list.
+  const projectId = findProjectByNumber(resource[1], projectsList)?.projectId ?? '';
+  return projectId.length > 1 ? `${projectId}.${resource[3]}.${resource[5]}` : resource.toString();
+}
+// Thunk for searching resources based on a search term
+export const searchResourcesByTerm = createAsyncThunk('resources/searchResourcesByTerm', async (requestData: any , { rejectWithValue, getState, signal }) => {
+  // If the search term is empty, we are returning an empty list.
+  // if (!requestData.term) {
+  //   return [];
+  // }
+
+  // If the term is not empty, we will perform a search.
+  try {
+    const appConfig = (getState() as any).user?.userData?.appConfig;
+    const projectsList: Project[] = (getState() as any).projects?.items ?? [];
+    let requestResourceData = {};
+    axios.defaults.headers.common['Authorization'] = requestData.id_token ? `Bearer ${requestData.id_token}` : '';
+    if(requestData.requestResourceData) {
+      requestResourceData = requestData.requestResourceData;
+    }else{ 
+      let searchString = '';
+      // if(requestData.term.includes(':') || requestData.term.includes('=') 
+      //   || requestData.term.includes('>') || requestData.term.includes('<')) {
+      //   // If the search term contains ':', we assume it's a more complex query and use it directly.
+      //   searchString = requestData.term;
+      // }else{
+      //   // search from your API endpoint 
+      //   searchString += `name:${requestData.term}|description:${requestData.term}|`;
+      //   searchString += `title:${requestData.term}|tags:${requestData.term}|fully_qualified_name:${requestData.term}|`;
+      //   searchString += `category:${requestData.term}|displayName:${requestData.term}`;
+      // }
+      searchString = requestData.term?.trim() ?? '';
+      if( requestData.filters && requestData.filters.length > 0) {
+        let aspectType = '';
+        let system = '';
+        let typeAliases = '';
+        let project = '';
+        let semanticSearchFlags = '';
+
+        requestData.filters.forEach((filter: any) => {
+          if(filter.type === 'aspectType') {
+            //let aspect = filter.name.replace(' ', '-');
+            const name = getAspectName(filter.name, appConfig, projectsList);
+            if(filter.subAnnotationData && filter.subAnnotationData.length > 0) {
+              filter.subAnnotationData.forEach((subAspect:any) => {
+                let subAspectName = `${name}.${subAspect.fieldName}`;
+                let subAspectNameVal = subAspect.enabled ? (subAspect.filterType == 'include' ? `(${subAspectName}:${subAspect.value})` : `-(${subAspectName}:${subAspect.value})`) : '';
+                aspectType += (aspectType != '' ? '|' : '') + `(has=${name} AND ${subAspectNameVal})`;
+              });
+            }else {
+              aspectType += (aspectType != '' ? '|' : '') + `(has=${name})`;
+            }
+            // Non-semantic search filter syntax (commented out — kept for future re-enabling)
+            // if(!requestData.semanticSearch) {
+            //   if(filter.subAnnotationData && filter.subAnnotationData.length > 0) {
+            //     filter.subAnnotationData.forEach((subAspect:any) => {
+            //       let subAspectName = `${name}.${subAspect.fieldName}`;
+            //       let subAspectNameVal = subAspect.enabled ? (subAspect.filterType == 'include' ? `(aspect:${subAspectName}:${subAspect.value})` : `-(aspect:(${subAspectName}:${subAspect.value})`) : '';
+            //       aspectType += (aspectType != '' ? '|' : '') + `aspect=(${subAspectName}) AND ${subAspectNameVal}`;
+            //     });
+            //   }else {
+            //     aspectType += (aspectType != '' ? '|' : '') + `aspect=(${name})`;
+            //   }
+            // }
+          }
+          if(filter.type === 'system') {
+            const PRODUCT_API_NAMES: Record<string, string[]> = {
+              "Knowledge Catalog": ["Dataplex Universal Catalog", "Dataplex"],
+            };
+            const apiNames = PRODUCT_API_NAMES[filter.name] || [filter.name];
+            apiNames.forEach((apiName) => {
+              system += (system != '' ? '|' : '') + `${apiName.split(' ').join('_').replace('/','').toUpperCase()}`;
+            });
+          }
+          if(filter.type === 'typeAliases') {
+            const filterName = filter.name.toLowerCase();
+            let assetType = '';
+
+            if (filterName === 'exchange') {
+                assetType = `data_exchange|exchange`; 
+            } else {
+                assetType = `${filter.name.replaceAll(' ', '_').replace('/','').toLowerCase()}`;
+            }
+            
+            typeAliases += (typeAliases != '' ? '|' : '') + assetType;
+            }
+          if(filter.type === 'project') {
+            project += (project != '' ? '|' : '') + `${filter.name}`;
+          }
+        });
+
+        semanticSearchFlags = '-has=dataplex-types.global.bigquery-row-access-policy AND -has=dataplex-types.global.bigquery-data-policy';
+
+        // Example search string format: 
+        // name:searchTerm|description:searchTerm|title:searchTerm|tags:searchTerm|
+        // fully_qualified_name:searchTerm|category:searchTerm|displayName:searchTerm
+        // (type=(DATASET|TABLE))
+        // -(
+        //     aspectType=(bigquery_dataset,bigquery_table)
+        //     system=(ANALYTICS_HUB|CLOUD_SQL|CUSTOM|DATAFORM|DATAPLEX|DATAPROC_METASTORE|CLOUD_SPANNER|VERTEX_AI)
+        //  )
+
+        searchString += aspectType != '' ? ((searchString != '' ? ' ' : '') + `(${aspectType})`) : '';
+        searchString += system != '' ? ((searchString != '' ? ' ' : '') + `(system=(${system}))`) : '';
+        searchString += typeAliases != '' ? ((searchString != '' ? ' ' : '') + `(type=(${typeAliases}))`) : '';
+        searchString += project != '' ? ((searchString != '' ? ' ' : '') + `(projectid=(${project}))`) : '';
+        searchString += semanticSearchFlags != '' ? ((searchString != '' ? ' ' : '') + `${semanticSearchFlags}`) : '';
+        // Non-semantic search separator logic (commented out — kept for future re-enabling)
+        // searchString += system != '' ? (((searchString != '' && !requestData.semanticSearch) ? ',' : ' ') + `(system=(${system}))`) : '';
+        // searchString += typeAliases != '' ? (((searchString != '' && !requestData.semanticSearch) ? ',' : ' ') + `(type=(${typeAliases}))`) : '';
+        // searchString += project != '' ? (((searchString != '' && !requestData.semanticSearch) ? ',' : ' ') + `(project=(${project}))`) : '';
+      }
+
+      // Always apply project scope when restriction is active, regardless of whether
+      // any filters are selected. Runs outside the filters block so it is never skipped.
+      if (appConfig?.projectsRestricted === true && appConfig?.configuredProjectIds?.length > 0) {
+        const hasUserProjectFilter = requestData.filters?.some((f: any) => f.type === 'project');
+        if (!hasUserProjectFilter) {
+          searchString += (searchString !== '' ? ' ' : '') + `(projectid=(${appConfig.configuredProjectIds.join('|')}))`;
+        }
+      }
+
+      requestResourceData = {
+        query: searchString,
+        pageSize: 100,
+        pageToken: requestData.nextPageToken ?? '',
+        orderBy: 'relevance',
+        semanticSearch: true,
+      };
+      // Non-semantic search request config (commented out — kept for future re-enabling)
+      // requestResourceData = {
+      //   query: searchString,
+      //   pageSize: requestData.semanticSearch ? 100 : 20,
+      //   pageToken: requestData.nextPageToken ?? '',
+      //   orderBy: requestData.semanticSearch ? 'relevance' : '',
+      //   semanticSearch: requestData.semanticSearch || false,
+      // };
+    }
+    
+    // const response = await axios.post(URLS.API_URL + URLS.SEARCH, requestResourceData);
+    // const data = await response.data;
+    // return data;
+
+    // validateStatus: () => true prevents axios from throwing on non-2xx responses,
+    // which stops the global axios interceptor from treating search errors as auth
+    // failures and force-logging the user out. The thunk inspects status itself.
+    const response = await axios.post(
+      URLS.API_URL + URLS.SEARCH_ENTRIES,
+      { project: import.meta.env.VITE_GOOGLE_PROJECT_ID, location: 'global', ...requestResourceData },
+      { validateStatus: () => true, signal }
+    );
+
+    if (response.status === 200) {
+      return {
+        data: response.data.results,
+        requestData: { ...requestResourceData, pageToken: response.data.nextPageToken || '' },
+        results: response.data,
+      };
+    }
+    // Non-200 response — return empty results so the user stays on the page
+    return { data: [], requestData: {}, results: {} };
+    //return mockSearchData; // For testing, we return mock data
+
+  } catch (error) {
+    if (axios.isCancel(error) || (error instanceof Error && (error.name === 'AbortError' || error.name === 'CanceledError'))) {
+      return rejectWithValue({ aborted: true, message: 'Request aborted' });
+    }
+    if (error instanceof AxiosError) {
+      return rejectWithValue(error.response?.data || error.message);
+    }
+    return rejectWithValue('An unknown error occurred');
+  }
+});
+
+export const browseResourcesByAspects = createAsyncThunk('resources/browseResourcesByAspects', async (requestData: any , { rejectWithValue, signal, getState }) => {
+
+  // If the term is not empty, we will perform a search.
+  try {
+    // search from your API endpoint
+    axios.defaults.headers.common['Authorization'] = requestData.id_token ? `Bearer ${requestData.id_token}` : '';
+    const appConfig = (getState() as any).user?.userData?.appConfig;
+    const projectsList: Project[] = (getState() as any).projects?.items ?? [];
+    let searchString = '';
+    if(requestData.annotationName && requestData.annotationName != '') {
+      let aspectType = getAspectName(requestData.annotationName, appConfig, projectsList);
+
+      // let subAspect = '';
+      // if(requestData.subAnnotationName && requestData.subAnnotationName != '') {
+      //   subAspect += ` AND (aspect:${aspectType}.${requestData.subAnnotationName}:*)`;
+      // }
+      searchString += aspectType != '' ? (
+        `(aspect=(${aspectType}${(requestData.subAnnotationName && requestData.subAnnotationName != '') ? '.' : ''}${requestData.subAnnotationName}))`) : '';
+    }
+    if(searchString != '') {
+      // Scope asset counts to configured projects when restriction is active
+      if (appConfig?.projectsRestricted && appConfig?.configuredProjectIds?.length > 0) {
+        searchString += ` (projectid=(${appConfig.configuredProjectIds.join('|')}))`;
+      }
+      // validateStatus: () => true prevents axios from throwing on non-2xx responses,
+      // so a 403 on a specific aspect/sub-type can be surfaced as PERMISSION_DENIED
+      // (with the offending itemId) instead of falling through to the generic catch.
+      const response = await axios.post(URLS.API_URL + URLS.SEARCH, {
+        query: searchString,
+      }, {
+        signal: requestData.signal || signal, // Support both custom signal and thunk signal
+        validateStatus: () => true,
+      });
+
+      if (response.status === 403) {
+        return rejectWithValue({
+          type: 'PERMISSION_DENIED',
+          message: "You don't have access to this resource",
+          itemId: requestData.subAnnotationName
+            ? `${requestData.annotationName}__${requestData.subAnnotationName}`
+            : requestData.annotationName,
+        });
+      }
+
+      return response.data;
+    } else {
+      return rejectWithValue('Invalid annotation name');
+    }
+
+  } catch (error) {
+    // Check if request was aborted
+    if (axios.isCancel(error) || (error instanceof Error && (error.name === 'AbortError' || error.name === 'CanceledError'))) {
+      return rejectWithValue({ aborted: true, message: 'Request aborted' });
+    }
+    if (error instanceof AxiosError) {
+      return rejectWithValue(error.response?.data || error.message);
+    }else if (error instanceof Error) {
+      return rejectWithValue(error);
+    }
+    return rejectWithValue('An unknown error occurred');
+  }
+});
+// Thunk backing Browse by Annotations' Linked Assets "Aspect Value" column.
+// Fetches each given entry's FULL `aspects` map (`/batch-entry-aspects`, one
+// getEntry(view=ALL) per entry - see backend/server.js) and merges it into
+// the persistent `entryAspectsByName` cache (see the reducer below) - keyed
+// by entry name, not by which aspect/sub-type the caller is currently
+// browsing. An entry's aspects don't depend on how it was found, so this
+// cache survives switching between sub-types of the same (or a different)
+// aspect: the caller (MainComponent) is responsible for only requesting
+// entryNames not already present in the cache, and for extracting whichever
+// field it currently needs from the cached raw map client-side (see
+// extractAspectFieldValue in aspectValueUtils.ts) - no re-fetch required
+// just because the selected sub-type/field changed.
+export const fetchEntryAspects = createAsyncThunk('resources/fetchEntryAspects', async (requestData: { entryNames: string[]; id_token?: string; signal?: AbortSignal }, { rejectWithValue, signal }) => {
+  try {
+    axios.defaults.headers.common['Authorization'] = requestData.id_token ? `Bearer ${requestData.id_token}` : '';
+    const entryNames = requestData.entryNames ?? [];
+
+    if (entryNames.length === 0) {
+      return { entryAspectsByName: {} };
+    }
+
+    const response = await axios.post(URLS.API_URL + URLS.BATCH_ENTRY_ASPECTS, {
+      entryNames,
+    }, {
+      signal: requestData.signal || signal,
+    });
+
+    const entryAspectsByName: Record<string, unknown> = {};
+    entryNames.forEach((entryName) => {
+      entryAspectsByName[entryName] = response.data?.[entryName] ?? null;
+    });
+
+    return { entryAspectsByName };
+
+  } catch (error) {
+    if (axios.isCancel(error) || (error instanceof Error && (error.name === 'AbortError' || error.name === 'CanceledError'))) {
+      return rejectWithValue({ aborted: true, message: 'Request aborted' });
+    }
+    if (error instanceof AxiosError) {
+      return rejectWithValue(error.response?.data || error.message);
+    }
+    return rejectWithValue('An unknown error occurred');
+  }
+});
+
+export const fetchEntriesByParent = createAsyncThunk('resources/fetchEntriesByParent', async (requestData: any , { rejectWithValue }) => {
+  // If the search parent is empty, we are returning an empty list.
+  if (!requestData.parent) {
+    return [];
+  }
+
+  // If the term is not empty, we will perform a search.
+  try {
+    // search from your API endpoint 
+    axios.defaults.headers.common['Authorization'] = requestData.id_token ? `Bearer ${requestData.id_token}` : '';
+    let searchString = `parent=${requestData.parent}`;
+
+    
+    const response = await axios.post(URLS.API_URL + URLS.SEARCH, {
+      query: searchString,
+    });
+    const data = await response.data;
+    return data;
+
+  } catch (error) {
+    if (error instanceof AxiosError) {
+      return rejectWithValue(error.response?.data || error.message);
+    }
+    return rejectWithValue('An unknown error occurred');
+  }
+});
+
+// ResourcesState defines the shape of the resources slice of the Redux state.
+// It includes an array of items, a status to track loading state, and an error message
+type ResourcesState = {
+  items: unknown; // Replace 'unknown' with your actual resource type
+  itemsNextPageSize: number|null;
+  itemsRequestData: any | null;
+  totalItems?: number;
+  itemsStore: unknown[]; // For storing all fetched items
+  // NEW: Cache for aspect-based browsing
+  aspectBrowseCache: Record<string, {
+    data: unknown[];
+    totalSize: number;
+    fetchedAt: number;
+  }>;
+  // For entry list in resource details page
+  entryListData:unknown;
+  entryListNextPageToken: string;
+  totalEntryList?: number;
+  entryListStatus: 'idle' | 'loading' | 'succeeded' | 'failed';
+  status: 'idle' | 'loading' | 'succeeded' | 'failed';
+  error: any | string | undefined | unknown | null;
+  entryListError: any | string | undefined | unknown | null;
+  // Browse by Annotation UI state preserved across navigation
+  browseSelectedItemName: string | null;
+  browseSelectedSubItem: any | null;
+  browseTabValue: number;
+  browseDynamicAnnotationsData: any[];
+  browseSubTypesWithCache: Record<string, boolean>;
+  // Tracks which aspect (or `aspectName__subTypeName`) most recently returned 403,
+  // so the UI can render an inline "Permission Required" panel instead of a global modal.
+  accessDeniedItemId: string | null;
+  // Persistent cache of each entry's full raw `aspects` map (Browse by
+  // Annotations' Linked Assets "Aspect Value" column), keyed by entry name -
+  // NOT reset when the selected aspect/sub-type changes, since an entry's
+  // aspects are a fact about the entry, not about which sub-type found it.
+  // `null` means the fetch for that entry failed. Components derive the
+  // displayed value for whichever field they currently need via
+  // extractAspectFieldValue (aspectValueUtils.ts) client-side, from this
+  // cache - see fetchEntryAspects below.
+  entryAspectsByName: Record<string, unknown>;
+  // Reflects only the most recently dispatched fetchEntryAspects call - not
+  // meant to gate per-row loading (that's purely whether a row's entryName
+  // is present in entryAspectsByName yet), just useful for diagnostics.
+  entryAspectsStatus: 'idle' | 'loading' | 'succeeded' | 'failed';
+};
+
+const initialState: ResourcesState = {
+  items: [],
+  itemsNextPageSize: null,
+  itemsRequestData: null,
+  totalItems: 0,
+  itemsStore:[],
+  aspectBrowseCache: {},
+  entryListData:[],
+  entryListNextPageToken: '',
+  totalEntryList: 0,
+  entryListStatus:'idle',
+  status: 'idle',
+  error: null,
+  entryListError: null,
+  browseSelectedItemName: null,
+  browseSelectedSubItem: null,
+  browseTabValue: 0,
+  browseDynamicAnnotationsData: [],
+  browseSubTypesWithCache: {},
+  accessDeniedItemId: null,
+  entryAspectsByName: {},
+  entryAspectsStatus: 'idle',
+};
+
+// createSlice generates actions and reducers for a slice of the Redux state.
+export const resourcesSlice = createSlice({
+  name: 'resources',
+  initialState,
+  reducers: {
+    setItems: (state, action) => {
+      state.items = action.payload;
+      state.status = 'succeeded';
+    },
+    setItemsStatus: (state, action) => {
+      state.status = action.payload;
+    },
+    setItemsNextPageSize: (state, action) => {
+      state.itemsNextPageSize = action.payload;
+    },
+    setItemsPageRequest: (state, action) => {
+      state.itemsRequestData = action.payload;
+    },
+    setItemsRequestData: (state, action) => {
+      state.itemsRequestData = action.payload;
+    },
+    setItemsStoreData: (state, action) => {
+      state.itemsStore = action.payload;
+    },
+    setAspectBrowseCache: (state, action) => {
+      const { cacheKey, data, totalSize } = action.payload;
+      state.aspectBrowseCache[cacheKey] = {
+        data,
+        totalSize,
+        fetchedAt: Date.now()
+      };
+    },
+    clearAspectBrowseCache: (state) => {
+      state.aspectBrowseCache = {};
+    },
+    removeAspectBrowseCacheEntry: (state, action) => {
+      delete state.aspectBrowseCache[action.payload];
+    },
+    setBrowseSelectedItemName: (state, action) => {
+      state.browseSelectedItemName = action.payload;
+    },
+    setBrowseSelectedSubItem: (state, action) => {
+      state.browseSelectedSubItem = action.payload;
+    },
+    setBrowseTabValue: (state, action) => {
+      state.browseTabValue = action.payload;
+    },
+    setBrowseDynamicAnnotationsData: (state, action) => {
+      state.browseDynamicAnnotationsData = action.payload;
+    },
+    setBrowseSubTypesWithCache: (state, action) => {
+      state.browseSubTypesWithCache = action.payload;
+    },
+    resetBrowseUIState: (state) => {
+      state.browseSelectedItemName = null;
+      state.browseSelectedSubItem = null;
+      state.browseTabValue = 0;
+      state.browseDynamicAnnotationsData = [];
+      state.browseSubTypesWithCache = {};
+      state.accessDeniedItemId = null;
+    },
+    clearAccessDeniedItemId: (state) => {
+      state.accessDeniedItemId = null;
+    },
+    setAccessDeniedItemId: (state, action) => {
+      state.accessDeniedItemId = action.payload;
+    },
+  }, // No synchronous reducers needed for this slice
+  // The `extraReducers` field lets the slice handle actions defined elsewhere,
+  // including actions generated by createAsyncThunk.
+  extraReducers: (builder) => {
+    builder
+      .addCase(searchResourcesByTerm.pending, (state) => {
+        state.items = [];
+        state.status = 'loading';
+      })
+      .addCase(searchResourcesByTerm.fulfilled, (state, action) => {
+        const payload = Array.isArray(action.payload) ? { data: [], requestData:{}, results:{} } : action.payload;
+        state.totalItems = payload?.results?.totalSize ?? 0;
+        state.itemsRequestData = payload?.requestData ?? {};
+        state.itemsStore = [...state.itemsStore, ...(payload?.data ?? [])]; // Append new results to the store
+        state.items = state.itemsNextPageSize != null 
+        ? state.itemsStore.slice(state.itemsStore.length - state.itemsNextPageSize)
+        : payload?.data ?? []; // Replace the list with search results
+        state.status = 'succeeded';
+      })
+      .addCase(searchResourcesByTerm.rejected, (state, action) => {
+        if ((action.payload as { aborted?: boolean })?.aborted || action.meta?.aborted) {
+          return; // Stale request cancelled — new one is in flight, keep its loading state
+        }
+        state.status = 'failed';
+        state.error = action.payload; // Use payload from rejectWithValue
+      })
+      .addCase(browseResourcesByAspects.pending, (state) => {
+        state.items = [];
+        state.status = 'loading';
+        // entryAspectsByName is deliberately NOT reset here - it's a
+        // persistent, entry-keyed cache that survives selection changes.
+      })
+      .addCase(browseResourcesByAspects.fulfilled, (state, action) => {
+        state.totalItems = action.payload?.results?.totalSize ?? 0;
+        state.itemsRequestData = action.payload?.requestData ?? {};
+        state.itemsStore = [...state.itemsStore, ...(action.payload?.data ?? [])]; // Append new results to the store
+        state.items = state.itemsNextPageSize != null
+        ? state.itemsStore.slice(state.itemsStore.length - state.itemsNextPageSize)
+        : action.payload?.data ?? []; // Replace the list with search results
+        state.status = 'succeeded';
+        state.accessDeniedItemId = null;
+      })
+      .addCase(browseResourcesByAspects.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.payload; // Use payload from rejectWithValue
+        const payload = action.payload as { type?: string; itemId?: string } | string | undefined;
+        if (payload && typeof payload === 'object' && payload.type === 'PERMISSION_DENIED') {
+          state.accessDeniedItemId = payload.itemId || null;
+        }
+      })
+      .addCase(fetchEntryAspects.pending, (state) => {
+        state.entryAspectsStatus = 'loading';
+      })
+      .addCase(fetchEntryAspects.fulfilled, (state, action) => {
+        // Merge, never replace - entries fetched for a previous selection
+        // stay valid and cached. Guard against state.entryAspectsByName
+        // itself being missing: this slice's state is rehydrated from
+        // localStorage (see app/store.ts), so a browser with state persisted
+        // before this field existed would otherwise crash here.
+        if (!state.entryAspectsByName || typeof state.entryAspectsByName !== 'object') {
+          state.entryAspectsByName = {};
+        }
+        Object.assign(state.entryAspectsByName, action.payload?.entryAspectsByName ?? {});
+        state.entryAspectsStatus = 'succeeded';
+      })
+      .addCase(fetchEntryAspects.rejected, (state, action) => {
+        if ((action.payload as { aborted?: boolean })?.aborted) {
+          return; // Superseded by a newer request - keep current state
+        }
+        state.entryAspectsStatus = 'failed';
+      })
+      .addCase(fetchEntriesByParent.pending, (state) => {
+        state.entryListStatus = 'loading';
+      })
+      .addCase(fetchEntriesByParent.fulfilled, (state, action) => {
+        state.entryListData = action.payload?.data ?? []; // Replace the list with search results
+        // state.totalItems = action.payload?.results?.totalSize ?? 0;
+        // state.itemsRequestData = action.payload?.requestData ?? {};
+        // state.itemsNextPageToken = action.payload?.results?.nextPageToken ?? '';
+        state.entryListStatus = 'succeeded';
+      })
+      .addCase(fetchEntriesByParent.rejected, (state, action) => {
+        state.entryListStatus = 'failed';
+        state.entryListError = action.payload; // Use payload from rejectWithValue
+      });
+  },
+});
+
+export const { setItems, setItemsStatus, setItemsPageRequest, setItemsNextPageSize, setItemsRequestData, setItemsStoreData, setAspectBrowseCache, clearAspectBrowseCache, removeAspectBrowseCacheEntry, setBrowseSelectedItemName, setBrowseSelectedSubItem, setBrowseTabValue, setBrowseDynamicAnnotationsData, setBrowseSubTypesWithCache, resetBrowseUIState, clearAccessDeniedItemId, setAccessDeniedItemId } = resourcesSlice.actions;
+
+export default resourcesSlice.reducer;

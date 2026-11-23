@@ -8,14 +8,36 @@ import {
   Loader2,
   ExternalLink,
   ArrowRight,
-  GitBranch,
-  Globe,
-  TerminalSquare,
   BarChart3,
   Eye,
 } from 'lucide-react';
 import { DataAgentKitLogo } from './Icons';
-import { DATA_AGENT_KIT_PLUGIN, WORKSPACE_VISUAL_AUDIT_SKILL } from '../data/dakPlugin';
+import {
+  AndroidCliIcon,
+  AntigravitySdkIcon,
+  ChromeDevToolsIcon,
+  CloudRunIcon,
+  DynatraceIcon,
+  FirebaseIcon,
+  GeminiApiIcon,
+  GmailIcon,
+  GoogleCalendarIcon,
+  GoogleDocsIcon,
+  GoogleDriveIcon,
+  GoogleSheetsIcon,
+  GoogleSlidesIcon,
+  LinearIcon,
+  NotionIcon,
+  RoboticsIcon,
+  StripeIcon,
+  TealBracketIcon,
+} from './MarketplaceIcons';
+import {
+  DATA_AGENT_KIT_PLUGIN,
+  DakSkillSpec,
+  WORKSPACE_VISUAL_AUDIT_SKILL,
+} from '../data/dakPlugin';
+import { SkillDetailModal } from './SkillDetailModal';
 import { SelectedCustomizationId } from '../types';
 
 interface CustomizationsViewProps {
@@ -28,28 +50,248 @@ interface CustomizationsViewProps {
 
 type DetailTab = 'overview' | 'skills' | 'mcp' | 'hooks';
 
-const OTHER_MARKETPLACE_PLUGINS = [
+interface MarketplacePluginItem {
+  id: string;
+  name: string;
+  description: string;
+  keywords: string;
+  section: 'workspace' | 'build' | 'featured';
+  icon: React.FC<{ className?: string }>;
+  isDak?: boolean;
+}
+
+interface FeaturedTileSpec {
+  id: string;
+  name: string;
+  description: string;
+  icon: React.FC<{ className?: string }>;
+  positionClass: string;
+  iconClass: string;
+}
+
+const FEATURED_TILES: FeaturedTileSpec[] = [
   {
-    id: 'github-mcp',
-    name: 'GitHub Enterprise MCP',
-    description: 'Pull requests, issues, code search, and repository automation workflows.',
-    icon: GitBranch,
-    iconColor: 'text-[#1F1F1F]',
-  },
-  {
-    id: 'cloud-run-kit',
-    name: 'Cloud Run & Artifact Registry',
+    id: 'firebase',
+    name: 'Firebase',
     description:
-      'Build, containerize, and deploy serverless microservices directly from Antigravity.',
-    icon: TerminalSquare,
-    iconColor: 'text-[#1A73E8]',
+      'Prototype, build, and run modern full-stack apps with Firestore, Auth, Hosting, and Cloud Functions via skills and MCP.',
+    icon: FirebaseIcon,
+    positionClass: 'left-[7%] top-[23%] -rotate-[6deg]',
+    iconClass: 'w-7 h-7',
   },
   {
-    id: 'playwright-web',
-    name: 'Browser & UI Verifier',
-    description: 'Automated end-to-end visual inspection and interactive web testing skills.',
-    icon: Globe,
-    iconColor: 'text-[#188038]',
+    id: 'notion',
+    name: 'Notion',
+    description:
+      'Search pages, query databases, draft specs, and keep engineering documentation synchronized with your workspace.',
+    icon: NotionIcon,
+    positionClass: 'left-[22%] bottom-[14%] rotate-[3deg]',
+    iconClass: 'w-7 h-7',
+  },
+  {
+    id: 'context7',
+    name: 'Context7',
+    description:
+      'Fetch up-to-date library documentation, API references, and versioned code examples directly into your coding session.',
+    icon: TealBracketIcon,
+    positionClass: 'left-[35%] top-[18%] -rotate-[2deg]',
+    iconClass: 'w-7 h-7',
+  },
+  {
+    id: 'linear',
+    name: 'Linear',
+    description:
+      'Triage issues, link pull requests, inspect project roadmaps, and automate sprint workflows across engineering teams.',
+    icon: LinearIcon,
+    positionClass: 'left-[50%] bottom-[16%] rotate-[4deg]',
+    iconClass: 'w-7 h-7',
+  },
+  {
+    id: 'dynatrace',
+    name: 'Dynatrace',
+    description:
+      'Investigate production issues with real Dynatrace data: problems and root causes, logs, metrics, traces, and vulnerabilities, via skills and the MCP...',
+    icon: DynatraceIcon,
+    positionClass: 'left-[64%] top-[15%]',
+    iconClass: 'w-9 h-9',
+  },
+  {
+    id: 'stripe',
+    name: 'Stripe',
+    description:
+      'Inspect payments, subscriptions, webhooks, and billing APIs to build and test checkout integrations faster.',
+    icon: StripeIcon,
+    positionClass: 'right-[6%] bottom-[19%] rotate-[5deg]',
+    iconClass: 'w-7 h-7',
+  },
+];
+
+const GOOGLE_WORKSPACE_PLUGINS: MarketplacePluginItem[] = [
+  {
+    id: 'google-docs',
+    name: 'Google Docs',
+    description: 'Read, draft, and edit docs.',
+    keywords: 'google workspace docs document text writing',
+    section: 'workspace',
+    icon: GoogleDocsIcon,
+  },
+  {
+    id: 'google-sheets',
+    name: 'Google Sheets',
+    description: 'Read, write, and format spreadsheets.',
+    keywords: 'google workspace sheets spreadsheets tables csv',
+    section: 'workspace',
+    icon: GoogleSheetsIcon,
+  },
+  {
+    id: 'google-slides',
+    name: 'Google Slides',
+    description: 'Read, edit, and export presentations.',
+    keywords: 'google workspace slides presentation deck',
+    section: 'workspace',
+    icon: GoogleSlidesIcon,
+  },
+  {
+    id: 'google-drive',
+    name: 'Google Drive',
+    description: 'Search, upload, download, and share files.',
+    keywords: 'google workspace drive files storage',
+    section: 'workspace',
+    icon: GoogleDriveIcon,
+  },
+  {
+    id: 'google-calendar',
+    name: 'Google Calendar',
+    description: 'Check availability, schedule events, and RSVP.',
+    keywords: 'google workspace calendar meetings schedule',
+    section: 'workspace',
+    icon: GoogleCalendarIcon,
+  },
+  {
+    id: 'gmail',
+    name: 'Gmail',
+    description: 'Search, read, draft, and send emails in Gmail.',
+    keywords: 'google workspace gmail email mail inbox',
+    section: 'workspace',
+    icon: GmailIcon,
+  },
+];
+
+const BUILD_WITH_GOOGLE_PLUGINS: MarketplacePluginItem[] = [
+  {
+    id: 'gemini-api',
+    name: 'Gemini API',
+    description: 'Build applications and shell workflows with the Gemini API and SDKs.',
+    keywords: 'google gemini api ai llm model',
+    section: 'build',
+    icon: GeminiApiIcon,
+  },
+  {
+    id: 'chrome-devtools',
+    name: 'Chrome DevTools',
+    description: 'Reliable automation, in-depth debugging, and performance analysis.',
+    keywords: 'google chrome devtools browser debug automation',
+    section: 'build',
+    icon: ChromeDevToolsIcon,
+  },
+  {
+    id: 'android-cli',
+    name: 'Android CLI',
+    description: 'Core tools and knowledge required to develop and test Android apps.',
+    keywords: 'google android cli mobile kotlin sdk',
+    section: 'build',
+    icon: AndroidCliIcon,
+  },
+  {
+    id: 'firebase',
+    name: 'Firebase',
+    description: 'Prototype, build & run modern apps that users love with Firebase.',
+    keywords: 'google firebase firestore auth hosting',
+    section: 'build',
+    icon: FirebaseIcon,
+  },
+  {
+    id: 'robotics',
+    name: 'Robotics',
+    description: 'Simulate, control, and build intelligent robotics workflows.',
+    keywords: 'google robotics simulation control',
+    section: 'build',
+    icon: RoboticsIcon,
+  },
+  {
+    id: 'google-antigravity-sdk',
+    name: 'Google Antigravity SDK',
+    description: 'Build custom plugins, skills, and MCP servers for Antigravity.',
+    keywords: 'google antigravity sdk plugin mcp skill',
+    section: 'build',
+    icon: AntigravitySdkIcon,
+  },
+  {
+    id: 'data-agent-kit',
+    name: DATA_AGENT_KIT_PLUGIN.name,
+    description:
+      'Connect your coding agent to 15+ Google Data Cloud services, including BigQuery, BigLake, Spark, AlloyDB, and Knowledge Catalog.',
+    keywords:
+      'data agent kit dak google cloud bigquery biglake dbt spark knowledge catalog alloydb sql pipeline analytics',
+    section: 'build',
+    icon: DataAgentKitLogo,
+    isDak: true,
+  },
+  {
+    id: 'cloud-run',
+    name: 'Cloud Run',
+    description: 'Build, containerize, and deploy serverless apps and APIs on Google Cloud.',
+    keywords: 'google cloud run serverless containers deploy',
+    section: 'build',
+    icon: CloudRunIcon,
+  },
+];
+
+const ALL_MARKETPLACE_ITEMS: MarketplacePluginItem[] = [
+  ...BUILD_WITH_GOOGLE_PLUGINS.filter((item) => item.isDak),
+  ...GOOGLE_WORKSPACE_PLUGINS,
+  ...BUILD_WITH_GOOGLE_PLUGINS.filter((item) => !item.isDak),
+  {
+    id: 'dynatrace',
+    name: 'Dynatrace',
+    description:
+      'Investigate production issues with real Dynatrace data: problems and root causes, logs, metrics, traces, and vulnerabilities, via skills and the MCP.',
+    keywords: 'dynatrace observability monitoring logs traces metrics',
+    section: 'featured',
+    icon: DynatraceIcon,
+  },
+  {
+    id: 'notion',
+    name: 'Notion',
+    description: 'Search pages, query databases, and draft engineering docs in Notion.',
+    keywords: 'notion docs wiki knowledge base',
+    section: 'featured',
+    icon: NotionIcon,
+  },
+  {
+    id: 'context7',
+    name: 'Context7',
+    description:
+      'Fetch up-to-date library documentation, API references, and versioned code examples directly into your coding session.',
+    keywords: 'context7 documentation docs library api reference',
+    section: 'featured',
+    icon: TealBracketIcon,
+  },
+  {
+    id: 'linear',
+    name: 'Linear',
+    description: 'Triage issues, link pull requests, and manage sprints in Linear.',
+    keywords: 'linear issues tracker project sprints',
+    section: 'featured',
+    icon: LinearIcon,
+  },
+  {
+    id: 'stripe',
+    name: 'Stripe',
+    description: 'Inspect payments, subscriptions, and webhooks via Stripe tools.',
+    keywords: 'stripe payments billing checkout',
+    section: 'featured',
+    icon: StripeIcon,
   },
 ];
 
@@ -114,6 +356,9 @@ export const CustomizationsView: React.FC<CustomizationsViewProps> = ({
   const [detailTab, setDetailTab] = useState<DetailTab>('overview');
   const [query, setQuery] = useState('');
   const [installing, setInstalling] = useState(false);
+  const [activeFeaturedId, setActiveFeaturedId] = useState<string>('dynatrace');
+  const [extraInstalledIds, setExtraInstalledIds] = useState<Record<string, boolean>>({});
+  const [activeSkill, setActiveSkill] = useState<DakSkillSpec | null>(null);
 
   const triggerInstall = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -123,6 +368,11 @@ export const CustomizationsView: React.FC<CustomizationsViewProps> = ({
       setInstalling(false);
       onInstall();
     }, 850);
+  };
+
+  const toggleExtraInstall = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setExtraInstalledIds((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
   // =========================================================================
@@ -375,18 +625,23 @@ export const CustomizationsView: React.FC<CustomizationsViewProps> = ({
             </div>
           )}
 
-          {/* TAB 2: SKILLS */}
+          {/* TAB 2: SKILLS (Exact 32 official Data Agent Kit skills, click to inspect SKILL.md) */}
           {detailTab === 'skills' && (
-            <div className="divide-y divide-[#ECEEF2]">
+            <div className="space-y-0.5">
               {DATA_AGENT_KIT_PLUGIN.skills.map((skill) => (
-                <div key={skill.id} className="py-3.5 first:pt-0">
-                  <div className="font-mono text-[13.5px] font-medium text-[#1F1F1F]">
-                    {skill.name}
-                  </div>
-                  <p className="mt-1 text-[13.5px] text-[#5F6368] leading-relaxed">
+                <button
+                  key={skill.id}
+                  type="button"
+                  onClick={() => setActiveSkill(skill)}
+                  className="w-full flex items-baseline gap-3 py-[7px] px-2.5 -mx-2.5 rounded-lg hover:bg-[#F5F6F8] transition-colors text-left cursor-pointer group"
+                >
+                  <span className="text-[13.5px] font-medium text-[#1F1F1F] shrink-0">
+                    /{skill.name}
+                  </span>
+                  <span className="text-[13.5px] text-[#5F6368] truncate min-w-0">
                     {skill.description}
-                  </p>
-                </div>
+                  </span>
+                </button>
               ))}
             </div>
           )}
@@ -433,7 +688,51 @@ export const CustomizationsView: React.FC<CustomizationsViewProps> = ({
               ))}
             </div>
           )}
+
+          {/* Metadata Footer: Developer / Version / Links (matches official plugin sheet) */}
+          <div className="mt-10 pt-5 border-t border-[#ECEEF2] flex flex-wrap items-start justify-between gap-6 select-none">
+            <div className="flex items-start gap-12">
+              <div>
+                <div className="text-[11.5px] text-[#5F6368]">Developer</div>
+                <div className="text-[13px] font-semibold text-[#1F1F1F] mt-1">
+                  {DATA_AGENT_KIT_PLUGIN.developer}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11.5px] text-[#5F6368]">Version</div>
+                <div className="text-[13px] font-semibold text-[#1F1F1F] mt-1">
+                  {DATA_AGENT_KIT_PLUGIN.version}
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[11.5px] text-[#5F6368]">Links</div>
+              <div className="flex items-center gap-4 mt-1">
+                <a
+                  href={DATA_AGENT_KIT_PLUGIN.website}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-[13px] font-semibold text-[#1F1F1F] hover:text-[#1A73E8] transition-colors"
+                >
+                  <span>Website</span>
+                  <ExternalLink className="w-3 h-3 text-[#5F6368]" />
+                </a>
+                <a
+                  href={DATA_AGENT_KIT_PLUGIN.repository}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-[13px] font-semibold text-[#1F1F1F] hover:text-[#1A73E8] transition-colors"
+                >
+                  <span>Repository</span>
+                  <ExternalLink className="w-3 h-3 text-[#5F6368]" />
+                </a>
+              </div>
+            </div>
+          </div>
         </div>
+
+        <SkillDetailModal skill={activeSkill} onClose={() => setActiveSkill(null)} />
       </div>
     );
   }
@@ -515,53 +814,127 @@ export const CustomizationsView: React.FC<CustomizationsViewProps> = ({
   }
 
   // =========================================================================
-  // Marketplace / Installed List View
+  // Marketplace / Installed View (Exact Antigravity Customizations UI)
   // =========================================================================
   const normalizedQuery = query.trim().toLowerCase();
+  const queryTokens = normalizedQuery ? normalizedQuery.split(/\s+/).filter(Boolean) : [];
+  const isSearching = queryTokens.length > 0;
 
-  const matchesDak =
-    normalizedQuery === '' ||
-    'data agent kit bigquery biglake dbt knowledge catalog google cloud spark'
-      .toLowerCase()
-      .includes(normalizedQuery);
+  const matchesTokens = (haystack: string) =>
+    queryTokens.length === 0 || queryTokens.every((token) => haystack.toLowerCase().includes(token));
 
-  const matchesVisualSkill =
-    normalizedQuery === '' ||
-    'bq-visual-audit visual check chart pdf preview bigquery render_chart audit'
-      .toLowerCase()
-      .includes(normalizedQuery);
+  const activeFeatured =
+    FEATURED_TILES.find((tile) => tile.id === activeFeaturedId) ?? FEATURED_TILES[4];
+  const isFeaturedAdded = Boolean(extraInstalledIds[activeFeatured.id]);
 
-  const filteredOtherPlugins =
-    tab === 'marketplace'
-      ? OTHER_MARKETPLACE_PLUGINS.filter(
-          (p) =>
-            normalizedQuery === '' ||
-            `${p.name} ${p.description}`.toLowerCase().includes(normalizedQuery)
-        )
-      : [];
+  const searchResults = isSearching
+    ? ALL_MARKETPLACE_ITEMS.filter((item) =>
+        matchesTokens(`${item.name} ${item.description} ${item.keywords}`)
+      )
+    : [];
 
-  const showDakCard = tab === 'marketplace' ? matchesDak : installed && matchesDak;
-  const showVisualSkillCard = matchesVisualSkill;
-  const installedCount = 1 + (installed ? 1 : 0);
+  const matchesVisualSkill = matchesTokens(
+    `${WORKSPACE_VISUAL_AUDIT_SKILL.name} ${WORKSPACE_VISUAL_AUDIT_SKILL.shortDescription} visual check chart pdf preview bigquery render_chart audit skill`
+  );
+
+  const installedExtraItems = ALL_MARKETPLACE_ITEMS.filter(
+    (item) => !item.isDak && Boolean(extraInstalledIds[item.id])
+  );
+
+  const renderGridItem = (item: MarketplacePluginItem) => {
+    const IconComp = item.icon;
+    const isItemAdded = item.isDak ? installed : Boolean(extraInstalledIds[item.id]);
+
+    const handleRowClick = () => {
+      if (item.isDak) {
+        onSelectPlugin('dak');
+      }
+    };
+
+    const handleAddClick = (e: React.MouseEvent) => {
+      if (item.isDak) {
+        triggerInstall(e);
+      } else {
+        toggleExtraInstall(item.id, e);
+      }
+    };
+
+    return (
+      <div
+        key={item.id}
+        onClick={handleRowClick}
+        className={`group flex items-center justify-between gap-3 py-2.5 px-2.5 -mx-2.5 rounded-xl hover:bg-[#F7F8FA] transition-colors ${
+          item.isDak ? 'cursor-pointer' : 'cursor-default'
+        }`}
+      >
+        <div className="flex items-center gap-3.5 min-w-0">
+          <div className="w-8 h-8 flex items-center justify-center shrink-0">
+            <IconComp className="w-8 h-8" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-[13.5px] font-semibold text-[#1F1F1F] leading-snug truncate">
+                {item.name}
+              </span>
+              {item.isDak && installed && (
+                <span className="px-2 py-0.5 rounded-full text-[10.5px] font-medium bg-[#E8F0FE] text-[#174EA6] shrink-0">
+                  Added
+                </span>
+              )}
+            </div>
+            <p className="text-[12.5px] text-[#5F6368] leading-snug truncate mt-0.5">
+              {item.description}
+            </p>
+          </div>
+        </div>
+
+        <div className="shrink-0">
+          {item.isDak && installing ? (
+            <span className="w-7 h-7 rounded-full bg-[#F1F3F5] flex items-center justify-center text-[#1B6EF3]">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            </span>
+          ) : isItemAdded ? (
+            <button
+              type="button"
+              onClick={item.isDak ? handleRowClick : handleAddClick}
+              className="w-7 h-7 rounded-full bg-[#E8F0FE] text-[#174EA6] flex items-center justify-center transition-colors cursor-pointer"
+              title={`${item.name} added`}
+            >
+              <Check className="w-4 h-4" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleAddClick}
+              className="w-7 h-7 rounded-full hover:bg-[#E8EAED] text-[#5F6368] hover:text-[#1F1F1F] flex items-center justify-center transition-colors cursor-pointer"
+              title={`Add ${item.name}`}
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <div className="h-full overflow-y-auto px-10 py-10 bg-white">
+    <div className="h-full overflow-y-auto px-10 pt-7 pb-12 bg-white">
       <div className="max-w-[760px] mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-[22px] font-medium tracking-[-0.01em] text-[#1F1F1F]">
+        {/* Header Row: Customizations + Marketplace | Installed */}
+        <div className="flex items-center justify-between mb-4">
+          <h1 className="text-[20px] font-medium tracking-[-0.015em] text-[#1F1F1F]">
             Customizations
           </h1>
 
-          {/* Segmented Marketplace / Installed pill using surface luminance */}
-          <div className="flex items-center p-1 rounded-full bg-[#F1F3F6] text-[13px]">
+          {/* Segmented Marketplace / Installed pill using pure surface luminance */}
+          <div className="inline-flex items-center p-[3px] rounded-full bg-[#F7F8FA] shadow-[0_1px_2px_rgba(15,23,42,0.06)] text-[12.5px]">
             <button
               type="button"
               onClick={() => setTab('marketplace')}
-              className={`px-3.5 py-1 rounded-full font-medium transition-all cursor-pointer ${
+              className={`px-3.5 py-1 rounded-full font-medium transition-colors cursor-pointer ${
                 tab === 'marketplace'
-                  ? 'bg-white text-[#1F1F1F] shadow-[0_1px_4px_rgba(0,0,0,0.06)]'
-                  : 'text-[#5F6368] hover:text-[#1F1F1F]'
+                  ? 'bg-[#E5E7EB] text-[#1F1F1F]'
+                  : 'text-[#3C4043] hover:text-[#1F1F1F]'
               }`}
             >
               Marketplace
@@ -569,172 +942,376 @@ export const CustomizationsView: React.FC<CustomizationsViewProps> = ({
             <button
               type="button"
               onClick={() => setTab('installed')}
-              className={`px-3.5 py-1 rounded-full font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3.5 py-1 rounded-full font-medium transition-colors cursor-pointer ${
                 tab === 'installed'
-                  ? 'bg-white text-[#1F1F1F] shadow-[0_1px_4px_rgba(0,0,0,0.06)]'
-                  : 'text-[#5F6368] hover:text-[#1F1F1F]'
+                  ? 'bg-[#E5E7EB] text-[#1F1F1F]'
+                  : 'text-[#3C4043] hover:text-[#1F1F1F]'
               }`}
             >
-              <span>Installed</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[11px] bg-[#E8F0FE] text-[#174EA6] font-semibold">
-                {installedCount}
-              </span>
+              Installed
             </button>
           </div>
         </div>
 
-        {/* Search input */}
-        <div className="relative mb-8">
-          <Search className="w-4 h-4 text-[#5F6368] absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+        {/* Search Bar */}
+        <div className="relative mb-6">
+          <Search className="w-3.5 h-3.5 text-[#80868B] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search marketplace plugins, skills, and MCP servers..."
-            className="w-full bg-[#F3F4F7] hover:bg-[#ECEEF2] focus:bg-[#ECEEF2] transition-colors rounded-full pl-10 pr-10 py-2.5 text-[14px] text-[#1F1F1F] placeholder:text-[#80868B] focus:outline-none"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setQuery('');
+            }}
+            placeholder="Search customizations..."
+            className="w-full bg-[#EFEFF2] hover:bg-[#E8E9EE] focus:bg-[#E8E9EE] transition-colors rounded-full pl-9 pr-9 py-[7px] text-[13px] text-[#1F1F1F] placeholder:text-[#80868B] focus:outline-none"
           />
           {query && (
             <button
               type="button"
               onClick={() => setQuery('')}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#80868B] hover:text-[#1F1F1F] cursor-pointer"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#80868B] hover:text-[#1F1F1F] cursor-pointer"
               title="Clear search"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
 
-        {/* Plugin & Workspace Skill List */}
-        {showDakCard || showVisualSkillCard || filteredOtherPlugins.length > 0 ? (
-          <div className="divide-y divide-[#ECEEF2]">
-            {showDakCard && (
-              <div className="py-2 first:pt-0">
-                <div
-                  onClick={() => onSelectPlugin('dak')}
-                  className="group flex items-center justify-between p-4 rounded-2xl hover:bg-[#F8F9FA] transition-colors cursor-pointer"
-                >
-                  <div className="flex items-center gap-4 min-w-0">
-                    <div className="w-12 h-12 rounded-2xl bg-[#F8F9FA] group-hover:bg-white flex items-center justify-center shrink-0 transition-colors">
-                      <DataAgentKitLogo className="w-9 h-9" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2.5">
-                        <span className="text-[15px] font-medium text-[#1F1F1F]">
-                          {DATA_AGENT_KIT_PLUGIN.name}
-                        </span>
-                        {installed && (
-                          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[#E8F0FE] text-[#174EA6]">
-                            Added
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[13.5px] text-[#5F6368] truncate max-w-lg mt-0.5">
-                        {DATA_AGENT_KIT_PLUGIN.shortDescription}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0 ml-4">
-                    {installed ? (
-                      <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#F1F3F5] text-[#3C4043] text-[12.5px] font-medium">
-                        <Check className="w-3.5 h-3.5" />
-                        Added
-                      </span>
-                    ) : installing ? (
-                      <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#F1F3F6] text-[#1F1F1F] text-[12.5px] font-medium">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        Adding
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={triggerInstall}
-                        className="w-9 h-9 rounded-full hover:bg-[#ECEEF2] flex items-center justify-center text-[#3C4043] transition-colors cursor-pointer"
-                        title="Add Data Agent Kit"
-                      >
-                        <Plus className="w-5 h-5" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {showVisualSkillCard && (
-              <div className="py-2 first:pt-0">
-                <div
-                  onClick={() => onSelectPlugin('bq-visual-audit')}
-                  className="group flex items-center justify-between p-4 rounded-2xl hover:bg-[#F8F9FA] transition-colors cursor-pointer"
-                >
-                  <div className="flex items-center gap-4 min-w-0">
-                    <div className="w-12 h-12 rounded-2xl bg-[#E8F0FE] group-hover:bg-[#DBE8FE] flex items-center justify-center shrink-0 transition-colors">
-                      <BarChart3 className="w-5 h-5 text-[#174EA6]" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2.5">
-                        <span className="font-mono text-[14.5px] font-medium text-[#1F1F1F]">
-                          {WORKSPACE_VISUAL_AUDIT_SKILL.name}
-                        </span>
-                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/12 text-emerald-900">
-                          Workspace Skill
-                        </span>
-                      </div>
-                      <p className="text-[13.5px] text-[#5F6368] truncate max-w-lg mt-0.5">
-                        {WORKSPACE_VISUAL_AUDIT_SKILL.shortDescription}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0 ml-4">
-                    <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#F1F3F5] text-[#3C4043] text-[12.5px] font-medium">
-                      <Check className="w-3.5 h-3.5 text-[#188038]" />
-                      Active
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {filteredOtherPlugins.map((plugin) => {
-              const IconComp = plugin.icon;
-              return (
-                <div key={plugin.id} className="py-2">
-                  <div className="flex items-center justify-between p-4 rounded-2xl hover:bg-[#F8F9FA] transition-colors">
-                    <div className="flex items-center gap-4 min-w-0">
-                      <div className="w-12 h-12 rounded-2xl bg-[#F8F9FA] flex items-center justify-center shrink-0">
-                        <IconComp className={`w-5 h-5 ${plugin.iconColor}`} />
-                      </div>
-                      <div className="min-w-0">
-                        <span className="text-[15px] font-medium text-[#1F1F1F]">
-                          {plugin.name}
-                        </span>
-                        <p className="text-[13.5px] text-[#5F6368] truncate max-w-lg mt-0.5">
-                          {plugin.description}
-                        </p>
-                      </div>
-                    </div>
+        {/* ================================================================= */}
+        {/* MODE 1: MARKETPLACE DEFAULT VIEW (No search query)                */}
+        {/* ================================================================= */}
+        {tab === 'marketplace' && !isSearching && (
+          <div>
+            {/* Featured Hero Banner Card (Pure surface luminance + neutral elevation, no colored border) */}
+            <div className="rounded-[18px] overflow-hidden bg-white shadow-[0_1px_4px_rgba(15,23,42,0.06),0_6px_20px_rgba(15,23,42,0.04)] flex flex-col sm:flex-row min-h-[214px]">
+              {/* Left Periwinkle-Lavender Floating Tiles Artwork */}
+              <div
+                className="sm:w-[58%] relative overflow-hidden min-h-[214px] select-none"
+                style={{
+                  background:
+                    'radial-gradient(circle at 16% 24%, #D4DEFF 0%, transparent 56%), radial-gradient(circle at 84% 82%, #D1D8FF 0%, transparent 58%), linear-gradient(135deg, #E8EEFF 0%, #F1F4FF 52%, #DFE5FF 100%)',
+                }}
+              >
+                {FEATURED_TILES.map((tile) => {
+                  const TileIcon = tile.icon;
+                  const isActive = tile.id === activeFeatured.id;
+                  return (
                     <button
+                      key={tile.id}
                       type="button"
-                      className="w-9 h-9 rounded-full hover:bg-[#ECEEF2] flex items-center justify-center text-[#3C4043] transition-colors cursor-pointer shrink-0"
-                      title={`Add ${plugin.name}`}
+                      onClick={() => setActiveFeaturedId(tile.id)}
+                      title={tile.name}
+                      className={`absolute ${tile.positionClass} flex items-center justify-center bg-white transition-all duration-200 cursor-pointer ${
+                        isActive
+                          ? 'w-[66px] h-[66px] rounded-[18px] shadow-[0_12px_28px_rgba(30,41,59,0.16)] scale-105 z-10'
+                          : 'w-[54px] h-[54px] rounded-[16px] shadow-[0_8px_20px_rgba(30,41,59,0.09)] hover:scale-105 opacity-95'
+                      }`}
                     >
-                      <Plus className="w-5 h-5" />
+                      <TileIcon className={isActive ? 'w-9 h-9' : tile.iconClass} />
                     </button>
-                  </div>
-                </div>
-              );
-            })}
+                  );
+                })}
+              </div>
 
-            <div className="pt-6 text-[12px] text-[#5F6368] leading-relaxed">
+              {/* Right Featured Details Panel */}
+              <div className="sm:w-[42%] bg-white px-7 py-6 flex flex-col justify-center">
+                <span className="text-[11.5px] font-medium text-[#5F6368]">Featured</span>
+                <h2 className="text-[18px] font-semibold text-[#1F1F1F] tracking-[-0.01em] mt-1">
+                  {activeFeatured.name}
+                </h2>
+                <p className="text-[12.5px] leading-[1.52] text-[#5F6368] mt-2 line-clamp-3">
+                  {activeFeatured.description}
+                </p>
+
+                <div className="mt-4 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleExtraInstall(activeFeatured.id)}
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12.5px] font-medium transition-colors cursor-pointer ${
+                      isFeaturedAdded
+                        ? 'bg-[#E8F0FE] text-[#174EA6]'
+                        : 'bg-[#1B6EF3] hover:bg-[#1558D6] text-white'
+                    }`}
+                  >
+                    {isFeaturedAdded ? (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Added</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuery(activeFeatured.name)}
+                    className="px-3.5 py-1.5 rounded-full bg-[#EFEFF2] hover:bg-[#E4E6EB] text-[#1F1F1F] text-[12.5px] font-medium transition-colors cursor-pointer"
+                  >
+                    Details
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 1: Google Workspace */}
+            <section className="mt-8">
+              <h2 className="text-[14.5px] font-semibold text-[#1F1F1F]">Google Workspace</h2>
+              <p className="text-[12px] text-[#5F6368] mt-0.5 mb-3.5">
+                Connect to Google Workspace, including Docs, Sheets, Slides, Drive, Calendar, and
+                Gmail.
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-9 gap-y-1.5">
+                {GOOGLE_WORKSPACE_PLUGINS.map(renderGridItem)}
+              </div>
+            </section>
+
+            {/* Section 2: Build with Google */}
+            <section className="mt-8">
+              <h2 className="text-[14.5px] font-semibold text-[#1F1F1F]">Build with Google</h2>
+              <p className="text-[12px] text-[#5F6368] mt-0.5 mb-3.5">
+                Build on Google&apos;s developer platforms, including Android, Chrome, Gemini, and
+                Google Cloud.
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-9 gap-y-1.5">
+                {BUILD_WITH_GOOGLE_PLUGINS.map(renderGridItem)}
+              </div>
+            </section>
+
+            <div className="mt-10 pt-5 text-[11.5px] text-[#5F6368] leading-relaxed">
               Google does not control the availability or functionality of third party developer
               tools. Your data from third party developer tools connected to your Antigravity
               instance may be shared with Google in accordance with the Google Privacy Policy.
             </div>
           </div>
-        ) : (
-          <div className="py-16 text-center rounded-2xl bg-[#F8F9FA]">
-            <p className="text-[14px] text-[#5F6368]">No matching customizations found.</p>
+        )}
+
+        {/* ================================================================= */}
+        {/* MODE 2: MARKETPLACE SEARCH RESULTS (e.g. "data agent kit")        */}
+        {/* ================================================================= */}
+        {tab === 'marketplace' && isSearching && (
+          <div>
+            {searchResults.length > 0 || matchesVisualSkill ? (
+              <div className="divide-y divide-[#ECEEF2]">
+                {searchResults.map((item) => {
+                  const IconComp = item.icon;
+                  const isItemAdded = item.isDak ? installed : Boolean(extraInstalledIds[item.id]);
+
+                  return (
+                    <div key={item.id} className="py-2 first:pt-0">
+                      <div
+                        onClick={() => item.isDak && onSelectPlugin('dak')}
+                        className={`group flex items-center justify-between p-3.5 rounded-2xl hover:bg-[#F7F8FA] transition-colors ${
+                          item.isDak ? 'cursor-pointer' : 'cursor-default'
+                        }`}
+                      >
+                        <div className="flex items-center gap-4 min-w-0">
+                          <div className="w-11 h-11 rounded-2xl bg-[#F7F8FA] group-hover:bg-white flex items-center justify-center shrink-0 transition-colors">
+                            <IconComp className="w-8 h-8" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[14.5px] font-semibold text-[#1F1F1F]">
+                                {item.name}
+                              </span>
+                              {item.isDak && (
+                                <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#F1F3F5] text-[#5F6368]">
+                                  Google Cloud
+                                </span>
+                              )}
+                              {isItemAdded && (
+                                <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#E8F0FE] text-[#174EA6]">
+                                  Added
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[13px] text-[#5F6368] line-clamp-2 mt-0.5 max-w-xl">
+                              {item.isDak
+                                ? DATA_AGENT_KIT_PLUGIN.shortDescription
+                                : item.description}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0 ml-4">
+                          {item.isDak && installing ? (
+                            <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#F1F3F6] text-[#1F1F1F] text-[12.5px] font-medium">
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              Adding
+                            </span>
+                          ) : isItemAdded ? (
+                            <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#F1F3F5] text-[#3C4043] text-[12.5px] font-medium">
+                              <Check className="w-3.5 h-3.5" />
+                              Added
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) =>
+                                item.isDak ? triggerInstall(e) : toggleExtraInstall(item.id, e)
+                              }
+                              className="w-9 h-9 rounded-full hover:bg-[#E8EAED] flex items-center justify-center text-[#3C4043] transition-colors cursor-pointer"
+                              title={`Add ${item.name}`}
+                            >
+                              <Plus className="w-5 h-5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {matchesVisualSkill && (
+                  <div className="py-2 first:pt-0">
+                    <div
+                      onClick={() => onSelectPlugin('bq-visual-audit')}
+                      className="group flex items-center justify-between p-3.5 rounded-2xl hover:bg-[#F7F8FA] transition-colors cursor-pointer"
+                    >
+                      <div className="flex items-center gap-4 min-w-0">
+                        <div className="w-11 h-11 rounded-2xl bg-[#E8F0FE] group-hover:bg-[#DBE8FE] flex items-center justify-center shrink-0 transition-colors">
+                          <BarChart3 className="w-5 h-5 text-[#174EA6]" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[14px] font-medium text-[#1F1F1F]">
+                              {WORKSPACE_VISUAL_AUDIT_SKILL.name}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/12 text-emerald-900">
+                              Workspace Skill
+                            </span>
+                          </div>
+                          <p className="text-[13px] text-[#5F6368] truncate max-w-xl mt-0.5">
+                            {WORKSPACE_VISUAL_AUDIT_SKILL.shortDescription}
+                          </p>
+                        </div>
+                      </div>
+
+                      <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#F1F3F5] text-[#3C4043] text-[12.5px] font-medium shrink-0 ml-4">
+                        <Check className="w-3.5 h-3.5 text-[#188038]" />
+                        Active
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="py-16 text-center rounded-2xl bg-[#F8F9FA]">
+                <p className="text-[14px] text-[#5F6368]">No matching customizations found.</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ================================================================= */}
+        {/* MODE 3: INSTALLED TAB                                             */}
+        {/* ================================================================= */}
+        {tab === 'installed' && (
+          <div className="divide-y divide-[#ECEEF2]">
+            {installed &&
+              matchesTokens(
+                `${DATA_AGENT_KIT_PLUGIN.name} ${DATA_AGENT_KIT_PLUGIN.shortDescription} dak bigquery biglake`
+              ) && (
+                <div className="py-2 first:pt-0">
+                  <div
+                    onClick={() => onSelectPlugin('dak')}
+                    className="group flex items-center justify-between p-3.5 rounded-2xl hover:bg-[#F7F8FA] transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-4 min-w-0">
+                      <div className="w-11 h-11 rounded-2xl bg-[#F7F8FA] group-hover:bg-white flex items-center justify-center shrink-0 transition-colors">
+                        <DataAgentKitLogo className="w-8 h-8" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[14.5px] font-semibold text-[#1F1F1F]">
+                            {DATA_AGENT_KIT_PLUGIN.name}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#E8F0FE] text-[#174EA6]">
+                            Added
+                          </span>
+                        </div>
+                        <p className="text-[13px] text-[#5F6368] truncate max-w-xl mt-0.5">
+                          {DATA_AGENT_KIT_PLUGIN.shortDescription}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#F1F3F5] text-[#3C4043] text-[12.5px] font-medium shrink-0 ml-4">
+                      <Check className="w-3.5 h-3.5" />
+                      Added
+                    </span>
+                  </div>
+                </div>
+              )}
+
+            {matchesVisualSkill && (
+              <div className="py-2 first:pt-0">
+                <div
+                  onClick={() => onSelectPlugin('bq-visual-audit')}
+                  className="group flex items-center justify-between p-3.5 rounded-2xl hover:bg-[#F7F8FA] transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className="w-11 h-11 rounded-2xl bg-[#E8F0FE] group-hover:bg-[#DBE8FE] flex items-center justify-center shrink-0 transition-colors">
+                      <BarChart3 className="w-5 h-5 text-[#174EA6]" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[14px] font-medium text-[#1F1F1F]">
+                          {WORKSPACE_VISUAL_AUDIT_SKILL.name}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/12 text-emerald-900">
+                          Workspace Skill
+                        </span>
+                      </div>
+                      <p className="text-[13px] text-[#5F6368] truncate max-w-xl mt-0.5">
+                        {WORKSPACE_VISUAL_AUDIT_SKILL.shortDescription}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#F1F3F5] text-[#3C4043] text-[12.5px] font-medium shrink-0 ml-4">
+                    <Check className="w-3.5 h-3.5 text-[#188038]" />
+                    Active
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {installedExtraItems
+              .filter((item) => matchesTokens(`${item.name} ${item.description} ${item.keywords}`))
+              .map((item) => {
+                const IconComp = item.icon;
+                return (
+                  <div key={item.id} className="py-2">
+                    <div className="flex items-center justify-between p-3.5 rounded-2xl hover:bg-[#F7F8FA] transition-colors">
+                      <div className="flex items-center gap-4 min-w-0">
+                        <div className="w-11 h-11 rounded-2xl bg-[#F7F8FA] flex items-center justify-center shrink-0">
+                          <IconComp className="w-8 h-8" />
+                        </div>
+                        <div className="min-w-0">
+                          <span className="text-[14.5px] font-semibold text-[#1F1F1F]">
+                            {item.name}
+                          </span>
+                          <p className="text-[13px] text-[#5F6368] truncate max-w-xl mt-0.5">
+                            {item.description}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => toggleExtraInstall(item.id, e)}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#F1F3F5] hover:bg-[#E8EAED] text-[#3C4043] text-[12.5px] font-medium shrink-0 ml-4 cursor-pointer"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        Added
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
           </div>
         )}
       </div>

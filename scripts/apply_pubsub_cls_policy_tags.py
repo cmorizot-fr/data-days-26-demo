@@ -206,7 +206,9 @@ def ensure_data_policies_and_masked_reader(
             dp_name = created["name"]
             print(f"[cls] Data Policy créée : {dp_id} ({spec['predefined_expression']})")
 
-        # Accorde `roles/bigquerydatapolicy.maskedReader` à l'opérateur pour lire les valeurs masquées en direct
+        # Accorde `roles/bigquerydatapolicy.maskedReader` au compte Data Analyst dédié (+ opérateur)
+        analyst_sa = f"serviceAccount:hexagone-data-analyst@{project_id}.iam.gserviceaccount.com"
+        members = sorted({masked_reader_member, analyst_sa})
         iam_url = f"https://bigquerydatapolicy.googleapis.com/v1/{dp_name}:setIamPolicy"
         api_request(
             session,
@@ -219,13 +221,13 @@ def ensure_data_policies_and_masked_reader(
                     "bindings": [
                         {
                             "role": "roles/bigquerydatapolicy.maskedReader",
-                            "members": [masked_reader_member],
+                            "members": members,
                         }
                     ]
                 }
             },
         )
-        print(f"[cls] Rôle maskedReader attribué sur {dp_id} à {masked_reader_member}")
+        print(f"[cls] Rôle maskedReader attribué sur {dp_id} à {', '.join(members)}")
 
 
 def patch_bq_nested_table_policy_tags(
