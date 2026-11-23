@@ -3406,215 +3406,6 @@ workspaces:
                   - "Scan Knowledge Catalog hexagone-raw-pdf-discovery actif avec cache de métadonnées BigLake AUTOMATIC."
                   - "250 avenants agences non structurés prêts pour extraction multimodale dbt AI.GENERATE_TABLE (Démo #2)."
                   - "6 normes prudentielles (ANC PCEC, ALM, ILAAP, ACPR) exposées sans copie pour le CFO (Démo #3)."
-      - id: d1-step4
-        demoId: demo1
-        shortName: 6. Cataloguer les sources pour l'équipe Data
-        conversationTitle: Initialisation dbt staging & Documentation Knowledge Catalog
-        projectFolder: 01_demo1_raw_aggregation
-        gitBranch: main
-        greetingName: Clément
-        modelLabel: Gemini 4 - Carbon
-        turns:
-          - id: d1-s4-t1
-            chipLabel: 1. Initialiser dbt & publier la doc technique KC
-            prompt: Initialise la structure industrielle dbt sur raw_bank et publie la documentation technique initiale dans Knowledge Catalog.
-            workedDurationLabel: Worked for 5s
-            workGroupSummary: Generated dbt project, synced technical metadata to KC & rendered bq-visual-audit
-            intermediateMessage: Génération du projet `dbt` (`hexagone_bank_lakehouse`), synchronisation des métadonnées techniques vers Knowledge Catalog et contrôle visuel `bq-visual-audit` des `10` sources `raw_bank`.
-            taskFinishedLabel: dbt staging, Knowledge Catalog sync & visual source inventory finished
-            leadConfirmation: Le socle `dbt` est compilé, contrôlé visuellement et les fiches techniques des `10` tables/vues `RAW` sont publiées dans
-            leadLink:
-              text: Knowledge Catalog · Search (data-days-demo)
-              url: https://console.cloud.google.com/dataplex?project=data-days-demo
-            sectionHeading: "Ce qui a été mis en place et contrôlé visuellement :"
-            items:
-              - title: Initialisation du projet industriel dbt
-                chips:
-                  - kind: yml
-                    label: dbt_project.yml
-                  - kind: yml
-                    label: _raw_sources.yml
-                bullets:
-                  - Déclaration des tables Iceberg Mainframe (`cbk_*`), AWS Omni (`ext_aws_*`), flux SEPA/SAP et des 2 vues Object Tables PDF découvertes par Knowledge Catalog (`raw_promo_contracts_pdf` & `raw_cfo_regulatory_pdf`) avec persistance automatique vers Knowledge Catalog.
-              - title: Premières alertes remontées par la documentation technique
-                chips:
-                  - kind: kc
-                    label: Knowledge Catalog · raw_bank
-                bullets:
-                  - Le profilage initial met déjà en évidence `~3,4 %` de doublons `end_to_end_id`, `8,1 %` de statuts `RJCT` / `PDNG`, `1,2 %` de dates Mainframe `00000000` / `99999999` et `650` comptes AWS non réconciliés.
-            visualCheck:
-              skillBadge: bq-visual-audit · MCP render_chart
-              title: "Panorama visuel des 10 sources unifiées · data-days-demo.raw_bank"
-              subtitle: "5 silos technologiques fédérés et catalogués dans dbt (_raw_sources.yml) sans duplication inutile"
-              kpis:
-                - label: Sources dbt raw_bank
-                  value: "10 actifs"
-                  sublabel: 5 silos bancaires
-                  tone: positive
-                - label: Copie AWS S3 & PDF
-                  value: "0 octet"
-                  sublabel: Omni & Object Tables
-                  tone: positive
-                - label: Signaux DQ détectés
-                  value: "4 familles"
-                  sublabel: À traiter en Demo 2
-                  tone: warning
-              chartTitle: "Répartition volumétrique des 5 silos exposés dans raw_bank"
-              bars:
-                - label: "Mainframe z/OS (4 tables BigLake Managed Iceberg cbk_*)"
-                  valueLabel: "8,55 M lignes"
-                  pct: 100
-                  tone: blue
-                  badge: Iceberg GCS
-                - label: "Flux Temps Réel Paiements SEPA & IBAN (Pub/Sub → BQ)"
-                  valueLabel: "6,20 M événements"
-                  pct: 73
-                  tone: blue
-                  badge: Streaming + CLS
-                - label: "Grand Livre SAP / ALM PCEC (raw_sap_gl_alm)"
-                  valueLabel: "1,20 M écritures"
-                  pct: 26
-                  tone: neutral
-                  badge: Comptabilité brute
-                - label: "CRM Commercial AWS S3 via Glue (ext_aws_crm_*)"
-                  valueLabel: "400 000 lignes"
-                  pct: 16
-                  tone: positive
-                  badge: 0 copie S3
-                - label: "Silo Documentaire GCS (raw_promo & raw_cfo PDF)"
-                  valueLabel: "256 PDF"
-                  pct: 10
-                  tone: positive
-                  badge: Knowledge Catalog Discovery
-            traces:
-              - id: d1-s4-tr1
-                action: analyzed
-                icon: dak
-                fileName: dbt-bigquery/SKILL.md
-                lineRange: "#L1-112"
-                durationMs: 450
-              - id: d1-s4-tr2
-                action: edited
-                icon: yml
-                fileName: dbt_project.yml
-                added: 28
-                removed: 0
-                durationMs: 450
-              - id: d1-s4-tr3
-                action: edited
-                icon: yml
-                fileName: _raw_sources.yml
-                added: 40
-                removed: 0
-                durationMs: 500
-              - id: d1-s4-tr4
-                action: ran
-                commandSummary: dbt compile --select staging.* & sync technical metadata to Knowledge Catalog
-                durationMs: 700
-                cwd: 02_demo2_silver_dbt_dq
-                command: dbt compile --select "staging.*" && kcmd sync-technical-metadata --schema raw_bank
-                output:
-                  - "16:24:11  Registered adapter: bigquery=1.9.0"
-                  - 16:24:12  Found 10 sources in data-days-demo.raw_bank (4 Managed Iceberg, 2 AWS Omni, 1 Stream, 1 SAP GL Load, 2 Discovered PDF Views)
-                  - 16:24:13  Synced technical catalog entries to Knowledge Catalog — 3 data quality warnings flagged.
-              - id: d1-s4-tr5
-                action: analyzed
-                icon: dak
-                fileName: .agents/skills/bq-visual-audit/SKILL.md
-                lineRange: "#L1-52"
-                durationMs: 350
-              - id: d1-s4-tr6
-                action: ran
-                commandSummary: MCP data-agent-kit/render_chart → Unified RAW 10-source panorama
-                durationMs: 450
-                cwd: 02_demo2_silver_dbt_dq
-                command: mcp call data-agent-kit render_chart --spec '{"title":{"text":"raw_bank Unified 5-Silo Inventory"}}'
-                output:
-                  - "Rendered inline SVG inventory chart across 10 dbt sources (0 bytes copied from AWS S3 & PDF)"
-            filesChanged:
-              - path: 02_demo2_silver_dbt_dq/dbt_project.yml
-                language: yaml
-                badge: YML
-                added: 28
-                removed: 0
-                content: |-
-                  name: 'hexagone_bank_lakehouse'
-                  version: '1.0.0'
-                  config-version: 2
-
-                  profile: 'data_days_demo_bq'
-
-                  models:
-                    hexagone_bank_lakehouse:
-                      staging:
-                        +materialized: view
-                        +dataset: raw_bank
-                      silver:
-                        +materialized: table
-                        +dataset: silver_bank
-                        +persist_docs:
-                          relation: true
-                          columns: true
-              - path: 02_demo2_silver_dbt_dq/models/staging/_raw_sources.yml
-                language: yaml
-                badge: YML
-                added: 40
-                removed: 0
-                content: |-
-                  version: 2
-
-                  sources:
-                    - name: raw_bank
-                      database: data-days-demo
-                      schema: raw_bank
-                      description: "Couche RAW : BigLake Iceberg Mainframe, AWS S3 Omni, flux SEPA, extraction SAP GL / ALM & Object Tables PDF (Knowledge Catalog Discovery)"
-                      tables:
-                        - name: cbk_customers_ref
-                        - name: cbk_accounts_master
-                        - name: cbk_cfonb_balances
-                        - name: cbk_cfonb_movements
-                        - name: ext_aws_crm_customers
-                        - name: ext_aws_crm_interactions
-                        - name: raw_sepa_payments
-                        - name: raw_sap_gl_alm
-                        - name: raw_promo_contracts_pdf
-                        - name: raw_cfo_regulatory_pdf
-            terminalLogs:
-              - $ dbt compile --project-dir 02_demo2_silver_dbt_dq
-              - Found 10 sources in data-days-demo.raw_bank
-              - Synced technical metadata to Knowledge Catalog (europe-west1) — 3 DQ warnings flagged.
-              - $ mcp call data-agent-kit render_chart [bq-visual-audit PASS]
-            subagents:
-              - id: sa-d1-s4
-                role: dbt Project Architect
-                skill: dbt-bigquery
-                status: completed
-            backgroundTasks:
-              - id: bg-d1-s4
-                command: dbt compile && kc sync-raw
-                target: Knowledge Catalog
-                duration: 1.9s
-            artifact:
-              id: art-d1
-              title: Architecture RAW Zero-Copy & Alertes Initiales
-              subtitle: Synthèse générée par Antigravity · Demo 1
-              markdownSummary:
-                heading: Bilan Couche RAW (data-days-demo · europe-west1)
-                metrics:
-                  - label: Sources unifiées
-                    value: 5 silos
-                    tone: positive
-                  - label: Copie physique AWS → GCP
-                    value: 0 octet
-                    tone: positive
-                  - label: Anomalies RAW détectées
-                    value: 3 familles critiques
-                    tone: warning
-                bullets:
-                  - Mainframe z/OS (EBCDIC+COMP3 & CFONB 04+05) décodé par Managed Spark en BigLake Iceberg.
-                  - AWS S3 CRM (80k clients, 320k notes) fédéré sans copie via BigQuery Omni.
-                  - 250 avenants PDF agences + 6 normes CFO découverts automatiquement par Knowledge Catalog Cloud Storage Discovery.
-                  - "Passage requis en Demo 2 : nettoyage dbt SILVER + scans Auto Data Quality."
   - id: demo2
     workspaceLabel: Demo 2 · SILVER & Data Quality
     folderName: 02_demo2_silver_dbt_dq
@@ -3622,164 +3413,291 @@ workspaces:
       - id: d2-step0
         demoId: demo2
         shortName: 1. Concevoir les data products
-        conversationTitle: Revue du découpage des Data Products avant la couche SILVER
+        conversationTitle: Recommandation des Data Products depuis le POS & les sources cibles
         projectFolder: 02_demo2_silver_dbt_dq
         gitBranch: feat/silver-data-products
         greetingName: Clément
         modelLabel: Gemini 4 - Carbon
         turns:
-          - id: d2-t0
-            chipLabel: 1. Revoir le découpage des Data Products
-            prompt: Avant de construire la couche SILVER, revois tous les Data Products. On veut résumer la vie du client et ses mouvements pour faire du Budget Insight (plus ou moins temps réel), tout en servant l'agent CFO.
+          - id: d2-t0a
+            chipLabel: 1. Recommander les Data Products depuis le POS
+            prompt: "Avec ce POS et les sources de données cibles, peux-tu me recommander des Data Products ?"
+            promptAttachment:
+              id: doc-pos-hexagone
+              title: DSI-EA-POS-2026-v3.2 — Plan d'Occupation des Sols (POS)
+              subtitle: Modèle d'urbanisation SI · Banque de Détail France (450 agences · 80 000 clients)
+              uri: docs/assets/banque_hexagone_pos_2026.png
+              metaBadge: POS SI
+              highlightLabel: 5 quartiers prioritaires · 8 îlots sources
+              tone: blue
+              imageUrl: /assets/banque_hexagone_pos_2026.png
             workedDurationLabel: Worked for 5s
-            workGroupSummary: Explored raw_bank, compared candidate designs & wrote the Data Products catalog
-            intermediateMessage: Inventaire des `17` actifs de `raw_bank`, lecture du scénario des 4 démos et comparaison des découpages possibles (par système source vs par domaine métier & usage).
-            taskFinishedLabel: Data Products catalog designed (5 SILVER + 2 GOLD)
-            leadConfirmation: Le nouveau découpage est validé et consigné dans `02_demo2_silver_dbt_dq/kc_products/data_products_catalog.yaml` (5 Data Products `SILVER` + 2 `GOLD`, noms techniques en anglais).
-            sectionHeading: "Ce qui a été revu et décidé :"
+            workGroupSummary: Analyzed POS DSI-EA-POS-2026-v3.2, cross-checked 17 raw_bank assets & prepared 3 urbanization decisions
+            intermediateMessage: Lecture multimodale du POS (`DSI-EA-POS-2026-v3.2`), filtrage des quartiers hors Phase 1 et croisement avec les `17` actifs fédérés dans `raw_bank` (`_raw_sources.yml`).
+            taskFinishedLabel: POS mapped to raw_bank — 3 urbanization decisions required before generating catalog
+            leadConfirmation: "J'ai croisé les 5 zones du POS (`DSI-EA-POS-2026-v3.2`) avec les `17` sources cibles de `raw_bank`. Plutôt que de calquer les 8 îlots applicatifs As-Is, la convergence naturelle mène à **5 Data Products `SILVER`** et **2 Data Products `GOLD`** — sous réserve de 3 arbitrages d'urbanisation."
+            sectionHeading: "Diagnostic d'urbanisation du POS croisé avec `raw_bank` :"
             askQuestions:
-              - id: d2-q0-split
-                question: "Les 5 Data Products prévus sont découpés par système source (paiements SEPA d'un côté, comptes de l'autre) : la vie du client est éclatée et rien ne prépare le Budget Insight. Quel découpage retenir ?"
+              - id: d2-q0-urbanisation
+                question: "Le POS expose 8 îlots applicatifs sources actifs, 7 îlots en pointillés hors Phase 1 et 2 mandats Comex (Pilotage CFO & App Mobile DIG-APP). Quel principe d'urbanisation retenir ?"
                 options:
-                  - "(Recommended) Par domaine métier & usage : 5 SILVER (client 360, vie du client, relation client, finance PNB, engagements commerciaux) + 2 GOLD (Budget Insight, PNB certifié)"
-                  - Garder les 5 Data Products actuels, découpés par système source
-                  - Un seul grand Data Product client regroupant tout
-              - id: d2-q0-naming
-                question: "Dans quelle langue nommer les Data Products, tables et colonnes ?"
+                  - "(Recommended) Découper par domaine métier & usage : 5 SILVER réutilisables + 2 GOLD (DIG-APP & CFO), en écartant les îlots pointillés et la Zone 5 technique"
+                  - Calquer le POS As-Is à raison de 1 Data Product par îlot applicatif source (8 produits silotés)
+                  - Inclure dès le lot 1 les quartiers en pointillés (Q1.2 Risques et Zone 4 Support)
+              - id: d2-q0-couplage
+                question: "Sur Q2.1 et Q3.1/Q3.2, 650 comptes ouverts dans CRM-AG (AWS J0) sont absents du batch nuit COR-CPT, et les virements PAY-RT repassent dans le CFONB J-1. Comment découper le domaine Client & Flux ?"
                 options:
-                  - "(Recommended) Anglais (snake_case), comme les tables RAW — textes métier et UI en français"
-                  - Français (dp_vie_client, dp_client_360…)
-              - id: d2-q0-freshness
-                question: "Comment obtenir un Budget Insight « plus ou moins temps réel » ?"
+                  - "(Recommended) Réconcilier CRM-AG + comptes COR-CPT (dp_customer_360), unifier écritures COR-CPT + PAY-RT sans doublon (dp_customer_timeline) et isoler CRC-VOX sous CLS (dp_customer_relationship)"
+                  - Conserver un Data Product CRM AWS séparé d'un Data Product Core Banking Mainframe
+                  - Tout fusionner (profil, mouvements et verbatims d'appels) dans un seul méga-produit client
+              - id: d2-q0-gouvernance
+                question: "Quelle convention de nommage et quel pont de fraîcheur retenir entre le batch nuit (COR-CPT / SAP J+1), le temps réel (PAY-RT) et le chantier mobile DIG-APP ?"
                 options:
-                  - "(Recommended) dbt planifié dans BigQuery (RAW → SILVER → GOLD) + ajustement à chaque paiement dans AlloyDB (< 15 ms)"
-                  - Vue BigQuery « historique + flux du jour » recalculée à chaque lecture
-                  - Tout calculer dans AlloyDB
+                  - "(Recommended) Identifiants techniques anglais snake_case (titres FR dans Knowledge Catalog) + dbt dans BigQuery et synchro AlloyDB (< 15 ms) ajustée par PAY-RT"
+                  - Nommer techniquement les produits en français d'après les codes îlots du POS (dp_q21_crm_ag…)
+                  - Faire requêter directement BigQuery en temps réel par le backend mobile DIG-APP
             items:
-              - title: Constat sur les 5 Data Products prévus
+              - title: "1. Filtrage du POS : hors-périmètre, socle Zone 5 et mandats consommateurs"
+                chips:
+                  - kind: kc
+                    label: DSI-EA-POS-2026-v3.2
+                bullets:
+                  - "**Écartés (pointillés Phase 1)** : `Q1.2` (`RSK-CR`, `CMP-AML`), `COR-CRD` (Crédits), `PAY-CLR` (Compensation STET) et `ZONE 4 — SUPPORT` (`SUP-RH`, `SUP-IMM`, `SUP-ACH`)."
+                  - "**Socle `ZONE 5` (`Z5-INF`)** : Pub/Sub ISO 20022, CFONB/Copybooks, interconnexion AWS↔GCP et exports Collibra/Excel sont des vecteurs techniques & sémantiques, jamais des Data Products."
+                  - "**Cibles `GOLD` vs Sources** : `DIG-APP` (*Chantier 2026*) et le mandat *Pilotage CFO* (`Q1.1`) sont les **2 consommateurs prioritaires** qui justifient 2 produits `GOLD` dédiés."
+              - title: "2. Pourquoi le calque « 1 îlot POS = 1 Data Product » casserait les usages"
                 chips:
                   - kind: bq
                     label: raw_bank
-                bullets:
-                  - "Découpage par système source : `dp_payment_flows` ne contient que les virements SEPA, alors que la vie du client, c'est aussi la carte, les prélèvements, le salaire et l'épargne."
-                  - "Le client est éclaté entre deux produits (`dp_accounts_balances`, `dp_customers_interactions`) et aucun produit ne prépare le Budget Insight de la Démo 4."
-              - title: Nouveau catalogue — 5 Data Products SILVER
-                chips:
                   - kind: yml
-                    label: data_products_catalog.yaml
+                    label: _raw_sources.yml
+                bullets:
+                  - "**Client & comptes coupés en deux (`CRM-AG` ↔ `COR-CPT`)** : les ouvertures du jour naissent sur AWS (`650` comptes J0) alors que le solde comptable J-1 vit sur le Mainframe z/OS."
+                  - "**Double comptage latent (`COR-CPT` ↔ `PAY-RT`)** : un virement SEPA `pacs.008` capté en temps réel dans `PAY-RT` retombe la nuit suivante dans les écritures CFONB `COR-CPT`."
+                  - "**Grain & confidentialité distincts (`CRC-VOX`)** : les `320 000` appels et RDV portent des verbatims soumis au masquage `CLS (ALWAYS_NULL)` qu'il faut isoler du référentiel client."
+              - title: "3. Recommandation cible : 5 SILVER par domaine + 2 GOLD par mandat"
+                chips:
                   - kind: kc
                     label: Knowledge Catalog
                 bullets:
-                  - "`dp_customer_360` (`customers`, `accounts`) · `dp_customer_timeline` (`customer_movements`, `beneficiaries`) · `dp_customer_relationship` (`interactions`) · `dp_finance_pnb` (`gl_entries`) · `dp_commercial_commitments` (`promo_contracts`)."
-                  - "Un produit = un propriétaire métier, une promesse de fraîcheur et un contrat testé dans `schema.yml` (ex. fuite néobanques 90 j = `2 420 000 000,00 €` dans `dp_customer_timeline`)."
-              - title: 2 Data Products GOLD & architecture de fraîcheur
-                chips:
-                  - kind: bq
-                    label: gold_bank
-                bullets:
-                  - "`dp_budget_insight` (prévision de fin de mois par client, Démo 4) et `dp_certified_pnb` (écart PNB certifié `-38,42 M€`, Démo 3)."
-                  - "`dbt` industrialise et gouverne RAW → SILVER → GOLD dans BigQuery ; le temps réel ne passe pas par `dbt` : AlloyDB reçoit la prévision du jour (`80 000` lignes) et l'ajuste à chaque paiement Pub/Sub."
+                  - "**5 `SILVER`** : `dp_customer_360` (`CRM-AG` + `COR-CPT` comptes), `dp_customer_timeline` (`COR-CPT` écritures + `PAY-RT`), `dp_customer_relationship` (`CRC-VOX` + RDV), `dp_finance_pnb` (`FIN-GL` + `FIN-ALM` dans `Q1.1`), `dp_commercial_commitments` (`GED-CTR` PDF + `PRD-CAT` dans `Q3.3`)."
+                  - "**2 `GOLD`** : `dp_budget_insight` (pour `DIG-APP` mobile) et `dp_certified_pnb` (pour le pilotage `CFO`)."
             traces:
-              - id: d2-tr0a
+              - id: d2-tr0a-pos
                 action: analyzed
                 icon: md
-                fileName: DESIGN_AND_CONTEXT.md
-                lineRange: "#L96-L145"
-                durationMs: 400
-              - id: d2-tr0b
+                fileName: banque_hexagone_pos_2026.png
+                durationMs: 480
+              - id: d2-tr0a-src
+                action: analyzed
+                icon: yml
+                fileName: _raw_sources.yml
+                lineRange: "#L1-55"
+                durationMs: 340
+              - id: d2-tr0a-bq
                 action: ran
-                commandSummary: inventory raw_bank assets, volumes & cross-silo keys
+                commandSummary: cross-check POS source blocks against raw_bank tables & join keys
                 durationMs: 650
                 cwd: 02_demo2_silver_dbt_dq
                 command: bq query --use_legacy_sql=false --label datacloud:antigravity "SELECT table_name, table_type FROM raw_bank.INFORMATION_SCHEMA.TABLES"
                 output:
-                  - "17 assets in data-days-demo.raw_bank (4 Managed Iceberg, 4 AWS Iceberg, 2 streams, 1 SAP GL load, 2 unified views, 2 PDF views)"
-                  - "cbk_cfonb_movements: 5,500,000 rows | raw_sepa_payments_unified: 6,200,503 rows | aws_crm_customers: 80,000 rows"
-              - id: d2-tr0c
+                  - "17 assets in data-days-demo.raw_bank mapped to 8 active POS source blocks"
+                  - "650 J0 accounts in aws_crm_account_portfolio absent from cbk_accounts_master (batch J-1)"
+            filesChanged: []
+            terminalLogs:
+              - $ bq query --label datacloud:antigravity "SELECT table_name, table_type FROM raw_bank.INFORMATION_SCHEMA.TABLES"
+              - Mapped 8 active POS islands (Q1.1, Q2.1, Q3.1, Q3.2, Q3.3) -> 5 domain groups + 2 Comex mandates
+              - Excluded 7 dotted out-of-scope islands (Q1.2, COR-CRD, PAY-CLR, Zone 4) & Zone 5 infra
+              - Waiting for user confirmation on 3 urbanization decisions...
+            subagents:
+              - id: sa-d2-0a
+                role: Enterprise Data Urbanist
+                skill: discover-assets
+                status: completed
+            backgroundTasks: []
+          - id: d2-t0b
+            chipLabel: 2. Générer le catalogue des Data Products (5 SILVER + 2 GOLD)
+            prompt: "Valide ces 3 arbitrages d'urbanisation et génère le catalogue de référence des Data Products."
+            workedDurationLabel: Worked for 4s
+            workGroupSummary: Formalized POS-to-Data-Product mapping & wrote kc_products/data_products_catalog.yaml
+            intermediateMessage: Écriture du contrat d'urbanisation dans `02_demo2_silver_dbt_dq/kc_products/data_products_catalog.yaml` (propriétaires MOA, tables cibles, fraîcheur et invariants métier).
+            taskFinishedLabel: Data Products catalog generated (5 SILVER + 2 GOLD)
+            leadConfirmation: "Les 3 arbitrages d'urbanisation sont actés : le catalogue de référence `02_demo2_silver_dbt_dq/kc_products/data_products_catalog.yaml` est généré avec **5 Data Products `SILVER`** et **2 Data Products `GOLD`** en `snake_case` anglais."
+            sectionHeading: "Correspondance retenue entre le POS et le catalogue publié :"
+            items:
+              - title: "Quartiers Q2.1, Q3.1 & Q3.2 -> 3 Data Products SILVER Client & Flux"
+                chips:
+                  - kind: yml
+                    label: data_products_catalog.yaml
+                bullets:
+                  - "**`dp_customer_360`** (`CRM-AG` + `COR-CPT` comptes) : `customers` (`80 000`), `accounts` (`95 000`, dont `650` J0 conservés) et `account_monthly_balances` (`18` mois)."
+                  - "**`dp_customer_timeline`** (`COR-CPT` écritures + `PAY-RT`) : `customer_movements` dédoublonnés (`fuite néobanques 90 j = 2,42 Md€`) et `beneficiaries` (`113 936`)."
+                  - "**`dp_customer_relationship`** (`CRC-VOX` + RDV `CRM-AG`) : `interactions` (`320 000` lignes, verbatim protégé par `CLS ALWAYS_NULL`)."
+              - title: "Quartiers Q1.1 & Q3.3 -> 2 Data Products SILVER Finance & Engagements"
+                chips:
+                  - kind: bq
+                    label: silver_bank
+                bullets:
+                  - "**`dp_finance_pnb`** (`FIN-GL` SAP PCEC + `FIN-ALM` €STR sous MOA `CFO`) : `gl_entries` (`1 200 000` lignes)."
+                  - "**`dp_commercial_commitments`** (`GED-CTR` 250 PDF + `PRD-CAT` offres sous MOA Marketing) : `promo_contracts`, `promo_contracts_pdf_tracking` et `savings_offers`."
+              - title: "Mandats Comex (`DIG-APP` & `CFO`) -> 2 Data Products GOLD & fraîcheur"
+                chips:
+                  - kind: bq
+                    label: gold_bank
+                  - kind: kc
+                    label: Knowledge Catalog
+                bullets:
+                  - "**`dp_budget_insight`** (`DIG-APP` mobile) : prévision `AI.FORECAST` sur `80 000` clients dans BigQuery, synchronisée vers **AlloyDB (`< 15 ms`)** et ajustée à chaque événement `PAY-RT`."
+                  - "**`dp_certified_pnb`** (`Pilotage CFO`) : réconciliation certifiée `-38,42 M€` croisant `dp_finance_pnb` (`-24,12 M€` ALM) et `dp_commercial_commitments` (`-14,30 M€` PDF)."
+            traces:
+              - id: d2-tr0b-doc
                 action: analyzed
-                icon: yml
-                fileName: _raw_sources.yml
-                lineRange: "#L1-40"
-                durationMs: 350
-              - id: d2-tr0d
+                icon: md
+                fileName: DESIGN_AND_CONTEXT.md
+                lineRange: "#L96-L145"
+                durationMs: 320
+              - id: d2-tr0b-cat
                 action: edited
                 icon: yml
                 fileName: data_products_catalog.yaml
-                added: 96
+                added: 98
                 removed: 0
                 durationMs: 550
-              - id: d2-tr0e
-                action: edited
-                icon: md
-                fileName: AGENTS.md
-                added: 2
-                removed: 0
-                durationMs: 350
             filesChanged:
               - path: 02_demo2_silver_dbt_dq/kc_products/data_products_catalog.yaml
                 language: yaml
                 badge: YML
-                added: 96
+                added: 98
                 removed: 0
                 content: |-
+                  # ==============================================================================
+                  # Catalogue des Data Products — Banque Hexagone (Paris Data Summit 2026)
+                  # Source de vérité du découpage : 5 Data Products SILVER + 2 Data Products GOLD.
+                  # Convention : noms techniques en anglais (Data Products, tables, colonnes, modèles dbt).
+                  # Découpage par domaine métier & usage (pas par système source).
+                  # ==============================================================================
                   domain: retail_banking_france
+                  project: data-days-demo
+                  location: europe-west1
+
                   data_products:
-                    # SILVER — données propres & réutilisables
+                    # ---------------------------------------------------------------- SILVER
                     - id: dp_customer_360
-                      tables: [customers, accounts]
+                      layer: silver
+                      title: Customer 360 — référentiel client & comptes
                       owner: retail_network_marketing
-                      freshness: daily (J-1)
+                      freshness: daily (J-1 Mainframe + CRM)
+                      dataset: silver_bank
+                      tables: [customers, accounts, account_monthly_balances]
+                      sources: [cbk_customers_ref, aws_crm_customers, cbk_accounts_master, aws_crm_account_portfolio, cbk_cfonb_balances]
+                      consumers: [all_domains, budget_insight, cfo_agent]
+                      contract: 80 000 clients (dont 650 absents du Mainframe J-1), 95 000 comptes, 0 clôture, solde J-1 ; 1 437 531 soldes compte x mois (18 mois, ouverture + mouvements = clôture)
+
                     - id: dp_customer_timeline
-                      tables: [customer_movements, beneficiaries]
+                      layer: silver
+                      title: Customer timeline — mouvements & paiements (vie du client)
                       owner: payments
-                      freshness: daily + intraday via AlloyDB
+                      freshness: daily (J-1) + intraday via AlloyDB
+                      dataset: silver_bank
+                      tables: [customer_movements, beneficiaries]
+                      sources: [cbk_cfonb_movements, raw_sepa_payments_unified, raw_iban_events_unified]
+                      consumers: [budget_insight, deposit_leak_analysis, cfo_agent]
+                      contract: mouvements catégorisés et dédoublonnés ; fuite néobanques 90 j = 2 420 000 000,00 EUR
+
                     - id: dp_customer_relationship
-                      tables: [interactions]
+                      layer: silver
+                      title: Customer relationship — interactions CRM
                       owner: retail_network_call_center
+                      freshness: daily
+                      dataset: silver_bank
+                      tables: [interactions]
+                      sources: [aws_crm_interactions]
+                      consumers: [churn_analytics, ai_agents]
+                      contract: 320 000 RDV et appels ; verbatim masqué par CLS (ALWAYS_NULL), indicateurs non sensibles extraits
+
                     - id: dp_finance_pnb
-                      tables: [gl_entries]
+                      layer: silver
+                      title: Finance PNB — grand livre SAP, budget & TCI ALM
                       owner: cfo_finance
+                      freshness: monthly / quarterly close
+                      dataset: silver_bank
+                      tables: [gl_entries]
+                      sources: [raw_sap_gl_alm]
+                      consumers: [cfo_agent]
+                      contract: 1 200 000 lignes ; SUM brut = +42,80 M EUR ; signé hors 58* = -24,12 M EUR
+
                     - id: dp_commercial_commitments
-                      tables: [promo_contracts]
+                      layer: silver
+                      title: Commercial commitments — contrats promotionnels PDF & offres d'épargne
                       owner: management_control
-                    # GOLD — réponses à une question précise
+                      freshness: on document arrival
+                      dataset: silver_bank
+                      tables: [promo_contracts, promo_contracts_pdf_tracking, savings_offers]
+                      sources: [raw_promo_contracts_pdf, raw_cfo_regulatory_pdf, savings_offer_catalog (seed), promo_types (seed)]
+                      consumers: [cfo_agent, next_best_offer]
+                      contract: 250 avenants extraits par IA (AI.GENERATE, 250 / 250 certifiables, suivi PDF par PDF, PDF relisible à la demande) = -14 300 000,00 EUR ; offres d'épargne conformes ACPR 2024-R-01 (Livret Boost Maison 3,50 % sur 3 mois)
+
+                    # ------------------------------------------------------------------ GOLD
                     - id: dp_budget_insight
-                      tables: [customer_mobile_insights]
-                      consumers: [mobile_app, adk_agents]
+                      layer: gold
+                      title: Budget insight — prévision de fin de mois, dépenses & engagements récurrents par client
+                      owner: digital_banking
+                      freshness: daily in BigQuery, real-time adjustment in AlloyDB
+                      dataset: gold_bank
+                      tables:
+                        - customer_transactions_enriched
+                        - customer_monthly_spending
+                        - customer_recurring_commitments
+                        - customer_card_spending_forecast
+                        - customer_mobile_insights
+                      sources: [dp_customer_360, dp_customer_timeline, dp_commercial_commitments]
+                      consumers: [mobile_app, adk_agents, alloydb_sync]
+                      contract: >
+                        80 000 clients (1 ligne/client dans customer_mobile_insights) avec prévision TimesFM 2.5 (AI.FORECAST) ;
+                        offre d'épargne seulement si reste à vivre >= 100 EUR et <= 70 % du surplus (ACPR 2024-R-01, priorité Livret A / LDDS puis Livret Boost Maison 3,50 % sur 3 mois) ;
+                        transactions typées FR + marchands nettoyés + agrégats mensuels + engagements récurrents pour l'agent conversationnel ;
+                        témoin CUST00002026 = STRMFLIX +4,00 EUR, CPAM +42,00 EUR, reste à vivre +300,00 EUR, épargne recommandée 200 EUR
+
                     - id: dp_certified_pnb
+                      layer: gold
+                      title: Certified PNB — écart de PNB certifié vs budget
+                      owner: cfo_finance
+                      freshness: quarterly
+                      dataset: gold_bank
                       tables: [v_cfo_certified_pnb_variance]
+                      sources: [dp_finance_pnb, dp_commercial_commitments]
                       consumers: [cfo, executive_committee]
+                      contract: -38 420 000,00 EUR = -24,12 M EUR ALM + -14,30 M EUR PDF
             terminalLogs:
-              - $ bq query "SELECT table_name, table_type FROM raw_bank.INFORMATION_SCHEMA.TABLES"
-              - 17 assets inventoried in data-days-demo.raw_bank
-              - "Design decision: split by business domain & usage -> 5 SILVER + 2 GOLD Data Products"
-              - Wrote kc_products/data_products_catalog.yaml (naming convention: English snake_case)
+              - "Urbanization rules locked: 5 SILVER domains + 2 GOLD Comex products (English snake_case)"
+              - Wrote 02_demo2_silver_dbt_dq/kc_products/data_products_catalog.yaml (98 lines)
+              - Validated 100% coverage of 8 active POS source islands -> ready for DQ profiling (Step 2)
             subagents:
-              - id: sa-d2-0
-                role: Data Product Architect
-                skill: discover-assets
+              - id: sa-d2-0b
+                role: Data Product Catalog Author
+                skill: dbt-bigquery
                 status: completed
             backgroundTasks: []
             artifact:
               id: art-d2-0
-              title: Catalogue cible des Data Products
-              subtitle: Découpage par domaine métier & usage · Demo 2
+              title: Catalogue cible des Data Products (issu du POS)
+              subtitle: Urbanisation DSI-EA-POS-2026-v3.2 · 5 SILVER + 2 GOLD
               markdownSummary:
                 heading: 5 Data Products SILVER + 2 GOLD
                 metrics:
+                  - label: Îlots POS couverts
+                    value: 8 / 8 actifs
+                    tone: blue
                   - label: SILVER
                     value: 5 Data Products
                     tone: positive
-                  - label: GOLD
+                  - label: GOLD (Mandats Comex)
                     value: 2 Data Products
                     tone: positive
-                  - label: Nommage
-                    value: Anglais (snake_case)
-                    tone: neutral
                 bullets:
-                  - "dp_customer_360, dp_customer_timeline, dp_customer_relationship, dp_finance_pnb, dp_commercial_commitments."
-                  - "dp_budget_insight (Démo 4) et dp_certified_pnb (Démo 3) s'appuient sur ces produits SILVER."
-                  - "dbt planifié dans BigQuery ; ajustement temps réel du Budget Insight dans AlloyDB."
+                  - "SILVER : dp_customer_360, dp_customer_timeline, dp_customer_relationship, dp_finance_pnb, dp_commercial_commitments."
+                  - "GOLD : dp_budget_insight (chantier mobile DIG-APP, AlloyDB < 15 ms) et dp_certified_pnb (pilotage CFO -38,42 M€)."
+                  - "7 îlots en pointillés hors Phase 1 écartés ; Zone 5 traitée comme socle technique & sémantique."
       - id: d2-step1
         demoId: demo2
         shortName: 2. Diagnostiquer la qualité des données
