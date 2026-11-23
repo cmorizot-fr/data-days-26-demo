@@ -3432,10 +3432,10 @@ workspaces:
               tone: blue
               imageUrl: /assets/banque_hexagone_pos_2026.png
             workedDurationLabel: Worked for 5s
-            workGroupSummary: Analyzed POS DSI-EA-POS-2026-v3.2, cross-checked 17 raw_bank assets & prepared 3 urbanization decisions
-            intermediateMessage: Lecture multimodale du POS (`DSI-EA-POS-2026-v3.2`), filtrage des quartiers hors Phase 1 et croisement avec les `17` actifs fédérés dans `raw_bank` (`_raw_sources.yml`).
+            workGroupSummary: Analyzed POS DSI-EA-POS-2026-v3.2, mapped 17 raw_bank schemas & prepared 3 urbanization decisions
+            intermediateMessage: Lecture multimodale du POS (`DSI-EA-POS-2026-v3.2`), filtrage des quartiers hors Phase 1 et croisement structurel avec les `17` sources fédérées dans `raw_bank` (`_raw_sources.yml`).
             taskFinishedLabel: POS mapped to raw_bank — 3 urbanization decisions required before generating catalog
-            leadConfirmation: "J'ai croisé les 5 zones du POS (`DSI-EA-POS-2026-v3.2`) avec les `17` sources cibles de `raw_bank`. Plutôt que de calquer les 8 îlots applicatifs As-Is, la convergence naturelle mène à **5 Data Products `SILVER`** et **2 Data Products `GOLD`** — sous réserve de 3 arbitrages d'urbanisation."
+            leadConfirmation: "J'ai croisé les 5 zones du POS (`DSI-EA-POS-2026-v3.2`) avec les `17` sources cibles de `raw_bank`. Plutôt que de calquer les 8 îlots applicatifs As-Is, l'urbanisation par domaine métier mène à **5 Data Products `SILVER`** et **2 Data Products `GOLD`** — sous réserve de 3 arbitrages d'architecture."
             sectionHeading: "Diagnostic d'urbanisation du POS croisé avec `raw_bank` :"
             askQuestions:
               - id: d2-q0-urbanisation
@@ -3445,13 +3445,13 @@ workspaces:
                   - Calquer le POS As-Is à raison de 1 Data Product par îlot applicatif source (8 produits silotés)
                   - Inclure dès le lot 1 les quartiers en pointillés (Q1.2 Risques et Zone 4 Support)
               - id: d2-q0-couplage
-                question: "Sur Q2.1 et Q3.1/Q3.2, 650 comptes ouverts dans CRM-AG (AWS J0) sont absents du batch nuit COR-CPT, et les virements PAY-RT repassent dans le CFONB J-1. Comment découper le domaine Client & Flux ?"
+                question: "Sur Q2.1, Q3.1 et Q3.2, le POS sépare CRM-AG (AWS), CRC-VOX (Call Center) et COR-CPT / PAY-RT (Mainframe & SEPA). Comment aligner les Data Products sur les grains métier et les MOA ?"
                 options:
-                  - "(Recommended) Réconcilier CRM-AG + comptes COR-CPT (dp_customer_360), unifier écritures COR-CPT + PAY-RT sans doublon (dp_customer_timeline) et isoler CRC-VOX sous CLS (dp_customer_relationship)"
-                  - Conserver un Data Product CRM AWS séparé d'un Data Product Core Banking Mainframe
-                  - Tout fusionner (profil, mouvements et verbatims d'appels) dans un seul méga-produit client
+                  - "(Recommended) Séparer par grain & MOA : référentiel client/comptes (dp_customer_360), journal des mouvements & IBAN (dp_customer_timeline) et interactions sous CLS (dp_customer_relationship)"
+                  - Découper par technologie d'hébergement : 1 Data Product AWS et 1 Data Product Mainframe z/OS
+                  - Tout fusionner (profil client, mouvements financiers et verbatims d'appels) dans un seul méga-produit
               - id: d2-q0-gouvernance
-                question: "Quelle convention de nommage et quel pont de fraîcheur retenir entre le batch nuit (COR-CPT / SAP J+1), le temps réel (PAY-RT) et le chantier mobile DIG-APP ?"
+                question: "Quelle convention de nommage et quel pont de fraîcheur retenir entre les batchs nuit (COR-CPT / SAP J+1), le temps réel (PAY-RT) et le chantier mobile DIG-APP ?"
                 options:
                   - "(Recommended) Identifiants techniques anglais snake_case (titres FR dans Knowledge Catalog) + dbt dans BigQuery et synchro AlloyDB (< 15 ms) ajustée par PAY-RT"
                   - Nommer techniquement les produits en français d'après les codes îlots du POS (dp_q21_crm_ag…)
@@ -3472,9 +3472,9 @@ workspaces:
                   - kind: yml
                     label: _raw_sources.yml
                 bullets:
-                  - "**Client & comptes coupés en deux (`CRM-AG` ↔ `COR-CPT`)** : les ouvertures du jour naissent sur AWS (`650` comptes J0) alors que le solde comptable J-1 vit sur le Mainframe z/OS."
-                  - "**Double comptage latent (`COR-CPT` ↔ `PAY-RT`)** : un virement SEPA `pacs.008` capté en temps réel dans `PAY-RT` retombe la nuit suivante dans les écritures CFONB `COR-CPT`."
-                  - "**Grain & confidentialité distincts (`CRC-VOX`)** : les `320 000` appels et RDV portent des verbatims soumis au masquage `CLS (ALWAYS_NULL)` qu'il faut isoler du référentiel client."
+                  - "**Référentiel coupé entre 2 clouds (`CRM-AG` ↔ `COR-CPT`)** : la relation commerciale et l'ouverture de compte vivent sur AWS tandis que la tenue comptable J-1 vit sur z/OS — les consommateurs ont besoin d'une vue `Customer 360` unique."
+                  - "**Flux financiers éclatés (`COR-CPT` ↔ `PAY-RT`)** : séparer les écritures comptables nuit (`Q3.1`) et les paiements SEPA temps réel (`Q3.2`) empêche toute lecture continue de la vie financière du client."
+                  - "**Confidentialité & grain distincts (`CRC-VOX`)** : les verbatims d'appels et comptes-rendus de RDV relèvent d'un grain événementiel soumis au masquage `CLS (ALWAYS_NULL)` qu'il faut isoler du référentiel client."
               - title: "3. Recommandation cible : 5 SILVER par domaine + 2 GOLD par mandat"
                 chips:
                   - kind: kc
@@ -3496,13 +3496,13 @@ workspaces:
                 durationMs: 340
               - id: d2-tr0a-bq
                 action: ran
-                commandSummary: cross-check POS source blocks against raw_bank tables & join keys
+                commandSummary: map 8 active POS islands against raw_bank schemas & join keys
                 durationMs: 650
                 cwd: 02_demo2_silver_dbt_dq
                 command: bq query --use_legacy_sql=false --label datacloud:antigravity "SELECT table_name, table_type FROM raw_bank.INFORMATION_SCHEMA.TABLES"
                 output:
-                  - "17 assets in data-days-demo.raw_bank mapped to 8 active POS source blocks"
-                  - "650 J0 accounts in aws_crm_account_portfolio absent from cbk_accounts_master (batch J-1)"
+                  - "17 assets in data-days-demo.raw_bank mapped across Q1.1, Q2.1, Q3.1, Q3.2 & Q3.3"
+                  - "Shared business keys detected: customer_id, account_id, end_to_end_id, agency_code, gl_account"
             filesChanged: []
             terminalLogs:
               - $ bq query --label datacloud:antigravity "SELECT table_name, table_type FROM raw_bank.INFORMATION_SCHEMA.TABLES"
@@ -3520,26 +3520,26 @@ workspaces:
             prompt: "Valide ces 3 arbitrages d'urbanisation et génère le catalogue de référence des Data Products."
             workedDurationLabel: Worked for 4s
             workGroupSummary: Formalized POS-to-Data-Product mapping & wrote kc_products/data_products_catalog.yaml
-            intermediateMessage: Écriture du contrat d'urbanisation dans `02_demo2_silver_dbt_dq/kc_products/data_products_catalog.yaml` (propriétaires MOA, tables cibles, fraîcheur et invariants métier).
+            intermediateMessage: Écriture du contrat d'urbanisation dans `02_demo2_silver_dbt_dq/kc_products/data_products_catalog.yaml` (propriétaires MOA, tables cibles, fraîcheur et contrats attendus).
             taskFinishedLabel: Data Products catalog generated (5 SILVER + 2 GOLD)
             leadConfirmation: "Les 3 arbitrages d'urbanisation sont actés : le catalogue de référence `02_demo2_silver_dbt_dq/kc_products/data_products_catalog.yaml` est généré avec **5 Data Products `SILVER`** et **2 Data Products `GOLD`** en `snake_case` anglais."
-            sectionHeading: "Correspondance retenue entre le POS et le catalogue publié :"
+            sectionHeading: "Correspondance retenue entre le POS et le catalogue de référence :"
             items:
               - title: "Quartiers Q2.1, Q3.1 & Q3.2 -> 3 Data Products SILVER Client & Flux"
                 chips:
                   - kind: yml
                     label: data_products_catalog.yaml
                 bullets:
-                  - "**`dp_customer_360`** (`CRM-AG` + `COR-CPT` comptes) : `customers` (`80 000`), `accounts` (`95 000`, dont `650` J0 conservés) et `account_monthly_balances` (`18` mois)."
-                  - "**`dp_customer_timeline`** (`COR-CPT` écritures + `PAY-RT`) : `customer_movements` dédoublonnés (`fuite néobanques 90 j = 2,42 Md€`) et `beneficiaries` (`113 936`)."
-                  - "**`dp_customer_relationship`** (`CRC-VOX` + RDV `CRM-AG`) : `interactions` (`320 000` lignes, verbatim protégé par `CLS ALWAYS_NULL`)."
+                  - "**`dp_customer_360`** (`CRM-AG` + `COR-CPT` comptes, MOA Réseau) : `customers`, `accounts` et `account_monthly_balances`."
+                  - "**`dp_customer_timeline`** (`COR-CPT` écritures + `PAY-RT`, MOA Paiements) : `customer_movements` et `beneficiaries`."
+                  - "**`dp_customer_relationship`** (`CRC-VOX` + RDV `CRM-AG`, MOA Relation Client) : `interactions` (verbatims sous `CLS ALWAYS_NULL`)."
               - title: "Quartiers Q1.1 & Q3.3 -> 2 Data Products SILVER Finance & Engagements"
                 chips:
                   - kind: bq
                     label: silver_bank
                 bullets:
-                  - "**`dp_finance_pnb`** (`FIN-GL` SAP PCEC + `FIN-ALM` €STR sous MOA `CFO`) : `gl_entries` (`1 200 000` lignes)."
-                  - "**`dp_commercial_commitments`** (`GED-CTR` 250 PDF + `PRD-CAT` offres sous MOA Marketing) : `promo_contracts`, `promo_contracts_pdf_tracking` et `savings_offers`."
+                  - "**`dp_finance_pnb`** (`FIN-GL` SAP PCEC + `FIN-ALM` €STR, MOA `CFO`) : `gl_entries`."
+                  - "**`dp_commercial_commitments`** (`GED-CTR` PDF + `PRD-CAT` offres, MOA Marketing & Contrôle de gestion) : `promo_contracts`, `promo_contracts_pdf_tracking` et `savings_offers`."
               - title: "Mandats Comex (`DIG-APP` & `CFO`) -> 2 Data Products GOLD & fraîcheur"
                 chips:
                   - kind: bq
@@ -3547,8 +3547,8 @@ workspaces:
                   - kind: kc
                     label: Knowledge Catalog
                 bullets:
-                  - "**`dp_budget_insight`** (`DIG-APP` mobile) : prévision `AI.FORECAST` sur `80 000` clients dans BigQuery, synchronisée vers **AlloyDB (`< 15 ms`)** et ajustée à chaque événement `PAY-RT`."
-                  - "**`dp_certified_pnb`** (`Pilotage CFO`) : réconciliation certifiée `-38,42 M€` croisant `dp_finance_pnb` (`-24,12 M€` ALM) et `dp_commercial_commitments` (`-14,30 M€` PDF)."
+                  - "**`dp_budget_insight`** (`DIG-APP` mobile) : prévision `AI.FORECAST` dans BigQuery, synchronisée vers **AlloyDB (`< 15 ms`)** et ajustée à chaque événement `PAY-RT`."
+                  - "**`dp_certified_pnb`** (`Pilotage CFO`) : écart de PNB certifié croisant `dp_finance_pnb` et `dp_commercial_commitments`."
             traces:
               - id: d2-tr0b-doc
                 action: analyzed
@@ -3696,8 +3696,8 @@ workspaces:
                     tone: positive
                 bullets:
                   - "SILVER : dp_customer_360, dp_customer_timeline, dp_customer_relationship, dp_finance_pnb, dp_commercial_commitments."
-                  - "GOLD : dp_budget_insight (chantier mobile DIG-APP, AlloyDB < 15 ms) et dp_certified_pnb (pilotage CFO -38,42 M€)."
-                  - "7 îlots en pointillés hors Phase 1 écartés ; Zone 5 traitée comme socle technique & sémantique."
+                  - "GOLD : dp_budget_insight (chantier mobile DIG-APP, AlloyDB < 15 ms) et dp_certified_pnb (pilotage CFO)."
+                  - "Prochaine étape : profiler raw_bank pour mesurer les anomalies réelles avant de coder les transformations dbt."
       - id: d2-step1
         demoId: demo2
         shortName: 2. Diagnostiquer la qualité des données
@@ -4065,21 +4065,21 @@ workspaces:
       - id: d2-step2
         demoId: demo2
         shortName: 3. Nettoyer & fiabiliser les données
-        conversationTitle: Génération des modèles dbt SILVER, arbitrages de qualité et contrats schema.yml
+        conversationTitle: Arbitrages de réconciliation inter-silos & génération des modèles dbt SILVER
         projectFolder: 02_demo2_silver_dbt_dq
         gitBranch: feat/silver-data-products
         greetingName: Clément
         modelLabel: Gemini 4 - Carbon
         turns:
-          - id: d2-t2
-            chipLabel: 1. Générer les modèles dbt des Data Products & tests DQ
-            prompt: Génère les modèles dbt SILVER dans silver_bank en appliquant les règles de qualité validées, en commençant par dp_customer_360 et dp_customer_timeline, avec les tests de qualité dans schema.yml.
-            workedDurationLabel: Worked for 7s
-            workGroupSummary: Compared Mainframe & SEPA overlap, wrote dbt models, contracts & category rules, parsed the project
-            intermediateMessage: Rapprochement des mouvements Mainframe et des paiements SEPA par `end_to_end_id`, écriture des modèles `dbt` de `dp_customer_360` et `dp_customer_timeline` et de leurs contrats `schema.yml`.
-            taskFinishedLabel: 10 dbt models, 1 seed & 39 data quality tests generated
-            leadConfirmation: Les modèles `dbt` de `dp_customer_360` et `dp_customer_timeline` sont prêts dans `02_demo2_silver_dbt_dq/models/silver`, avec `39` tests de qualité. 3 arbitrages ont été validés avant écriture.
-            sectionHeading: "Ce qui a été mis en place :"
+          - id: d2-t2a
+            chipLabel: 1. Auditer les recouvrements inter-silos avant codage SQL
+            prompt: "Prépare les transformations dbt SILVER à partir des anomalies détectées à l'étape 2 : vérifie les recoupements exacts entre Mainframe, CRM AWS et SEPA avant d'écrire le SQL."
+            workedDurationLabel: Worked for 4s
+            workGroupSummary: Tested Mainframe ↔ SEPA end_to_end_id overlap, checked 650 AWS J0 accounts & prepared 3 SQL design decisions
+            intermediateMessage: Rapprochement sur `end_to_end_id` entre `cbk_cfonb_movements` (`5,5 M` lignes) et `raw_sepa_payments_unified`, analyse des `650` comptes J0 sur AWS et préparation des règles de catégorisation.
+            taskFinishedLabel: 100% SEPA-CFONB overlap verified — 3 reconciliation decisions required
+            leadConfirmation: "Avant d'écrire les modèles `dbt`, le rapprochement SQL confirme que **100 % des virements SEPA réglés (`ACSC`) des comptes Mainframe J-1 figurent déjà à l'identique dans `cbk_cfonb_movements`**. Il faut trancher **3 arbitrages de réconciliation**."
+            sectionHeading: "Trois points critiques relevés avant génération des modèles `dbt` :"
             askQuestions:
               - id: d2-q2-double-count
                 question: "Un même virement figure à la fois dans les mouvements Mainframe (CFONB) et dans le flux SEPA, reliés par end_to_end_id. Comment éviter de le compter deux fois dans la vie du client ?"
@@ -4088,7 +4088,7 @@ workspaces:
                   - SEPA fait foi ; le Mainframe ne sert qu'au solde de la veille
                   - Additionner les deux sources puis dédoublonner a posteriori
               - id: d2-q2-orphans
-                question: "650 comptes ouverts en agence sur le CRM AWS ne sont pas encore dans le batch Mainframe J-1. Que fait-on ?"
+                question: "Les 650 comptes ouverts en agence sur le CRM AWS détectés au scan DQ ne sont pas encore dans le batch Mainframe J-1. Que fait-on ?"
                 options:
                   - "(Recommended) Les garder dans dp_customer_360 et les signaler (is_mainframe_orphan) ; leurs paiements SEPA du jour alimentent la timeline"
                   - Les exclure jusqu'au prochain batch Mainframe
@@ -4100,32 +4100,21 @@ workspaces:
                   - Appel IA (AI.GENERATE) sur chaque libellé
                   - Catégories codées en dur dans le SQL
             items:
-              - title: Vie du client sans double comptage
+              - title: "1. Recouvrement Mainframe CFONB ↔ Flux SEPA (`end_to_end_id`)"
                 chips:
-                  - kind: sql
-                    label: customer_movements.sql
-                  - kind: sql
-                    label: stg_sepa_payments.sql
+                  - kind: bq
+                    label: cbk_cfonb_movements
+                  - kind: bq
+                    label: raw_sepa_payments_unified
                 bullets:
-                  - "Le Mainframe CFONB fait foi (`5 500 000` mouvements J-1) ; les paiements SEPA dédoublonnés (`ROW_NUMBER` sur `end_to_end_id`) et filtrés `ACSC` l'enrichissent ; seuls les paiements postérieurs au batch ou des `650` comptes récents sont ajoutés. Test `no_sepa_payment_counted_twice`."
-                  - "Les `66 000` dates de valeur `00000000` / `99999999` sont remplacées par la date comptable et signalées (`value_date_was_invalid`) ; aucune ligne n'est supprimée."
-              - title: Référentiel client unifié & comptes orphelins signalés
-                chips:
-                  - kind: sql
-                    label: customers.sql
-                  - kind: sql
-                    label: accounts.sql
-                bullets:
-                  - "Fusion Mainframe + CRM AWS (`80 000` clients, `95 000` comptes, solde J-1), normalisation des `9 773` codes agence mal formés et indicateur `is_mainframe_orphan` sur les `650` comptes récents."
-              - title: Catégorisation versionnée & contrats de qualité
+                  - "Chaque virement réglé (`ACSC`) antérieur au cut-off nuit est présent **dans les deux silos** avec le même `end_to_end_id` et le même montant : un `UNION ALL` naïf doublerait la fuite de dépôts (`4,84 Md€` au lieu de `2,42 Md€`)."
+                  - "En revanche, SEPA apporte le nom, l'IBAN complet et les opérations intraday post-batch ainsi que celles des `650` comptes créés en J0."
+              - title: "2. Référentiels métier externalisés en seeds `dbt` (zéro règle en dur)"
                 chips:
                   - kind: yml
                     label: movement_category_rules.csv
-                  - kind: yml
-                    label: schema.yml
                 bullets:
-                  - "`18` règles de catégorisation (revenus, charges fixes, carte, épargne, néobanques) dans un seed dbt ; `39` tests dont la fuite néobanques 90 j = `2 420 000 000,00 €`, l'unicité des mouvements et les liens client ↔ compte ↔ mouvement."
-                  - "Les 3 autres Data Products (`dp_customer_relationship`, `dp_finance_pnb`, `dp_commercial_commitments`) suivent le même modèle ; l'extraction des PDF par `AI.GENERATE` fait l'objet de l'étape suivante."
+                  - "Conformément aux conventions d'architecture, les listes de BIC néobanques/courtiers (`competitor_institutions`) et les motifs de catégorisation doivent vivre dans des `seeds/` versionnés plutôt qu'en dur dans le SQL."
             traces:
               - id: d2-tr5
                 action: analyzed
@@ -4142,27 +4131,74 @@ workspaces:
                 output:
                   - "SEPA settled payments on Mainframe accounts: 100% matched in CFONB (same end_to_end_id, date & amount)"
                   - "Risk detected: summing both sources would double count every SEPA payment"
+            filesChanged: []
+            terminalLogs:
+              - $ bq query --label datacloud:antigravity "SELECT COUNTIF(m.e2e IS NOT NULL) FROM sepa_acsc s LEFT JOIN cfonb m USING (e2e)"
+              - 100% overlap confirmed on settled J-1 SEPA movements -> awaiting reconciliation choice
+              - Waiting for user confirmation on 3 dbt design decisions...
+            subagents:
+              - id: sa-d2-2a
+                role: Data Quality Rule Engineer
+                skill: data-autocleaning
+                status: completed
+            backgroundTasks: []
+          - id: d2-t2
+            chipLabel: 2. Générer les modèles dbt SILVER & les contrats schema.yml
+            prompt: "Valide ces 3 choix et génère les modèles dbt SILVER structurés, les référentiels seeds et leurs contrats de qualité dans schema.yml."
+            workedDurationLabel: Worked for 6s
+            workGroupSummary: Generated structured SILVER dbt models, category seeds & 82 schema.yml data tests
+            intermediateMessage: Écriture des vues `stg_*`, des modèles `dbt` structurés (`dp_customer_360`, `dp_customer_timeline`, `dp_customer_relationship`, `dp_finance_pnb`), des seeds métier et validation `dbt parse` (`82` tests).
+            taskFinishedLabel: Structured SILVER dbt models, seeds & 82 data quality tests generated
+            leadConfirmation: "Les 3 arbitrages sont appliqués : les modèles `dbt` structurés de `silver_bank` et leurs référentiels `seeds/` sont générés avec **`82` tests de qualité `schema.yml`** (avant les `22` tests dédiés aux PDF à l'étape 4)."
+            sectionHeading: "Ce qui a été généré dans le projet `dbt` :"
+            items:
+              - title: Vie du client sans double comptage (`dp_customer_timeline`)
+                chips:
+                  - kind: sql
+                    label: customer_movements.sql
+                  - kind: sql
+                    label: stg_sepa_payments.sql
+                bullets:
+                  - "Le Mainframe CFONB fait foi (`5 500 000` mouvements J-1) ; les paiements SEPA dédoublonnés (`ROW_NUMBER` sur `end_to_end_id`) et filtrés `ACSC` l'enrichissent ; seuls les paiements postérieurs au batch ou des `650` comptes récents sont ajoutés (`no_sepa_payment_counted_twice`)."
+                  - "Les `66 000` dates de valeur `00000000` / `99999999` sont remplacées par la date comptable et signalées (`value_date_was_invalid`) ; détection néobanques jointe sur le seed `competitor_institutions`."
+              - title: Référentiel client unifié & comptes orphelins signalés (`dp_customer_360`)
+                chips:
+                  - kind: sql
+                    label: customers.sql
+                  - kind: sql
+                    label: accounts.sql
+                bullets:
+                  - "Fusion Mainframe + CRM AWS (`80 000` clients, `95 000` comptes, `1 437 531` soldes mensuels), normalisation `LPAD` des `9 773` codes agence mal formés et indicateur `is_mainframe_orphan` sur les `650` comptes récents."
+              - title: Catégorisation versionnée, `interactions`, `gl_entries` & `82` contrats `dbt`
+                chips:
+                  - kind: yml
+                    label: movement_category_rules.csv
+                  - kind: yml
+                    label: _customer_timeline.yml
+                bullets:
+                  - "`18` règles de catégorisation dans `movement_category_rules.csv`, modèles `interactions` (`320k`, `CLS` préservé) et `gl_entries` (`1,2 M` écritures SAP/ALM), et `82` tests `dbt` dont l'invariant fuite néobanques 90 j = `2 420 000 000,00 €`."
+            traces:
               - id: d2-tr6
                 action: edited
                 icon: sql
                 fileName: customers.sql
                 added: 41
                 removed: 0
-                durationMs: 400
+                durationMs: 380
               - id: d2-tr6b
                 action: edited
                 icon: sql
                 fileName: accounts.sql
                 added: 36
                 removed: 0
-                durationMs: 400
+                durationMs: 380
               - id: d2-tr7
                 action: edited
                 icon: sql
                 fileName: stg_sepa_payments.sql
                 added: 39
                 removed: 0
-                durationMs: 400
+                durationMs: 380
               - id: d2-tr7b
                 action: edited
                 icon: sql
@@ -4176,14 +4212,14 @@ workspaces:
                 fileName: movement_category_rules.csv
                 added: 19
                 removed: 0
-                durationMs: 350
+                durationMs: 320
               - id: d2-tr9
                 action: edited
                 icon: yml
-                fileName: schema.yml
-                added: 282
+                fileName: _customer_timeline.yml
+                added: 27
                 removed: 0
-                durationMs: 550
+                durationMs: 480
               - id: d2-tr10
                 action: ran
                 commandSummary: dbt parse --project-dir 02_demo2_silver_dbt_dq
@@ -4191,9 +4227,8 @@ workspaces:
                 cwd: 02_demo2_silver_dbt_dq
                 command: uv run dbt parse --profiles-dir .
                 output:
-                  - "Running with dbt=1.10.23"
-                  - "Registered adapter: bigquery=1.10.3"
-                  - "Found 10 models, 1 seed, 39 data tests, 12 sources"
+                  - "Running with dbt=1.10.23 (bigquery=1.10.3)"
+                  - "Validated structured SILVER models (dp_customer_360, dp_customer_timeline, dp_customer_relationship, dp_finance_pnb) -> 82 data tests ready"
             filesChanged:
               - path: 02_demo2_silver_dbt_dq/models/silver/customer_timeline/customer_movements.sql
                 language: sql
@@ -4310,14 +4345,14 @@ workspaces:
                       counterparty_bic,
                       payment_scheme,
                       end_to_end_id,
-                      counterparty_bic IN ('REVOLT21XXX', 'TRBKDEBBXXX', 'NTSBDEB1XXX', 'BOURFRPPXXX', 'DEGIRO2AXXX')
+                      counterparty_bic IN (SELECT bic FROM {{ ref('competitor_institutions') }} WHERE bic IS NOT NULL)
                           AND signed_amount_eur < 0                                              AS is_neobank_outflow,
                       category = 'INTERNAL_SAVINGS'                                              AS is_internal_transfer
                   FROM categorized
               - path: 02_demo2_silver_dbt_dq/models/silver/customer_timeline/_customer_timeline.yml
                 language: yaml
                 badge: YML
-                added: 147
+                added: 27
                 removed: 0
                 content: |-
                   version: 2
@@ -4374,16 +4409,12 @@ workspaces:
                   99,.*,OTHER,OTHER
             terminalLogs:
               - $ uv run dbt parse --profiles-dir .
-              - Found 10 models, 1 seed, 39 data tests, 12 sources
-              - "Arbitrages appliqués : Mainframe fait foi + enrichissement SEPA, 650 comptes orphelins signalés, catégories versionnées"
+              - Validated structured SILVER models + seeds -> 82 data tests registered
+              - "Next step: extract the 250 promotional PDF contracts (dp_commercial_commitments)"
             subagents:
               - id: sa-d2-2
                 role: dbt Silver Pipeline Engineer
                 skill: dbt-bigquery
-                status: completed
-              - id: sa-d2-3
-                role: Data Quality Rule Engineer
-                skill: data-autocleaning
                 status: completed
             backgroundTasks: []
       - id: d2-step-pdf
@@ -4395,15 +4426,15 @@ workspaces:
         greetingName: Clément
         modelLabel: Gemini 4 - Carbon
         turns:
-          - id: d2-t2p
-            chipLabel: 1. Extraire les montants engagés des avenants PDF
-            prompt: Extrais les montants engagés des 250 avenants PDF directement depuis l'Object Table avec AI.GENERATE, en gardant la possibilité d'aller lire le PDF au besoin. Fais-moi un suivi PDF par PDF.
-            workedDurationLabel: Worked for 9m 40s
-            workGroupSummary: Diagnosed 63 failed extractions, hardened the AI.GENERATE prompt, re-extracted 250 PDFs, built the per-PDF tracking view
-            intermediateMessage: "Diagnostic de la première extraction (`63` PDF sur `250` en échec), test d'un prompt durci sur ces `63` PDF, puis ré-extraction incrémentale des `250` avenants avec `AI.GENERATE` directement sur les fichiers GCS."
-            taskFinishedLabel: 250 / 250 PDF extracted & certifiable · 14 300 000,00 € · 22 / 22 dbt tests PASS
-            leadConfirmation: "Les `250` avenants sont extraits et certifiables dans `silver_bank.promo_contracts` : `14 300 000,00 €` au centime, identiques PDF par PDF aux documents sources. Chaque ligne garde le lien vers son PDF pour une lecture à la demande, et le suivi est dans `promo_contracts_pdf_tracking`. 3 arbitrages ont été validés avant écriture."
-            sectionHeading: "Ce qui a été mis en place :"
+          - id: d2-t2pa
+            chipLabel: 1. Prototyper l'extraction PDF & diagnostiquer les pièges
+            prompt: "Pour compléter dp_commercial_commitments, teste l'extraction des 250 avenants PDF depuis l'Object Table avec AI.GENERATE en gardant l'accès au document source, et signale-moi les pièges avant d'industrialiser."
+            workedDurationLabel: Worked for 6s
+            workGroupSummary: Ran initial AI.GENERATE pass on Object Table, diagnosed 63/250 failures & missing promo_type code
+            intermediateMessage: Prototypage d'un premier passage `AI.GENERATE` sur les `250` PDF de `raw_promo_contracts_pdf` et analyse des échecs de parsing, des réponses vides et des champs métier absents des documents.
+            taskFinishedLabel: 63 / 250 naive extraction failures diagnosed — 3 engineering decisions required
+            leadConfirmation: "Un premier essai naïf d'`AI.GENERATE` ne récupère que **`10,46 M€` au lieu de `14,30 M€`** (`63 / 250` PDF en échec silencieux ou mal typés) et révèle que le code `promo_type` ne figure dans aucun PDF. **3 arbitrages** sont nécessaires avant d'industrialiser `promo_contracts`."
+            sectionHeading: "Diagnostic du premier essai sur les `250` avenants PDF :"
             askQuestions:
               - id: d2-qp-hybrid
                 question: "Les 250 avenants PDF portent 14,30 M€ d'engagements absents du grand livre SAP. Faut-il extraire les montants une fois dans une table, ou interroger les PDF à chaque question ?"
@@ -4412,7 +4443,7 @@ workspaces:
                   - "Interroger les PDF à chaque requête (vue AI.GENERATE) : rien n'est stocké mais le résultat varie et coûte 250 appels par question"
                   - Extraire tout le texte des PDF dans une table
               - id: d2-qp-failures
-                question: "Au premier essai, 63 PDF sur 250 sont en échec : 54 réponses illisibles et 9 réponses vides comptées comme réussies. Le total ne fait que 10,46 M€. Comment fiabiliser ?"
+                question: "Au premier essai, 63 PDF sur 250 sont en échec : 54 réponses illisibles et 9 réponses vides comptées comme réussies (total = 10,46 M€). Comment fiabiliser ?"
                 options:
                   - "(Recommended) Température 0, extraction jugée complète seulement si montant, compte PCEC et référence sont cohérents, reprise immédiate puis incrémentale, et suivi PDF par PDF"
                   - Relancer tout le lot à la main jusqu'à obtenir 250 réponses
@@ -4424,6 +4455,57 @@ workspaces:
                   - Lister les types autorisés dans le prompt
                   - Laisser le modèle proposer un libellé libre
             items:
+              - title: "1. Pourquoi un appel `AI.GENERATE` naïf perd `3,84 M€` sur `63` PDF"
+                chips:
+                  - kind: bq
+                    label: raw_promo_contracts_pdf
+                bullets:
+                  - "`54` réponses JSON tronquées/illisibles et `9` réponses vides (`status = ''` mais `committed_promo_cost_eur IS NULL`) comptées à tort comme réussies plafonnent le cumul à `10 455 700,90 €`."
+                  - "De plus, certaines dates françaises `05/09/2026` sont lues à l'américaine (`9 mai`) tant que le format `JJ/MM/AAAA` et `temperature = 0` ne sont pas imposés."
+              - title: "2. Séparation entre lecture multimodale (PDF) et nomenclature métier (`promo_types`)"
+                chips:
+                  - kind: yml
+                    label: promo_types.csv
+                bullets:
+                  - "Chaque PDF mentionne explicitement le **compte comptable PCEC** (`602910`, `602920`, `708590`), mais jamais le code analytique interne `promo_type` : il doit être joint depuis un seed `dbt` gouverné."
+            traces:
+              - id: d2-trp1
+                action: analyzed
+                icon: dak
+                fileName: bigquery-ai-ml/SKILL.md
+                lineRange: "#L1-180"
+                durationMs: 450
+              - id: d2-trp2
+                action: ran
+                commandSummary: diagnose naive AI.GENERATE pass on raw_promo_contracts_pdf (250 PDFs)
+                durationMs: 600
+                cwd: 02_demo2_silver_dbt_dq
+                command: bq query --use_legacy_sql=false --label datacloud:antigravity "SELECT extraction_status, COUNT(*) FROM silver_bank.promo_contracts GROUP BY 1"
+                output:
+                  - "Failed to parse the response - please check the full_response field. : 54"
+                  - "Empty answers counted as success (committed_promo_cost_eur IS NULL) : 9"
+                  - "SUM(committed_promo_cost_eur) = 10 455 700.90 EUR (expected 14 300 000.00)"
+            filesChanged: []
+            terminalLogs:
+              - $ bq query --label datacloud:antigravity "SELECT extraction_status, COUNT(*) FROM silver_bank.promo_contracts GROUP BY 1"
+              - "Naive pass: 187/250 valid (10.46M EUR) · 63/250 incomplete or unparsed"
+              - Waiting for user confirmation on hybrid extraction, retry policy & PCEC mapping...
+            subagents:
+              - id: sa-d2-p0
+                role: Multimodal Quality Auditor
+                skill: bigquery-ai-ml
+                status: completed
+            backgroundTasks: []
+          - id: d2-t2p
+            chipLabel: 2. Industrialiser l'extraction hybride des 250 PDF (14,30 M€)
+            prompt: "Applique cette extraction hybride durcie (température 0, reprise incrémentale, seed promo_types et vue de suivi PDF par PDF) et certifie les 250 avenants."
+            workedDurationLabel: Worked for 9m 40s
+            workGroupSummary: Hardened AI.GENERATE macro (OBJ.MAKE_REF under VPC-SC), extracted 250/250 PDFs & passed 22/22 dbt tests
+            intermediateMessage: "Durcissement de la macro `ai_extract_promo_contract` (`temperature=0`, accès direct `OBJ.MAKE_REF` sous VPC-SC), exécution incrémentale sur les `250` PDF et validation des `22` tests `dbt`."
+            taskFinishedLabel: 250 / 250 PDF extracted & certifiable · 14 300 000,00 € · 22 / 22 dbt tests PASS
+            leadConfirmation: "Les `250` avenants sont extraits et certifiés dans `silver_bank.promo_contracts` : **`14 300 000,00 €` au centime près**, identiques PDF par PDF aux documents sources (`22 / 22` tests `dbt` PASS), avec lien `ObjectRef` pour relecture à la demande et vue de suivi `promo_contracts_pdf_tracking`."
+            sectionHeading: "Ce qui a été mis en place et certifié :"
+            items:
               - title: Extraction hybride, certifiée au centime
                 chips:
                   - kind: sql
@@ -4433,15 +4515,15 @@ workspaces:
                 bullets:
                   - "`AI.GENERATE` lit chaque PDF directement dans GCS (aucune copie) et remplit `9` champs typés ; le montant total vaut `14 300 000,00 €` et les `250` PDF sont identiques aux documents sources (montant, compte PCEC, agence, date d'effet)."
                   - "Chaque ligne garde le lien vers son PDF (`source_pdf`, `source_uri`) : test sur `PROMO-2026-042`, les 3 lignes de coût relues à la demande (`68 680,00 €` + `16 266,00 €` + `5 423,55 €`) retombent sur le montant certifié de `90 369,55 €`."
-              - title: Fiabilisation des échecs
+              - title: Fiabilisation des échecs & contournement VPC-SC
                 chips:
                   - kind: bq
                     label: promo_contracts
                 bullets:
                   - "Température `0` et contrôle de complétude : `201` PDF réussis au premier appel, `43` récupérés par la reprise immédiate dans la même requête."
                   - "Les `6` derniers échouaient sur `Cannot fetch content` : les URL signées de l'Object Table ne traversent pas le périmètre VPC Service Controls. Passage en accès direct (`OBJ.MAKE_REF(uri)`) : `6 / 6` en `13 s`."
-                  - "`PROMO-2026-186` lu au 9 mai au lieu du 5 septembre (date française lue à l'américaine) : format `JJ/MM/AAAA` précisé dans le prompt et relance ciblée de ce seul PDF (`--vars reextract_ids`)."
-              - title: Suivi PDF par PDF & type de promotion gouverné
+                  - "`PROMO-2026-186` lu au 9 mai au lieu du 5 septembre : format `JJ/MM/AAAA` imposé dans le prompt et relance ciblée de ce seul PDF (`--vars reextract_ids`)."
+              - title: Suivi PDF par PDF & type de promotion gouverné (`22 / 22 PASS`)
                 chips:
                   - kind: sql
                     label: promo_contracts_pdf_tracking.sql
@@ -4449,7 +4531,7 @@ workspaces:
                     label: promo_types.csv
                 bullets:
                   - "Vue `promo_contracts_pdf_tracking`, sans appel IA : statut (`PENDING`, `OUTDATED`, `FAILED`, `EXTRACTED`), nombre d'appels, erreur brute, montant extrait et indicateur `is_certifiable` pour chacun des `250` PDF."
-                  - "Le type de promotion est déduit du compte PCEC via le seed `promo_types` (`602910`, `602920`, `708590`) ; `22 / 22` tests dbt PASS, dont le total à `14 300 000,00 €` et `0` PDF non certifiable."
+                  - "Le type de promotion est déduit du compte PCEC via le seed `promo_types` (`602910`, `602920`, `708590`), complétant `savings_offers` dans `dp_commercial_commitments` ; `22 / 22` tests `dbt` PASS."
             visualCheck:
               skillBadge: bq-visual-audit · MCP render_chart
               title: "Contrôle visuel post-extraction · 250 avenants PDF (silver_bank.promo_contracts)"
@@ -4467,7 +4549,7 @@ workspaces:
                   value: "306"
                   sublabel: "201 PDF réussis au 1er appel"
                   tone: blue
-                - label: Tests dbt
+                - label: Tests dbt PDF
                   value: "22 / 22 PASS"
                   sublabel: "total au centime & 0 échec"
                   tone: positive
@@ -4519,22 +4601,6 @@ workspaces:
                   imageUrl: "./assets/pdf_previews/promo_001_retention.png"
               footerNote: "Montants recoupés PDF par PDF avec les documents sources : 250 / 250 identiques (montant, compte PCEC, agence, date d'effet)."
             traces:
-              - id: d2-trp1
-                action: analyzed
-                icon: dak
-                fileName: bigquery-ai-ml/SKILL.md
-                lineRange: "#L1-180"
-                durationMs: 450
-              - id: d2-trp2
-                action: ran
-                commandSummary: diagnose first extraction of silver_bank.promo_contracts
-                durationMs: 600
-                cwd: 02_demo2_silver_dbt_dq
-                command: bq query --use_legacy_sql=false --label datacloud:antigravity "SELECT extraction_status, COUNT(*) FROM silver_bank.promo_contracts GROUP BY 1"
-                output:
-                  - "Failed to parse the response - please check the full_response field. : 54"
-                  - "Empty answers counted as success (committed_promo_cost_eur IS NULL) : 9"
-                  - "SUM(committed_promo_cost_eur) = 10 455 700.90 EUR (expected 14 300 000.00)"
               - id: d2-trp3
                 action: ran
                 commandSummary: test hardened prompt (temperature 0) on the 63 failed PDFs
@@ -4863,7 +4929,7 @@ workspaces:
       - id: d2-step3
         demoId: demo2
         shortName: 5. Publier les 5 produits de données
-        conversationTitle: Exécution dbt build & Publication des 5 Data Products
+        conversationTitle: Exécution dbt build (104/104 PASS) & Publication dans la Data Marketplace Knowledge Catalog
         projectFolder: 02_demo2_silver_dbt_dq
         gitBranch: feat/silver-data-products
         greetingName: Clément
@@ -4871,39 +4937,39 @@ workspaces:
         turns:
           - id: d2-t3
             chipLabel: 1. Exécuter dbt build & publier les 5 Data Products
-            prompt: Lance dbt build sur data-days-demo et publie les 5 Data Products élémentaires dans Knowledge Catalog.
+            prompt: Lance dbt build sur data-days-demo et publie les 5 Data Products SILVER certifiés dans Knowledge Catalog.
             workedDurationLabel: Worked for 6s
-            workGroupSummary: Executed dbt build (29/29 PASS), published Data Products & ran bq-visual-audit
-            intermediateMessage: Exécution de `dbt build --select silver.*` sur `data-days-demo` (`europe-west1`), contrôle visuel `bq-visual-audit` des 5 tables `silver_bank` et publication dans Knowledge Catalog.
-            taskFinishedLabel: dbt build (29/29 PASS), visual audit & KC publication finished
-            leadConfirmation: Les 5 Data Products `SILVER` sont matérialisés à `100 %` de Data Quality, contrôlés visuellement et publiés dans
+            workGroupSummary: Executed dbt build (104/104 PASS), published 5 Data Products (Overview, Contracts, Insights) & ran bq-visual-audit
+            intermediateMessage: Exécution de `dbt build --select path:models/silver` sur `data-days-demo` (`europe-west1`), validation des `104` tests (`82` structurés + `22` PDF), contrôle visuel `bq-visual-audit` et publication dans Knowledge Catalog.
+            taskFinishedLabel: dbt build (104/104 PASS), visual audit & KC Marketplace publication finished
+            leadConfirmation: Les 5 Data Products `SILVER` sont matérialisés à `100 %` de Data Quality (`104 / 104` tests `dbt` PASS), contrôlés visuellement et consultables immédiatement dans
             leadLink:
-              text: Knowledge Catalog · Data Products (data-days-demo)
-              url: https://console.cloud.google.com/dataplex?project=data-days-demo
-            sectionHeading: "Ce qui a été mis en place et contrôlé visuellement :"
+              text: Knowledge Catalog Data Marketplace · Data Products (localhost:5174)
+              url: http://localhost:5174/data-products
+            sectionHeading: "Ce qui a été certifié et publié dans Knowledge Catalog :"
             items:
-              - title: 5 Data Products élémentaires certifiés techniquement (`100 %` DQ PASS)
+              - title: 5 Data Products SILVER certifiés à `100 %` (`104 / 104` tests PASS)
                 chips:
                   - kind: yml
-                    label: silver_data_products.yaml
+                    label: data_products_catalog.yaml
                   - kind: kc
                     label: Knowledge Catalog
                 bullets:
-                  - Publication de `dp_customer_360`, `dp_customer_timeline` (`2 420 000 000 €` de virements SEPA Instant sortants vers néobanques sur 90j, dont `68,0 %` chez les `18-32 ans` entre le 1er et le 5 du mois), `dp_customer_relationship`, `dp_finance_pnb` et `dp_commercial_commitments`.
-              - title: Point de vigilance avant exposition aux agents Finance
+                  - "Publication complète (Overview, Contracts `refresh-cadence` et Insights Gemini) de `dp_customer_360`, `dp_customer_timeline` (`2 420 000 000,00 €` de fuite vers néobanques sur 90 j, dont `68,0 %` chez les `18-32 ans` entre le 1er et le 5 du mois), `dp_customer_relationship`, `dp_finance_pnb` et `dp_commercial_commitments`."
+              - title: Point de vigilance avant exposition aux agents Finance (transition Démo #3)
                 chips:
                   - kind: bq
                     label: dp_finance_pnb
                 bullets:
-                  - Les schémas `SILVER` sont désormais 100 % propres techniquement (`0` doublon, `0` NULL), mais ne contiennent pas encore les règles métier implicites du contrôle de gestion CFO.
+                  - "Les tables `SILVER` sont `100 %` propres techniquement (`0` doublon, `0` NULL imprévu, `250 / 250` PDF extraits), mais une requête SQL naïve sur `dp_finance_pnb` ignore encore les règles comptables implicites du CFO (`+42,80 M€` apparents vs vraie marge nette)."
             visualCheck:
               skillBadge: bq-visual-audit · MCP render_chart
               title: "Contrôle visuel post-création · 5 Data Products silver_bank"
-              subtitle: "29 / 29 tests dbt schema.yml validés — purge complète des anomalies RAW & structuration IA des 250 PDF"
+              subtitle: "104 / 104 tests dbt schema.yml validés (82 structurés + 22 PDF) — publication complète dans Knowledge Catalog"
               kpis:
                 - label: Assertions dbt DQ
-                  value: "29 / 29 PASS"
-                  sublabel: "100,0 % Auto DQ"
+                  value: "104 / 104 PASS"
+                  sublabel: "82 structurés + 22 PDF"
                   tone: positive
                 - label: Comptes unifiés
                   value: "95 000"
@@ -4917,29 +4983,29 @@ workspaces:
                   value: "68,0 %"
                   sublabel: "sur -2,42 Md€ SEPA ACSC"
                   tone: ruby
-              chartTitle: "Certification qualité & volumétrie nette des 5 tables créées dans silver_bank"
+              chartTitle: "Certification qualité & volumétrie nette des 5 Data Products publiés dans silver_bank"
               bars:
-                - label: "dp_customer_360 (95 000 comptes réconciliés z/OS + AWS)"
+                - label: "dp_customer_360 (80k clients · 95k comptes · 1,44 M soldes)"
                   valueLabel: "100,0 % DQ"
                   pct: 100
                   tone: positive
-                  badge: 0 orphelin
-                - label: "dp_customer_timeline (5,50 M mouvements, 0 double comptage CFONB ↔ SEPA)"
+                  badge: 650 J0 signalés
+                - label: "dp_customer_timeline (5,50 M mouvements · 113,9k IBAN)"
                   valueLabel: "100,0 % DQ"
                   pct: 100
                   tone: positive
-                  badge: "-713 000 purgés"
-                - label: "dp_customer_relationship (80k clients & 320k notes CRM)"
+                  badge: 0 double comptage
+                - label: "dp_customer_relationship (320 000 RDV & appels CRM)"
                   valueLabel: "100,0 % DQ"
                   pct: 100
                   tone: positive
-                  badge: Borderless S3
-                - label: "dp_finance_pnb (1,20 M écritures SAP / PCEC)"
+                  badge: CLS ALWAYS_NULL
+                - label: "dp_finance_pnb (1,20 M écritures SAP / PCEC & ALM)"
                   valueLabel: "100,0 % DQ"
                   pct: 100
                   tone: warning
                   badge: Sémantique KC requise
-                - label: "dp_commercial_commitments (250 PDF extraits = -14,30 M€)"
+                - label: "dp_commercial_commitments (250 PDF = -14,30 M€ + offres)"
                   valueLabel: "100,0 % DQ"
                   pct: 100
                   tone: blue
@@ -4947,18 +5013,13 @@ workspaces:
             traces:
               - id: d2-tr11
                 action: ran
-                commandSummary: dbt build --select silver.* on data-days-demo.silver_bank (29/29 PASS)
+                commandSummary: dbt build --select path:models/silver on data-days-demo.silver_bank (104/104 PASS)
                 durationMs: 850
                 cwd: 02_demo2_silver_dbt_dq
-                command: dbt build --select "silver.*" --target prod
+                command: uv run dbt build --profiles-dir . --select +path:models/silver
                 output:
-                  - 1 of 6 OK created sql table model silver_bank.customers ..................... [CREATE TABLE (80.0k rows) in 1.31s]
-                  - 2 of 6 OK created sql table model silver_bank.accounts ...................... [CREATE TABLE (95.0k rows) in 1.42s]
-                  - 3 of 6 OK created sql table model silver_bank.customer_movements ............ [CREATE TABLE (5.50m rows) in 2.18s]
-                  - 4 of 6 OK created sql table model silver_bank.interactions .................. [CREATE TABLE (320.0k rows) in 1.36s]
-                  - 5 of 6 OK created sql table model silver_bank.gl_entries .................... [CREATE TABLE (1.20m rows) in 1.54s]
-                  - 6 of 6 OK created sql incremental model silver_bank.promo_contracts ....... [MERGE (0.0 rows, 134.5 KiB processed) in 6.97s]
-                  - Done. PASS=29 WARN=0 ERROR=0 SKIP=0 TOTAL=29
+                  - "OK created 9 SILVER models in silver_bank (customers, accounts, account_monthly_balances, customer_movements, beneficiaries, interactions, gl_entries, promo_contracts, savings_offers)"
+                  - "Done. PASS=104 WARN=0 ERROR=0 SKIP=0 TOTAL=104"
               - id: d2-tr11b
                 action: analyzed
                 icon: dak
@@ -4970,58 +5031,129 @@ workspaces:
                 commandSummary: MCP data-agent-kit/render_chart → SILVER 5 Data Products DQ & PDF extraction audit
                 durationMs: 500
                 cwd: 02_demo2_silver_dbt_dq
-                command: mcp call data-agent-kit render_chart --spec '{"title":{"text":"SILVER Data Products Certification (100% DQ)"}}'
+                command: mcp call data-agent-kit render_chart --spec '{"title":{"text":"SILVER Data Products Certification (104/104 DQ PASS)"}}'
                 output:
-                  - "Rendered inline SVG visual check: 5/5 tables at 100.0% DQ PASS, -14,300,000.00 EUR extracted from 250 PDFs"
-              - id: d2-tr12
-                action: edited
-                icon: yml
-                fileName: silver_data_products.yaml
-                added: 29
-                removed: 0
-                durationMs: 500
+                  - "Rendered inline SVG visual check: 5/5 Data Products at 100.0% DQ PASS (104/104 tests), -14,300,000.00 EUR extracted from 250 PDFs"
               - id: d2-tr13
                 action: ran
-                commandSummary: publish 5 certified Data Products to Knowledge Catalog (europe-west1)
+                commandSummary: publish 5 certified SILVER Data Products + Overview, Contracts & Gemini Insights to Knowledge Catalog
                 durationMs: 750
                 cwd: 02_demo2_silver_dbt_dq
-                command: kcmd publish-products --file kc_products/silver_data_products.yaml --location europe-west1
+                command: uv run python ../scripts/run_dataplex_documentation_scans.py
                 output:
-                  - Validated 5 Data Products (DQ score = 100.0% across all 24 assertions)
-                  - Published domain retail_banking_france -> 5 certified Data Products live in Knowledge Catalog.
+                  - "Validated 5 SILVER Data Products against kc_products/data_products_catalog.yaml (104/104 dbt tests PASS)"
+                  - "Published Overview, Contracts (refresh-cadence) & Gemini SQL Insights -> live on http://localhost:5174/data-products"
             filesChanged:
-              - path: 02_demo2_silver_dbt_dq/kc_products/silver_data_products.yaml
+              - path: 02_demo2_silver_dbt_dq/kc_products/data_products_catalog.yaml
                 language: yaml
                 badge: YML
-                added: 29
+                added: 98
                 removed: 0
                 content: |-
+                  # ==============================================================================
+                  # Catalogue des Data Products — Banque Hexagone (Paris Data Summit 2026)
+                  # Source de vérité du découpage : 5 Data Products SILVER + 2 Data Products GOLD.
+                  # Convention : noms techniques en anglais (Data Products, tables, colonnes, modèles dbt).
+                  # Découpage par domaine métier & usage (pas par système source).
+                  # ==============================================================================
+                  domain: retail_banking_france
+                  project: data-days-demo
+                  location: europe-west1
+
                   data_products:
-                    domain: retail_banking_france
-                    project: data-days-demo
-                    location: europe-west1
-                    products:
-                      - id: dp_customer_360
-                        tables: [customers, accounts]
-                        dq_score: 100.0
-                      - id: dp_customer_timeline
-                        tables: [customer_movements, beneficiaries]
-                        dq_score: 100.0
-                      - id: dp_customer_relationship
-                        tables: [interactions]
-                        dq_score: 100.0
-                      - id: dp_finance_pnb
-                        tables: [gl_entries]
-                        dq_score: 100.0
-                      - id: dp_commercial_commitments
-                        tables: [promo_contracts]
-                        dq_score: 100.0
+                    # ---------------------------------------------------------------- SILVER
+                    - id: dp_customer_360
+                      layer: silver
+                      title: Customer 360 — référentiel client & comptes
+                      owner: retail_network_marketing
+                      freshness: daily (J-1 Mainframe + CRM)
+                      dataset: silver_bank
+                      tables: [customers, accounts, account_monthly_balances]
+                      sources: [cbk_customers_ref, aws_crm_customers, cbk_accounts_master, aws_crm_account_portfolio, cbk_cfonb_balances]
+                      consumers: [all_domains, budget_insight, cfo_agent]
+                      contract: 80 000 clients (dont 650 absents du Mainframe J-1), 95 000 comptes, 0 clôture, solde J-1 ; 1 437 531 soldes compte x mois (18 mois, ouverture + mouvements = clôture)
+
+                    - id: dp_customer_timeline
+                      layer: silver
+                      title: Customer timeline — mouvements & paiements (vie du client)
+                      owner: payments
+                      freshness: daily (J-1) + intraday via AlloyDB
+                      dataset: silver_bank
+                      tables: [customer_movements, beneficiaries]
+                      sources: [cbk_cfonb_movements, raw_sepa_payments_unified, raw_iban_events_unified]
+                      consumers: [budget_insight, deposit_leak_analysis, cfo_agent]
+                      contract: mouvements catégorisés et dédoublonnés ; fuite néobanques 90 j = 2 420 000 000,00 EUR
+
+                    - id: dp_customer_relationship
+                      layer: silver
+                      title: Customer relationship — interactions CRM
+                      owner: retail_network_call_center
+                      freshness: daily
+                      dataset: silver_bank
+                      tables: [interactions]
+                      sources: [aws_crm_interactions]
+                      consumers: [churn_analytics, ai_agents]
+                      contract: 320 000 RDV et appels ; verbatim masqué par CLS (ALWAYS_NULL), indicateurs non sensibles extraits
+
+                    - id: dp_finance_pnb
+                      layer: silver
+                      title: Finance PNB — grand livre SAP, budget & TCI ALM
+                      owner: cfo_finance
+                      freshness: monthly / quarterly close
+                      dataset: silver_bank
+                      tables: [gl_entries]
+                      sources: [raw_sap_gl_alm]
+                      consumers: [cfo_agent]
+                      contract: 1 200 000 lignes ; SUM brut = +42,80 M EUR ; signé hors 58* = -24,12 M EUR
+
+                    - id: dp_commercial_commitments
+                      layer: silver
+                      title: Commercial commitments — contrats promotionnels PDF & offres d'épargne
+                      owner: management_control
+                      freshness: on document arrival
+                      dataset: silver_bank
+                      tables: [promo_contracts, promo_contracts_pdf_tracking, savings_offers]
+                      sources: [raw_promo_contracts_pdf, raw_cfo_regulatory_pdf, savings_offer_catalog (seed), promo_types (seed)]
+                      consumers: [cfo_agent, next_best_offer]
+                      contract: 250 avenants extraits par IA (AI.GENERATE, 250 / 250 certifiables, suivi PDF par PDF, PDF relisible à la demande) = -14 300 000,00 EUR ; offres d'épargne conformes ACPR 2024-R-01 (Livret Boost Maison 3,50 % sur 3 mois)
+
+                    # ------------------------------------------------------------------ GOLD
+                    - id: dp_budget_insight
+                      layer: gold
+                      title: Budget insight — prévision de fin de mois, dépenses & engagements récurrents par client
+                      owner: digital_banking
+                      freshness: daily in BigQuery, real-time adjustment in AlloyDB
+                      dataset: gold_bank
+                      tables:
+                        - customer_transactions_enriched
+                        - customer_monthly_spending
+                        - customer_recurring_commitments
+                        - customer_card_spending_forecast
+                        - customer_mobile_insights
+                      sources: [dp_customer_360, dp_customer_timeline, dp_commercial_commitments]
+                      consumers: [mobile_app, adk_agents, alloydb_sync]
+                      contract: >
+                        80 000 clients (1 ligne/client dans customer_mobile_insights) avec prévision TimesFM 2.5 (AI.FORECAST) ;
+                        offre d'épargne seulement si reste à vivre >= 100 EUR et <= 70 % du surplus (ACPR 2024-R-01, priorité Livret A / LDDS puis Livret Boost Maison 3,50 % sur 3 mois) ;
+                        transactions typées FR + marchands nettoyés + agrégats mensuels + engagements récurrents pour l'agent conversationnel ;
+                        témoin CUST00002026 = STRMFLIX +4,00 EUR, CPAM +42,00 EUR, reste à vivre +300,00 EUR, épargne recommandée 200 EUR
+
+                    - id: dp_certified_pnb
+                      layer: gold
+                      title: Certified PNB — écart de PNB certifié vs budget
+                      owner: cfo_finance
+                      freshness: quarterly
+                      dataset: gold_bank
+                      tables: [v_cfo_certified_pnb_variance]
+                      sources: [dp_finance_pnb, dp_commercial_commitments]
+                      consumers: [cfo, executive_committee]
+                      contract: -38 420 000,00 EUR = -24,12 M EUR ALM + -14,30 M EUR PDF
             terminalLogs:
-              - $ dbt build --select silver.*
-              - PASS=29 WARN=0 ERROR=0 SKIP=0 TOTAL=29 [3.4s]
+              - $ uv run dbt build --profiles-dir . --select +path:models/silver
+              - "PASS=104 WARN=0 ERROR=0 SKIP=0 TOTAL=104 (82 structured + 22 PDF)"
               - $ mcp call data-agent-kit render_chart [bq-visual-audit PASS]
-              - $ kcmd publish-products --file kc_products/silver_data_products.yaml
-              - "Published 5 Data Products to Knowledge Catalog (status: CERTIFIED_DQ)."
+              - $ uv run python ../scripts/run_dataplex_documentation_scans.py
+              - "Published 5 SILVER Data Products to Knowledge Catalog -> http://localhost:5174/data-products"
             subagents:
               - id: sa-d2-4
                 role: Knowledge Catalog Publisher
@@ -5029,29 +5161,29 @@ workspaces:
                 status: completed
             backgroundTasks:
               - id: bg-d2-2
-                command: dbt build --select silver.*
+                command: uv run dbt build --profiles-dir . --select +path:models/silver
                 target: data-days-demo.silver_bank
-                duration: 3.4s
+                duration: 14.2s
             artifact:
               id: art-d2
-              title: Catalogue des 5 Data Products SILVER
-              subtitle: Certifiés 100 % Auto Data Quality · Demo 2
+              title: Catalogue des 5 Data Products SILVER publiés
+              subtitle: Certifiés 104 / 104 tests dbt · Knowledge Catalog Data Marketplace
               markdownSummary:
-                heading: 5 Data Products opérationnels dans silver_bank
+                heading: 5 Data Products opérationnels dans silver_bank & Knowledge Catalog
                 metrics:
-                  - label: dp_customer_360
-                    value: 95 000 comptes
+                  - label: Tests dbt SILVER
+                    value: 104 / 104 PASS
                     tone: positive
                   - label: dp_customer_timeline
                     value: 5,50 M mouvements
                     tone: positive
                   - label: dp_commercial_commitments
-                    value: 250 PDF structurés
+                    value: 250 PDF (-14,30 M€)
                     tone: positive
                 bullets:
-                  - 210 800 doublons techniques et 502 200 statuts RJCT/PDNG purgés.
-                  - 66 000 dates CFONB corrompues corrigées et 650 comptes AWS réconciliés.
-                  - Prêt pour le branchement du BQ Agent Finance dans Gemini Enterprise.
+                  - "210 800 doublons techniques et 502 200 statuts RJCT/PDNG purgés."
+                  - "66 000 dates CFONB corrompues corrigées et 650 comptes AWS J0 réconciliés."
+                  - "Consultables dans la Data Marketplace locale (http://localhost:5174/data-products) ; prêts pour la Démo #3 (CFO)."
   - id: demo3
     workspaceLabel: Demo 3 · Knowledge Catalog & CFO
     folderName: 03_demo3_kc_semantics_cfo
