@@ -185,6 +185,39 @@ export interface InlineCodeBlock {
   };
 }
 
+export interface SecurityFlowNode {
+  id: string;
+  zoneLabel: string;
+  title: string;
+  subtitle: string;
+  detail: string;
+  tone?: VisualTone;
+}
+
+export interface SecurityFlowStep {
+  stepNumber: number;
+  fromLabel: string;
+  toLabel: string;
+  protocolBadge: string;
+  title: string;
+  detail: string;
+  tone?: VisualTone;
+}
+
+export interface SecurityFlowGuarantee {
+  label: string;
+  tone?: VisualTone;
+}
+
+export interface SecurityFlowBlock {
+  badge?: string;
+  title: string;
+  subtitle?: string;
+  nodes: SecurityFlowNode[];
+  steps: SecurityFlowStep[];
+  guarantees?: SecurityFlowGuarantee[];
+}
+
 export interface PromptTurn {
   id: string;
   chipLabel: string;
@@ -201,10 +234,13 @@ export interface PromptTurn {
   };
   sectionHeading: string;
   items: EditorialSectionItem[];
+  securityFlow?: SecurityFlowBlock;
   codeBlock?: InlineCodeBlock;
   pubsubInspector?: PubSubInspectorBlock;
   visualCheck?: VisualCheckBlock;
   askQuestions?: AskQuestionItem[];
+  continueTargetTurnId?: string;
+  triggerKeywords?: string[];
   traces: ExecutionStepTrace[];
   filesChanged: FileDiffItem[];
   terminalLogs: string[];

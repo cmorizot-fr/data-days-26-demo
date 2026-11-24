@@ -26,12 +26,16 @@ import subprocess
 import time
 from pathlib import Path
 
+from dotenv import load_dotenv
 import polars as pl
 import pyarrow as pa
+from pyiceberg.catalog import Catalog
+from pyiceberg.catalog.glue import GlueCatalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError
 
 BASE_DIR = Path(__file__).resolve().parent
+REPO_ROOT = BASE_DIR.parent
 DEFAULT_SOURCE_DIR = BASE_DIR / "output" / "RAW" / "AWS"
 DEFAULT_CATALOG_DIR = BASE_DIR / "output" / "iceberg_catalog"
 DEFAULT_BUCKET = os.getenv("GCS_BUCKET_LANDING", "data-days-demo-landing")
@@ -69,35 +73,59 @@ def load_arrow(source_dir: Path, folder: str, ts_cols: list[str]) -> pa.Table:
     return df.to_arrow(compat_level=pl.CompatLevel.oldest())
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Publie le CRM SaaS en tables Iceberg sur GCS.")
-    parser.add_argument("--source-dir", type=Path, default=DEFAULT_SOURCE_DIR)
-    parser.add_argument("--catalog-dir", type=Path, default=DEFAULT_CATALOG_DIR)
-    parser.add_argument(
-        "--warehouse",
-        default=f"gs://{DEFAULT_BUCKET}/RAW/AWS_SAAS_ICEBERG",
-        help="Racine du warehouse Iceberg (gs://...)",
-    )
-    args = parser.parse_args()
+def build_catalog(args: argparse.Namespace) -> tuple[Catalog, str, str]:
+    """Construit le catalogue PyIceberg (SqlCatalog GCS ou GlueCatalog AWS S3)."""
+    if args.catalog == "glue":
+        aws_bucket = os.getenv("AWS_S3_BUCKET_CRM", "data-days-demo-aws-crm-835872720625")
+        warehouse = args.warehouse or f"s3://{aws_bucket}/RAW/AWS_SAAS_ICEBERG"
+        namespace = args.namespace or os.getenv("AWS_GLUE_DATABASE", "crm_callcenter_db")
+        os.environ.setdefault("AWS_DEFAULT_REGION", args.aws_region)
+        catalog = GlueCatalog(
+            "aws_crm_saas",
+            **{
+                "warehouse": warehouse,
+                "glue.region": args.aws_region,
+                "s3.region": args.aws_region,
+            },
+        )
+        return catalog, warehouse, namespace
 
-    t0 = time.perf_counter()
+    warehouse = args.warehouse or f"gs://{DEFAULT_BUCKET}/RAW/AWS_SAAS_ICEBERG"
+    namespace = args.namespace or NAMESPACE
     args.catalog_dir.mkdir(parents=True, exist_ok=True)
     catalog_props = {
         "uri": f"sqlite:///{args.catalog_dir / 'aws_crm_saas_catalog.db'}",
-        "warehouse": args.warehouse,
+        "warehouse": warehouse,
     }
     token = gcloud_access_token()
     if token:
         # Jeton OAuth de la session gcloud active (évite une ré-authentification ADC)
         catalog_props["gcs.oauth2.token"] = token
         catalog_props["gcs.oauth2.token-expires-at"] = str(int((time.time() + 3000) * 1000))
-    catalog = SqlCatalog("aws_crm_saas", **catalog_props)
-    catalog.create_namespace_if_not_exists(NAMESPACE)
+    return SqlCatalog("aws_crm_saas", **catalog_props), warehouse, namespace
+
+
+def main() -> None:
+    load_dotenv(REPO_ROOT / ".env")
+    load_dotenv(REPO_ROOT / ".env.aws.local", override=True)
+
+    parser = argparse.ArgumentParser(description="Publie le CRM SaaS en tables Iceberg (GCS ou AWS S3/Glue).")
+    parser.add_argument("--source-dir", type=Path, default=DEFAULT_SOURCE_DIR)
+    parser.add_argument("--catalog-dir", type=Path, default=DEFAULT_CATALOG_DIR)
+    parser.add_argument("--catalog", choices=["sqlite", "glue"], default="sqlite")
+    parser.add_argument("--warehouse", default=None, help="Racine du warehouse Iceberg (gs://... ou s3://...)")
+    parser.add_argument("--namespace", default=None, help="Namespace / base Glue cible")
+    parser.add_argument("--aws-region", default=os.getenv("AWS_REGION", "eu-west-1"))
+    args = parser.parse_args()
+
+    t0 = time.perf_counter()
+    catalog, warehouse, namespace = build_catalog(args)
+    catalog.create_namespace_if_not_exists(namespace)
 
     published: dict[str, dict] = {}
     for table_name, (folder, ts_cols) in TABLES.items():
         arrow_tbl = load_arrow(args.source_dir, folder, ts_cols)
-        identifier = f"{NAMESPACE}.{table_name}"
+        identifier = f"{namespace}.{table_name}"
         try:
             table = catalog.load_table(identifier)
             try:
@@ -128,8 +156,10 @@ def main() -> None:
         print(f"[iceberg] {identifier:<32} {arrow_tbl.num_rows:>8,} lignes · {action}")
         print(f"          {table.metadata_location}")
 
-    out_file = args.catalog_dir / "aws_crm_iceberg_tables.json"
-    out_file.write_text(json.dumps({"warehouse": args.warehouse, "tables": published}, indent=2), encoding="utf-8")
+    args.catalog_dir.mkdir(parents=True, exist_ok=True)
+    out_name = "aws_crm_glue_iceberg_tables.json" if args.catalog == "glue" else "aws_crm_iceberg_tables.json"
+    out_file = args.catalog_dir / out_name
+    out_file.write_text(json.dumps({"catalog": args.catalog, "warehouse": warehouse, "tables": published}, indent=2), encoding="utf-8")
     print(f"[iceberg] Publication terminée en {time.perf_counter() - t0:.2f}s -> {out_file}")
 
 

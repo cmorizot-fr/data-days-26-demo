@@ -1398,57 +1398,653 @@ workspaces:
       - id: d1-step3
         demoId: demo1
         shortName: 3. Connecter aux données CRM (AWS)
-        conversationTitle: Fédération Borderless Lakehouse AWS S3 & Catalogue Glue
+        conversationTitle: Fédération Borderless Lakehouse AWS S3 & Catalogue Glue (eu-west-1 -> europe-west1)
         projectFolder: 01_demo1_raw_aggregation
         gitBranch: main
         greetingName: Clément
         modelLabel: Gemini 4 - Carbon
         turns:
           - id: d1-s3-t1
-            chipLabel: 1. Mise en place du lien Borderless Lakehouse avec AWS
-            prompt: Mets en place le lien Borderless Lakehouse avec AWS pour connecter sans copie notre environnement BigQuery (data-days-demo) au catalogue AWS Glue.
-            workedDurationLabel: Worked for 1s
-            workGroupSummary: En attente de génération du déroulé
-            intermediateMessage: Déroulé du Chip 1 en attente de définition.
-            taskFinishedLabel: Pending scenario generation
-            leadConfirmation: Le déroulé détaillé de cette étape n'a pas encore été généré.
-            sectionHeading: "À définir :"
-            items: []
-            traces: []
+            chipLabel: 1. Lister les données CRM Iceberg sur AWS
+            prompt: Peux-tu me lister les données CRM au format Iceberg qui sont sur AWS ?
+            workedDurationLabel: Worked for 3s
+            workGroupSummary: Checked GCP connection, inspected AWS Glue (crm_callcenter_db) & S3 Iceberg warehouse
+            intermediateMessage: "J'ai récupéré la connexion GCP active (`data-days-demo` · `europe-west1`), vérifié les catalogues BigLake existants (`0` catalogue fédéré) et inspecté la base **AWS Glue** `crm_callcenter_db` (`eu-west-1`, compte `835872720625`) adossée à `s3://data-days-demo-aws-crm-835872720625/RAW/AWS_SAAS_ICEBERG/`."
+            taskFinishedLabel: AWS Glue & S3 Apache Iceberg inventory completed
+            leadConfirmation: "J'ai identifié **4 tables Apache Iceberg** (`495 450` lignes au total, `20` fichiers Parquet + métadonnées Iceberg pour `7,13 Mo`) dans la base **AWS Glue `crm_callcenter_db`** (`eu-west-1`) sur"
+            leadLink:
+              text: eu-west-1.console.aws.amazon.com/glue/databases/crm_callcenter_db
+              url: https://eu-west-1.console.aws.amazon.com/glue/home?region=eu-west-1#/v2/data-catalog/databases/view/crm_callcenter_db
+            sectionHeading: "Inventaire des 4 tables Iceberg sur AWS & constats inter-silos :"
+            items:
+              - title: "1. Les 4 tables Apache Iceberg du silo SaaS CRM & Call Center (`eu-west-1`)"
+                chips:
+                  - kind: bq
+                    label: crm_callcenter_db
+                bullets:
+                  - "`crm_customers` — **80 000 lignes** · `19` colonnes · `1,16 Mo` (`customer_id`, âge, segment, CSP, revenu déclaré, agence, `digital_opt_in`, snapshot `5127312676454948110`)."
+                  - "`crm_account_portfolio` — **95 000 lignes** · `15` colonnes · `1,69 Mo` (`account_id`, `iban`, produit, `rate_bps`, `opened_in_current_quarter` = `15 000`, `0` clôture, `promo_contract_id`, snapshot `806097988665899813`)."
+                  - "`crm_interactions` — **320 000 lignes** · `8` colonnes · `4,26 Mo` (comptes-rendus RDV agences & verbatims Call Center : `topic_code`, `advisor_sentiment_tag`, `verbatim_note`, snapshot `1821150417217984271`)."
+                  - "`crm_branches_ref` — **450 lignes** · `7` colonnes · `0,02 Mo` (référentiel des `450` agences sur les `8` régions commerciales et `default_promo_contract_id`)."
+              - title: "2. Écart de fraîcheur détecté face au Mainframe (Étape 2) : `+650` ouvertures J0"
+                bullets:
+                  - "Le CRM AWS compte **`80 000` clients et `95 000` comptes** contre **`79 350` et `94 350`** dans le batch Mainframe arrêté à J-1 — soit exactement **`+650` nouveaux dossiers ouverts aujourd'hui (J0)** en agence, déjà actifs en temps réel mais pas encore descendus dans le Core Banking."
+                  - "En gouvernance `RAW`, il ne faut surtout pas les filtrer : on les conservera intacts et `dbt` les réconciliera en `FULL OUTER JOIN` (`is_mainframe_orphan = true`) dans `dp_customer_360` en `Démo #2`."
+              - title: "3. État côté BigQuery (`europe-west1`) & sensibilité PII"
+                bullets:
+                  - "Aucun catalogue fédéré BigLake n'est encore configuré dans `data-days-demo` (`0` octet copié sur GCS) et `crm_interactions.verbatim_note` contient des notes conseillers en texte libre."
+            traces:
+              - id: d1-s3-tr1
+                action: ran
+                commandSummary: MCP data-agent-kit/get_active_gcp_connection -> data-days-demo (europe-west1)
+                durationMs: 420
+                cwd: 01_demo1_raw_aggregation
+                command: mcp call data-agent-kit get_active_gcp_connection --format json
+                output:
+                  - "{"
+                  - '  "projectId": "data-days-demo",'
+                  - '  "regionId": "europe-west1",'
+                  - '  "billingQuotaProjectId": "data-days-demo"'
+                  - "}"
+              - id: d1-s3-tr2
+                action: analyzed
+                icon: dak
+                fileName: discover-assets/SKILL.md
+                lineRange: "#L1-68"
+                durationMs: 380
+              - id: d1-s3-tr3
+                action: analyzed
+                icon: dak
+                fileName: federate-lakehouse-catalog/SKILL.md
+                lineRange: "#L1-265"
+                durationMs: 450
+              - id: d1-s3-tr4
+                action: ran
+                commandSummary: inspect AWS Glue crm_callcenter_db (eu-west-1), S3 warehouse & BigLake catalogs
+                durationMs: 920
+                cwd: 01_demo1_raw_aggregation
+                command: CLOUDSDK_METRICS_ENVIRONMENT="datacloud.antigravity" gcloud beta biglake iceberg catalogs list --project=data-days-demo && uv run python -c "import boto3; ..."
+                output:
+                  - "BigLake catalogs in data-days-demo: Listed 0 items."
+                  - "AWS Account 835872720625 (eu-west-1) · Glue DB: crm_callcenter_db · S3: s3://data-days-demo-aws-crm-835872720625/RAW/AWS_SAAS_ICEBERG/"
+                  - "crm_customers          | ICEBERG | 80,000 rows  | 19 cols | 1.16 MiB"
+                  - "crm_account_portfolio  | ICEBERG | 95,000 rows  | 15 cols | 1.69 MiB"
+                  - "crm_interactions       | ICEBERG | 320,000 rows |  8 cols | 4.26 MiB"
+                  - "crm_branches_ref       | ICEBERG | 450 rows     |  7 cols | 0.02 MiB"
             filesChanged: []
-            terminalLogs: []
-            subagents: []
+            terminalLogs:
+              - $ gcloud beta biglake iceberg catalogs list --project=data-days-demo
+              - "Listed 0 items."
+              - "[AWS Glue eu-west-1] crm_callcenter_db -> 4 Apache Iceberg tables (495,450 rows · 7.13 MiB on S3)"
+              - "[INFO] Delta vs Mainframe J-1: +650 J0 customers (80,000 vs 79,350) & +650 J0 accounts (95,000 vs 94,350)"
+            subagents:
+              - id: sa-d1-s3a
+                role: Cross-Cloud Asset Explorer
+                skill: discover-assets
+                status: completed
             backgroundTasks: []
           - id: d1-s3-t2
-            chipLabel: 2. Création des tables dans BQ depuis AWS via Glue
-            prompt: Crée les tables dans BigQuery (raw_bank) depuis AWS S3 en passant par le catalogue AWS Glue.
-            workedDurationLabel: Worked for 1s
-            workGroupSummary: En attente de génération du déroulé
-            intermediateMessage: Déroulé du Chip 2 en attente de définition.
-            taskFinishedLabel: Pending scenario generation
-            leadConfirmation: Le déroulé détaillé de cette étape n'a pas encore été généré.
-            sectionHeading: "À définir :"
-            items: []
-            traces: []
+            chipLabel: 2. Créer le lien Borderless Lakehouse BQ <> AWS & expliquer sa mise en œuvre
+            prompt: Peux-tu créer le lien BQ <> AWS sur ces données via Borderless Lakehouse et explique-moi les différentes étapes de mise en œuvre du lien.
+            workedDurationLabel: Worked for 4s
+            workGroupSummary: Verified BigLake API, region pairing (eu-west-1 <-> europe-west1) & designed 5-step OIDC plan
+            intermediateMessage: "J'ai vérifié l'activation de `biglake.googleapis.com` sur `data-days-demo`, validé l'appairage régional officiel **AWS `eu-west-1` (Irlande) <-> GCP `europe-west1` (Belgique)** et préparé le plan **Borderless Lakehouse** en 5 étapes."
+            taskFinishedLabel: 5-step Borderless Lakehouse OIDC & Cross-Cloud Cache plan ready
+            leadConfirmation: "Contrairement à BigQuery Omni, **Borderless Lakehouse** ne déploie aucun cluster déporté dans AWS et ne copie aucun fichier sur GCS : BigQuery (`europe-west1`) lit directement les tables Iceberg via un **catalogue fédéré BigLake** authentifié en **OIDC sans clé** sur"
+            leadLink:
+              text: console.cloud.google.com/bigquery?project=data-days-demo
+              url: https://console.cloud.google.com/bigquery?project=data-days-demo
+            sectionHeading: "Les 5 étapes de mise en œuvre du lien & 2 arbitrages avant exécution :"
+            items:
+              - title: "Architecture du lien Borderless Lakehouse en 5 étapes"
+                chips:
+                  - kind: py
+                    label: federate_aws_glue_catalog.py
+                bullets:
+                  - "**Étape 1 — Rôle IAM AWS en moindre privilège (`biglake-aws-crm-federated-role`)** : création du rôle avec une *trust policy* OIDC initiale (`Federated: accounts.google.com`, `sts:AssumeRoleWithWebIdentity`, `PLACEHOLDER_VALUE`) et droits lecture seule limités à `crm_callcenter_db` + `s3://data-days-demo-aws-crm-835872720625`."
+                  - "**Étape 2 — Catalogue fédéré BigLake (`aws_crm_catalog` en `europe-west1`)** : création via `gcloud beta biglake iceberg catalogs create` (`--catalog-type=federated --federated-catalog-type=glue --glue-warehouse=835872720625`), qui génère l'identité Google dédiée (`biglake-service-account-id`) sans activer le refresh avant la fin du handshake."
+                  - "**Étape 3 — Handshake OIDC Web Identity sans clé** : mise à jour de la *trust policy* du rôle AWS en verrouillant `accounts.google.com:aud` et `accounts.google.com:sub` sur l'ID unique du Service Agent BigLake (zéro secret statique stocké côté GCP)."
+                  - "**Étape 4 — Synchro métadonnées (`300s`) & Cross-Cloud Caching** : activation du `refresh-interval=300s` sur Glue et de `cross-cloud-cache-options.enabled=true` pour accélérer les lectures répétées en `europe-west1`."
+                  - "**Étape 5 — Audit SQL & contrôle visuel inter-clouds** : requêtage direct de `data-days-demo.aws_crm_catalog.crm_callcenter_db.*` joint à `raw_bank.cbk_*` dans la même région `europe-west1`."
+              - title: "Arbitrages requis avant création du rôle IAM et du catalogue BigLake"
+                bullets:
+                  - "**1. Sécurité & performance inter-clouds** : on active bien l'**OIDC Web Identity sans clé + Cross-Cloud Caching** ?"
+                  - "**2. Périmètre Glue & conservation des `+650` dossiers J0** : on restreint le filtre de namespace à `crm_callcenter_db` uniquement et on conserve 100 % des `650` ouvertures J0 en `RAW` pour `dbt` en `Démo #2` ?"
+            askQuestions:
+              - id: d1-s3-q1-oidc
+                question: "Quel mode d'authentification et d'accélération appliquer entre BigQuery (`europe-west1`) et AWS (`eu-west-1`) ?"
+                options:
+                  - "(Recommended) Fédération OIDC Web Identity sans clé (`sts:AssumeRoleWithWebIdentity`) + Cross-Cloud Caching activé"
+                  - "Stocker des clés statiques AWS IAM dans Secret Manager sans cache inter-cloud"
+              - id: d1-s3-q2-scope
+                question: "Quel périmètre AWS Glue exposer et comment gérer les `650` ouvertures J0 absentes du Mainframe J-1 ?"
+                options:
+                  - "(Recommended) Filtrer uniquement sur `crm_callcenter_db` et conserver les `650` dossiers J0 intacts en `RAW` pour `dbt` (Démo #2)"
+                  - "Exposer l'intégralité du catalogue AWS Glue et écarter les comptes hors Mainframe dès la couche `RAW`"
+            continueTargetTurnId: d1-s3-t4
+            traces:
+              - id: d1-s3-tr5
+                action: analyzed
+                icon: dak
+                fileName: enforcing-resource-attribution/SKILL.md
+                lineRange: "#L1-118"
+                durationMs: 320
+              - id: d1-s3-tr6
+                action: ran
+                commandSummary: check biglake.googleapis.com API status on data-days-demo
+                durationMs: 540
+                cwd: 01_demo1_raw_aggregation
+                command: CLOUDSDK_METRICS_ENVIRONMENT="datacloud.antigravity" gcloud services list --enabled --project=data-days-demo --filter="name:biglake.googleapis.com"
+                output:
+                  - "NAME                    TITLE"
+                  - "biglake.googleapis.com  Lakehouse API"
             filesChanged: []
             terminalLogs: []
-            subagents: []
+            subagents:
+              - id: sa-d1-s3b
+                role: Cross-Cloud Lakehouse Architect
+                skill: federate-lakehouse-catalog
+                status: completed
             backgroundTasks: []
           - id: d1-s3-t3
-            chipLabel: 3. Vérification du contenu et de la sémantique issue de Glue
-            prompt: Vérifie le contenu des tables créées dans BigQuery ainsi que la sémantique et les métadonnées récupérées depuis AWS Glue.
-            workedDurationLabel: Worked for 1s
-            workGroupSummary: En attente de génération du déroulé
-            intermediateMessage: Déroulé du Chip 3 en attente de définition.
-            taskFinishedLabel: Pending scenario generation
-            leadConfirmation: Le déroulé détaillé de cette étape n'a pas encore généré.
-            sectionHeading: "À définir :"
-            items: []
-            traces: []
+            chipLabel: 3. Expliquer ce qu'est OIDC dans la console (AWS & GCP)
+            prompt: "Avant que je valide tes questions : qu'est-ce que c'est OIDC concrètement dans la console AWS et GCP ?"
+            triggerKeywords:
+              - oidc
+            workedDurationLabel: Worked for 2s
+            workGroupSummary: Summarized OIDC Web Identity views in AWS IAM & GCP BigLake consoles
+            intermediateMessage: "Voici comment la fédération **OIDC Web Identity** se matérialise concrètement dans les deux consoles (zéro clé `AKIA...` stockée), avant de reprendre tes 2 arbitrages ci-dessous."
+            taskFinishedLabel: OIDC console walkthrough ready — resuming arbitrage questions
+            leadConfirmation: "**OIDC (OpenID Connect Web Identity)** remplace les clés d'accès AWS statiques par un **échange de jetons JWT éphémères signés par Google (`accounts.google.com`)**, visible directement dans l'onglet *Trust relationships* d'AWS IAM sur"
+            leadLink:
+              text: console.aws.amazon.com/iam/roles/biglake-aws-crm-federated-role
+              url: https://us-east-1.console.aws.amazon.com/iam/home#/roles/details/biglake-aws-crm-federated-role
+            sectionHeading: "Ce que tu vois concrètement dans chaque console :"
+            items:
+              - title: "1. Dans la console Google Cloud (BigQuery -> BigLake Catalogs -> `aws_crm_catalog`)"
+                chips:
+                  - kind: bq
+                    label: BigLake Service Agent
+                bullets:
+                  - "**Aucun champ Secret / Access Key** : la fiche du catalogue affiche uniquement l'identité Google dédiée (`blirc-...-@gcp-sa-biglakerestcatalog.iam.gserviceaccount.com`), son **Subject ID numérique unique** (ex. `111243748688109286426`) et l'ARN du rôle AWS cible."
+                  - "À chaque lecture SQL, Google signe à la volée un jeton JWT OIDC prouvant cette identité, sans qu'aucun secret AWS n'existe dans Secret Manager ou dans le code."
+              - title: "2. Dans la console AWS (IAM -> Roles -> `biglake-aws-crm-federated-role`)"
+                bullets:
+                  - "**Onglet *Trust relationships* (Relation d'approbation)** : déclare `accounts.google.com` comme fournisseur d'identité fédéré (`sts:AssumeRoleWithWebIdentity`) et verrouille `aud` et `sub` sur ce seul Subject ID BigLake."
+                  - "**Onglet *Permissions*** : attache la policy `crm_glue_s3_readonly_policy` qui limite les jetons temporaires délivrés par AWS STS à la seule lecture de `crm_callcenter_db` et du bucket `data-days-demo-aws-crm-835872720625`."
+            securityFlow:
+              badge: "0 CLÉ STATIQUE · OIDC + TLS 1.3"
+              title: "Architecture de sécurisation des échanges GCP <-> AWS (Borderless Lakehouse)"
+              subtitle: "Fédération d'identité éphémère de bout en bout entre BigQuery (europe-west1) et AWS Glue / S3 (eu-west-1)"
+              nodes:
+                - id: gcp-zone
+                  zoneLabel: "Google Cloud · europe-west1"
+                  title: "BigQuery & BigLake Catalog"
+                  subtitle: "SA ID: 111243748688109286426"
+                  detail: "Catalogue aws_crm_catalog · 0 secret AWS stocké"
+                  tone: blue
+                - id: oidc-bridge
+                  zoneLabel: "Pont OIDC & STS · Éphémère"
+                  title: "accounts.google.com -> AWS STS"
+                  subtitle: "sts:AssumeRoleWithWebIdentity"
+                  detail: "Jeton JWT RS256 signé -> session STS courte"
+                  tone: neutral
+                - id: aws-zone
+                  zoneLabel: "AWS · eu-west-1 (835872720625)"
+                  title: "AWS Glue & S3 Apache Iceberg"
+                  subtitle: "role/biglake-aws-crm-federated-role"
+                  detail: "crm_callcenter_db + S3 en Read-Only strict"
+                  tone: warning
+              steps:
+                - stepNumber: 1
+                  fromLabel: "BigLake"
+                  toLabel: "accounts.google.com"
+                  protocolBadge: "JWT OIDC signé"
+                  title: "Émission d'une preuve d'identité cryptographique"
+                  detail: "À chaque requête BigQuery, Google génère un jeton JWT signé attestant sub = aud = 111243748688109286426 (aucune clé statique AKIA en base ou dans Secret Manager)."
+                  tone: blue
+                - stepNumber: 2
+                  fromLabel: "BigLake"
+                  toLabel: "AWS STS"
+                  protocolBadge: "AssumeRoleWithWebIdentity"
+                  title: "Contrôle mutuel de la Trust Policy côté AWS IAM"
+                  detail: "AWS STS vérifie la signature publique Google et n'accepte l'échange que si aud et sub correspondent exactement au Service Agent de aws_crm_catalog."
+                  tone: neutral
+                - stepNumber: 3
+                  fromLabel: "AWS STS"
+                  toLabel: "BigLake"
+                  protocolBadge: "Credentials éphémères"
+                  title: "Délivrance de droits temporaires en moindre privilège"
+                  detail: "AWS émet un jeton STS temporaire bridé par crm_glue_s3_readonly_policy : lecture seule sur crm_callcenter_db et s3://data-days-demo-aws-crm-835872720625 (0 écriture, 0 autre bucket)."
+                  tone: positive
+                - stepNumber: 4
+                  fromLabel: "BigQuery (europe-west1)"
+                  toLabel: "Glue & S3 (eu-west-1)"
+                  protocolBadge: "TLS 1.3 + Cross-Cloud Cache"
+                  title: "Lecture Iceberg chiffrée sans copie sur GCS"
+                  detail: "BigQuery lit les snapshots metadata.json dans Glue puis les fragments Parquet sur S3 en TLS 1.3, et accélère les lectures suivantes via le cache mémoire/local BigLake."
+                  tone: positive
+              guarantees:
+                - label: "Zéro clé AKIA ni rotation manuelle"
+                  tone: positive
+                - label: "Périmètre isolé : 1 base Glue + 1 bucket S3 (Read-Only)"
+                  tone: blue
+                - label: "Révocation immédiate en 1 clic côté AWS IAM"
+                  tone: neutral
+            codeBlock:
+              label: "Console AWS IAM · Onglet Trust relationships de biglake-aws-crm-federated-role"
+              language: json
+              code: |-
+                {
+                  "Version": "2012-10-17",
+                  "Statement": [
+                    {
+                      "Effect": "Allow",
+                      "Principal": { "Federated": "accounts.google.com" },
+                      "Action": "sts:AssumeRoleWithWebIdentity",
+                      "Condition": {
+                        "StringEquals": {
+                          "accounts.google.com:aud": ["111243748688109286426"],
+                          "accounts.google.com:sub": ["111243748688109286426"]
+                        }
+                      }
+                    }
+                  ]
+                }
+              actionLink:
+                label: Ouvrir le rôle dans la console AWS IAM
+                url: https://us-east-1.console.aws.amazon.com/iam/home#/roles/details/biglake-aws-crm-federated-role
+            askQuestions:
+              - id: d1-s3-q1b-oidc
+                question: "Maintenant que le mécanisme OIDC est clair, quel mode d'authentification et de cache valides-tu ?"
+                options:
+                  - "(Recommended) Fédération OIDC Web Identity sans clé (`sts:AssumeRoleWithWebIdentity`) + Cross-Cloud Caching activé"
+                  - "Stocker des clés statiques AWS IAM dans Secret Manager sans cache inter-cloud"
+              - id: d1-s3-q2b-scope
+                question: "Quel périmètre AWS Glue exposer et comment gérer les `650` ouvertures J0 absentes du Mainframe J-1 ?"
+                options:
+                  - "(Recommended) Filtrer uniquement sur `crm_callcenter_db` et conserver les `650` dossiers J0 intacts en `RAW` pour `dbt` (Démo #2)"
+                  - "Exposer l'intégralité du catalogue AWS Glue et écarter les comptes hors Mainframe dès la couche `RAW`"
+            traces:
+              - id: d1-s3-tr6b
+                action: analyzed
+                icon: dak
+                fileName: federate-lakehouse-catalog/SKILL.md
+                lineRange: "#L131-247"
+                durationMs: 280
             filesChanged: []
             terminalLogs: []
             subagents: []
             backgroundTasks: []
+          - id: d1-s3-t4
+            chipLabel: 4. Déployer le handshake OIDC & auditer le catalogue fédéré
+            prompt: "C'est très clair, déploie la fédération OIDC sans clé avec Cross-Cloud Caching sur aws_crm_catalog (europe-west1), filtre sur crm_callcenter_db et conserve les 650 dossiers J0 intacts en RAW."
+            workedDurationLabel: Worked for 24s
+            workGroupSummary: Provisioned AWS IAM OIDC role, created aws_crm_catalog, enabled Cross-Cloud Cache & ran cross-cloud SQL audit
+            intermediateMessage: "J'ai exécuté les 5 étapes : rôle IAM `biglake-aws-crm-federated-role`, catalogue fédéré `aws_crm_catalog` (`europe-west1`), verrouillage OIDC sur le Service Agent `111243748688109286426`, activation du `refresh-interval=300s` + `Cross-Cloud Caching` et audit SQL inter-clouds."
+            taskFinishedLabel: Borderless Lakehouse catalog aws_crm_catalog synced & verified (< 1s query)
+            leadConfirmation: "Le catalogue fédéré **`data-days-demo.aws_crm_catalog`** (`europe-west1` <-> `eu-west-1`) est actif avec **Cross-Cloud Caching** : les **4 tables Iceberg (`495 450` lignes)** répondent en **`< 1 s`** sans aucune copie sur GCS sur"
+            leadLink:
+              text: console.cloud.google.com/bigquery?project=data-days-demo
+              url: https://console.cloud.google.com/bigquery?project=data-days-demo
+            sectionHeading: "Résultat du déploiement Borderless Lakehouse & audit inter-clouds :"
+            items:
+              - title: "Handshake OIDC Web Identity & Cross-Cloud Caching opérationnels"
+                chips:
+                  - kind: py
+                    label: federate_aws_glue_catalog.py
+                  - kind: bq
+                    label: aws_crm_catalog
+                bullets:
+                  - "**Rôle IAM AWS créé** : `arn:aws:iam::835872720625:role/biglake-aws-crm-federated-role` limité en lecture seule à `crm_callcenter_db` et `s3://data-days-demo-aws-crm-835872720625`."
+                  - "**Identité OIDC verrouillée** : `blirc-1051798075322-oh6rxayd@gcp-sa-biglakerestcatalog.iam.gserviceaccount.com` (`aud/sub = 111243748688109286426`) — zéro clé statique."
+                  - "**Synchronisation & Cache** : `refresh-interval = 300s` sur `namespace-filters = [crm_callcenter_db]` et `cross-cloud-cache-options.enabled = true`."
+              - title: "Jointure live BigQuery (`europe-west1`) <-> AWS Glue/S3 (`eu-west-1`) validée en `< 1 s`"
+                chips:
+                  - kind: sql
+                    label: 06_verify_aws_borderless_glue.sql
+                bullets:
+                  - "Les 4 tables sont immédiatement requêtables sous ``data-days-demo.aws_crm_catalog.crm_callcenter_db.*`` : `450` agences, `80 000` clients, `95 000` comptes (`15 000` ouvertures trimestre, `0` clôture) et `320 000` interactions."
+                  - "La jointure directe avec `raw_bank.cbk_customers_ref` (`79 350`) et `raw_bank.cbk_accounts_master` (`94 350`) isole exactement les **`650` clients et `650` comptes J0** conservés en `RAW` pour `dbt` (`Démo #2`)."
+                  - "Sur les `320 000` verbatims Call Center, **`70 708` appels (`22,1 %`)** portent déjà sur le relèvement de plafond SEPA Instant / épargne externe et **`44 775` (`14,0 %`)** sur les offres promo taux boosté agence."
+            visualCheck:
+              skillBadge: bq-visual-audit · MCP render_chart
+              title: "Audit Borderless Lakehouse · aws_crm_catalog.crm_callcenter_db (eu-west-1 -> europe-west1)"
+              subtitle: "Fédération OIDC sans clé, Cross-Cloud Cache actif, 0 octet copié sur GCS et jointure live avec le Mainframe J-1"
+              kpis:
+                - label: Tables Glue fédérées
+                  value: "4 / 4"
+                  sublabel: "495 450 lignes sur S3 Iceberg"
+                  tone: positive
+                - label: Données copiées GCS
+                  value: "0 octet"
+                  sublabel: "Cross-Cloud Cache activé"
+                  tone: positive
+                - label: Ouvertures J0 hors MF
+                  value: "650"
+                  sublabel: "gardées en RAW pour dbt"
+                  tone: warning
+                - label: Signaux fuite CRM
+                  value: "70 708"
+                  sublabel: "appels plafond SEPA / néobanques"
+                  tone: ruby
+              chartTitle: "Contrôle volumétrique, fraîcheur inter-clouds et signaux métier dans crm_callcenter_db"
+              bars:
+                - label: "Tables Apache Iceberg synchronisées"
+                  sublabel: "crm_customers (80k) + crm_account_portfolio (95k) + crm_interactions (320k) + crm_branches_ref (450)"
+                  valueLabel: "100 %"
+                  pct: 100
+                  tone: positive
+                  badge: "4 / 4"
+                - label: "Clients communs AWS CRM <-> Mainframe J-1"
+                  sublabel: "79 350 clients rapprochés par jointure directe europe-west1 <-> eu-west-1 en < 1 s"
+                  valueLabel: "99,19 %"
+                  pct: 99
+                  tone: positive
+                  badge: "79 350"
+                - label: "Interactions suivi courant de la relation"
+                  sublabel: "204 517 comptes-rendus agence / messagerie standard sur 320 000 verbatims"
+                  valueLabel: "63,9 %"
+                  pct: 64
+                  tone: blue
+                  badge: "204,5 k"
+                - label: "Appels plafond SEPA Instant & épargne externe"
+                  sublabel: "70 708 verbatims détectés (Revolut, Trade Republic, N26, BoursoBank) corrélés à la fuite des dépôts"
+                  valueLabel: "22,1 %"
+                  pct: 22
+                  tone: ruby
+                  badge: "70,7 k"
+                - label: "Demandes d'offres promo & taux boosté agence"
+                  sublabel: "44 775 interactions liées aux 250 contrats promotionnels PDF d'agences (Étape 5)"
+                  valueLabel: "14,0 %"
+                  pct: 14
+                  tone: blue
+                  badge: "44,8 k"
+                - label: "Nouveaux comptes J0 absents du Mainframe J-1"
+                  sublabel: "650 ouvertures du jour conservées en RAW (réconciliées avec is_mainframe_orphan dans dbt Démo #2)"
+                  valueLabel: "0,68 %"
+                  pct: 7
+                  tone: warning
+                  badge: "650 J0"
+              footerNote: "Requête exécutée en région europe-west1 (--label datacloud:antigravity) via le Service Agent OIDC 111243748688109286426."
+            traces:
+              - id: d1-s3-tr7
+                action: edited
+                icon: py
+                fileName: 01_demo1_raw_aggregation/federate_aws_glue_catalog.py
+                added: 159
+                removed: 0
+                durationMs: 620
+              - id: d1-s3-tr8
+                action: ran
+                commandSummary: create BigLake federated catalog aws_crm_catalog & complete AWS IAM OIDC handshake
+                durationMs: 18400
+                cwd: 01_demo1_raw_aggregation
+                command: CLOUDSDK_METRICS_ENVIRONMENT="datacloud.antigravity" gcloud beta biglake iceberg catalogs create aws_crm_catalog --project=data-days-demo --primary-location=europe-west1 --catalog-type=federated --federated-catalog-type=glue --glue-warehouse=835872720625 --glue-aws-region=eu-west-1 --glue-aws-role-arn=arn:aws:iam::835872720625:role/biglake-aws-crm-federated-role --namespace-filters=crm_callcenter_db && uv run python federate_aws_glue_catalog.py
+                output:
+                  - "Created catalog [projects/data-days-demo/catalogs/aws_crm_catalog]."
+                  - "BigLake service account: blirc-1051798075322-oh6rxayd@gcp-sa-biglakerestcatalog.iam.gserviceaccount.com"
+                  - "BigLake service account ID: 111243748688109286426"
+                  - "Updated AWS IAM role OIDC trust policy (aud/sub = 111243748688109286426)"
+                  - 'Updated aws_crm_catalog: refresh-interval="300s", cross-cloud-cache-options={"enabled": true}'
+              - id: d1-s3-tr9
+                action: edited
+                icon: sql
+                fileName: 01_demo1_raw_aggregation/sql/06_verify_aws_borderless_glue.sql
+                added: 23
+                removed: 0
+                durationMs: 380
+              - id: d1-s3-tr10
+                action: ran
+                commandSummary: cross-cloud SQL audit aws_crm_catalog.crm_callcenter_db.* <-> raw_bank.cbk_*
+                durationMs: 890
+                cwd: 01_demo1_raw_aggregation
+                command: bq --location=europe-west1 query --use_legacy_sql=false --label datacloud:antigravity < sql/06_verify_aws_borderless_glue.sql
+                output:
+                  - "+------------------+-------------------+--------------------+-------------------------+------------------+------------------------+------------------+------------+-----------------------+"
+                  - "| aws_branches_450 | aws_customers_80k | mf_customers_79350 | j0_orphan_customers_650 | aws_accounts_95k | j0_orphan_accounts_650 | qtr_openings_15k | closures_0 | aws_interactions_320k |"
+                  - "+------------------+-------------------+--------------------+-------------------------+------------------+------------------------+------------------+------------+-----------------------+"
+                  - "|              450 |             80000 |              79350 |                     650 |            95000 |                    650 |            15000 |          0 |                320000 |"
+                  - "+------------------+-------------------+--------------------+-------------------------+------------------+------------------------+------------------+------------+-----------------------+"
+              - id: d1-s3-tr11
+                action: analyzed
+                icon: dak
+                fileName: bq-visual-audit/SKILL.md
+                lineRange: "#L1-39"
+                durationMs: 310
+            filesChanged:
+              - path: 01_demo1_raw_aggregation/federate_aws_glue_catalog.py
+                language: python
+                badge: NEW · OIDC + CACHE
+                added: 159
+                removed: 0
+                content: |-
+                  """
+                  Fédération Borderless Lakehouse sans clé (OIDC Web Identity + Cross-Cloud Caching)
+                  entre BigQuery (`europe-west1`) et AWS Glue Data Catalog (`eu-west-1` · `crm_callcenter_db`).
+                  """
+
+                  from __future__ import annotations
+
+                  import json
+                  import os
+                  import ssl
+                  import subprocess
+                  import time
+                  import urllib.request
+                  from pathlib import Path
+
+                  import boto3
+                  import certifi
+                  from dotenv import load_dotenv
+
+                  REPO_ROOT = Path(__file__).resolve().parent.parent
+                  BIGLAKE_EXT_URL = "https://biglake.googleapis.com/iceberg/v1/restcatalog/extensions"
+
+
+                  def build_oidc_trust_policy(subject_id: str) -> dict:
+                      """Construit la trust policy OIDC Web Identity verrouillée sur le Service Agent BigLake."""
+                      return {
+                          "Version": "2012-10-17",
+                          "Statement": [
+                              {
+                                  "Effect": "Allow",
+                                  "Principal": {"Federated": "accounts.google.com"},
+                                  "Action": "sts:AssumeRoleWithWebIdentity",
+                                  "Condition": {
+                                      "StringEquals": {
+                                          "accounts.google.com:aud": [subject_id],
+                                          "accounts.google.com:sub": [subject_id],
+                                      }
+                                  },
+                              }
+                          ],
+                      }
+
+
+                  def ensure_aws_readonly_role(
+                      aws_account: str, aws_region: str, glue_db: str, s3_bucket: str, role_name: str
+                  ) -> str:
+                      """Crée ou met à jour le rôle IAM AWS least-privilege en lecture seule (Glue + S3)."""
+                      iam = boto3.client("iam")
+                      try:
+                          role_arn = iam.get_role(RoleName=role_name)["Role"]["Arn"]
+                      except iam.exceptions.NoSuchEntityException:
+                          role_arn = iam.create_role(
+                              RoleName=role_name,
+                              AssumeRolePolicyDocument=json.dumps(build_oidc_trust_policy("PLACEHOLDER_VALUE")),
+                              MaxSessionDuration=43200,
+                              Description="Keyless OIDC federation role for GCP BigLake Cross-Cloud Lakehouse",
+                          )["Role"]["Arn"]
+
+                      permissions = {
+                          "Version": "2012-10-17",
+                          "Statement": [
+                              {
+                                  "Sid": "GlueCatalogReadOnly",
+                                  "Effect": "Allow",
+                                  "Action": [
+                                      "glue:GetCatalog",
+                                      "glue:GetDatabase",
+                                      "glue:GetDatabases",
+                                      "glue:GetTable",
+                                      "glue:GetTables",
+                                  ],
+                                  "Resource": [
+                                      f"arn:aws:glue:{aws_region}:{aws_account}:catalog",
+                                      f"arn:aws:glue:{aws_region}:{aws_account}:database/{glue_db}",
+                                      f"arn:aws:glue:{aws_region}:{aws_account}:table/{glue_db}/*",
+                                  ],
+                              },
+                              {
+                                  "Sid": "S3IcebergBucketReadOnly",
+                                  "Effect": "Allow",
+                                  "Action": ["s3:ListBucket", "s3:GetObject"],
+                                  "Resource": [f"arn:aws:s3:::{s3_bucket}", f"arn:aws:s3:::{s3_bucket}/*"],
+                              },
+                          ],
+                      }
+                      iam.put_role_policy(
+                          RoleName=role_name,
+                          PolicyName="crm_glue_s3_readonly_policy",
+                          PolicyDocument=json.dumps(permissions),
+                      )
+                      return role_arn
+
+
+                  def complete_oidc_and_enable_cache(
+                      project_id: str, catalog_id: str, role_name: str, service_agent_id: str
+                  ) -> dict:
+                      """Verrouille l'OIDC AWS sur le Service Agent BigLake et active le Cross-Cloud Caching."""
+                      boto3.client("iam").update_assume_role_policy(
+                          RoleName=role_name,
+                          PolicyDocument=json.dumps(build_oidc_trust_policy(service_agent_id)),
+                      )
+                      time.sleep(15)
+
+                      env = {**os.environ, "CLOUDSDK_METRICS_ENVIRONMENT": "datacloud.antigravity"}
+                      subprocess.run(
+                          [
+                              "gcloud", "beta", "biglake", "iceberg", "catalogs", "update", catalog_id,
+                              f"--project={project_id}", "--refresh-interval=300s", "--quiet",
+                          ],
+                          check=True,
+                          env=env,
+                      )
+
+                      token = subprocess.check_output(["gcloud", "auth", "print-access-token"], text=True).strip()
+                      url = (
+                          f"{BIGLAKE_EXT_URL}/projects/{project_id}/catalogs/{catalog_id}"
+                          "?alt=json&updateMask=cross_cloud_cache_options.enabled"
+                      )
+                      req = urllib.request.Request(
+                          url,
+                          data=json.dumps({
+                              "name": f"projects/{project_id}/catalogs/{catalog_id}",
+                              "catalog-type": "CATALOG_TYPE_FEDERATED",
+                              "cross-cloud-cache-options": {"enabled": True},
+                          }).encode("utf-8"),
+                          method="PATCH",
+                          headers={
+                              "Authorization": f"Bearer {token}",
+                              "x-goog-user-project": project_id,
+                              "Content-Type": "application/json",
+                          },
+                      )
+                      ctx = ssl.create_default_context(cafile=certifi.where())
+                      with urllib.request.urlopen(req, context=ctx, timeout=20) as resp:
+                          return json.loads(resp.read().decode("utf-8"))
+
+
+                  if __name__ == "__main__":
+                      load_dotenv(REPO_ROOT / ".env")
+                      load_dotenv(REPO_ROOT / ".env.aws.local", override=True)
+                      project = os.getenv("GCP_PROJECT_ID", "data-days-demo")
+                      catalog = os.getenv("BIGLAKE_AWS_CATALOG_ID", "aws_crm_catalog")
+                      role = os.getenv("AWS_FEDERATED_ROLE_NAME", "biglake-aws-crm-federated-role")
+                      ensure_aws_readonly_role(
+                          aws_account=os.getenv("AWS_ACCOUNT_ID", "835872720625"),
+                          aws_region=os.getenv("AWS_REGION", "eu-west-1"),
+                          glue_db=os.getenv("AWS_GLUE_DATABASE", "crm_callcenter_db"),
+                          s3_bucket=os.getenv("AWS_S3_BUCKET_CRM", "data-days-demo-aws-crm-835872720625"),
+                          role_name=role,
+                      )
+                      sa_id = subprocess.check_output(
+                          [
+                              "gcloud", "beta", "biglake", "iceberg", "catalogs", "describe", catalog,
+                              f"--project={project}", "--format=value(biglake-service-account-id)",
+                          ],
+                          text=True,
+                      ).strip()
+                      status = complete_oidc_and_enable_cache(project, catalog, role, sa_id)
+                      print(json.dumps(status, indent=2))
+              - path: 01_demo1_raw_aggregation/sql/06_verify_aws_borderless_glue.sql
+                language: sql
+                badge: NEW · CROSS-CLOUD AUDIT
+                added: 23
+                removed: 0
+                content: |-
+                  -- ==============================================================================
+                  -- Démo #1 · Étape 3 — Audit SQL inter-clouds Borderless Lakehouse
+                  -- BigQuery (europe-west1) <-> AWS Glue / S3 Iceberg (eu-west-1 · crm_callcenter_db)
+                  -- ==============================================================================
+
+                  SELECT
+                    (SELECT COUNT(*) FROM `data-days-demo.aws_crm_catalog.crm_callcenter_db.crm_branches_ref`)      AS aws_branches_450,
+                    (SELECT COUNT(*) FROM `data-days-demo.aws_crm_catalog.crm_callcenter_db.crm_customers`)         AS aws_customers_80k,
+                    (SELECT COUNT(*) FROM `data-days-demo.raw_bank.cbk_customers_ref`)                              AS mf_customers_79350,
+                    (SELECT COUNT(*)
+                     FROM `data-days-demo.aws_crm_catalog.crm_callcenter_db.crm_customers` AS c
+                     LEFT JOIN `data-days-demo.raw_bank.cbk_customers_ref` AS m USING (customer_id)
+                     WHERE m.customer_id IS NULL)                                                                   AS j0_orphan_customers_650,
+                    (SELECT COUNT(*) FROM `data-days-demo.aws_crm_catalog.crm_callcenter_db.crm_account_portfolio`) AS aws_accounts_95k,
+                    (SELECT COUNT(*)
+                     FROM `data-days-demo.aws_crm_catalog.crm_callcenter_db.crm_account_portfolio` AS a
+                     LEFT JOIN `data-days-demo.raw_bank.cbk_accounts_master` AS m USING (account_id)
+                     WHERE m.account_id IS NULL)                                                                   AS j0_orphan_accounts_650,
+                    (SELECT COUNTIF(opened_in_current_quarter)
+                     FROM `data-days-demo.aws_crm_catalog.crm_callcenter_db.crm_account_portfolio`)                 AS qtr_openings_15k,
+                    (SELECT COUNTIF(closed_date IS NOT NULL)
+                     FROM `data-days-demo.aws_crm_catalog.crm_callcenter_db.crm_account_portfolio`)                 AS closures_0,
+                    (SELECT COUNT(*) FROM `data-days-demo.aws_crm_catalog.crm_callcenter_db.crm_interactions`)      AS aws_interactions_320k;
+            terminalLogs:
+              - $ gcloud beta biglake iceberg catalogs create aws_crm_catalog --catalog-type=federated --federated-catalog-type=glue --glue-warehouse=835872720625 --glue-aws-region=eu-west-1
+              - "[OK] Service Agent provisioned: blirc-1051798075322-oh6rxayd@gcp-sa-biglakerestcatalog.iam.gserviceaccount.com (ID=111243748688109286426)"
+              - $ uv run python 01_demo1_raw_aggregation/federate_aws_glue_catalog.py
+              - "[OK] AWS IAM OIDC trust locked on biglake-aws-crm-federated-role · refresh=300s · cross-cloud-cache=enabled"
+              - $ bq --location=europe-west1 query --label datacloud:antigravity < 01_demo1_raw_aggregation/sql/06_verify_aws_borderless_glue.sql
+              - "[OK] 4/4 Glue Iceberg tables live (<1s): 450 branches | 80,000 customers | 95,000 accounts | 320,000 interactions | 650 J0 orphans preserved"
+            subagents:
+              - id: sa-d1-s3c
+                role: Cross-Cloud OIDC & BigLake Engineer
+                skill: federate-lakehouse-catalog
+                status: completed
+              - id: sa-d1-s3d
+                role: BigQuery Visual Auditor
+                skill: bq-visual-audit
+                status: completed
+            backgroundTasks: []
+            artifact:
+              id: art-d1-s3
+              title: Certification Borderless Lakehouse · AWS Glue (eu-west-1) -> BigQuery (europe-west1)
+              subtitle: Catalogue fédéré data-days-demo.aws_crm_catalog.crm_callcenter_db
+              markdownSummary:
+                heading: Fédération sans copie Apache Iceberg (S3 + AWS Glue) opérationnelle
+                metrics:
+                  - label: Tables S3 Iceberg fédérées
+                    value: 4 / 4 (495 450 lignes)
+                    tone: positive
+                  - label: Octets copiés sur GCS
+                    value: 0 octet
+                    tone: positive
+                  - label: Nouveaux dossiers J0 hors MF
+                    value: 650 conservés en RAW
+                    tone: warning
+                bullets:
+                  - "Authentification OIDC Web Identity sans clé entre `111243748688109286426` et `arn:aws:iam::835872720625:role/biglake-aws-crm-federated-role`."
+                  - "Cross-Cloud Caching activé (`cross-cloud-cache-options.enabled = true`) et rafraîchissement Glue toutes les `300s`."
+                  - "Jointure directe en `europe-west1` avec `raw_bank.cbk_*` en `< 1 s` : `650` ouvertures J0 identifiées et conservées intactes pour `dbt` en `Démo #2`."
+                  - "Replay complet : `./scripts/run_demo1_aws_borderless_glue.sh`."
       - id: d1-step-pubsub
         demoId: demo1
         shortName: 4. Flux Paiements

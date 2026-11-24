@@ -39,6 +39,7 @@ import {
 } from '../types';
 import { InspectorModalState } from './OverviewPanel';
 import { PubSubInspectorCard } from './PubSubInspectorCard';
+import { SecurityFlowCard } from './SecurityFlowCard';
 import { VisualCheckCard } from './VisualCheckCard';
 
 const AVAILABLE_MODELS = DEMO_SETTINGS.availableModels;
@@ -823,7 +824,12 @@ export const ChatStage: React.FC<ChatStageProps> = ({
       return idx !== 0;
     });
 
-    let finalPrompt = nextSuggestedTurn.prompt;
+    const targetTurn =
+      (activeAskTurn.continueTargetTurnId &&
+        scenario.turns.find((t) => t.id === activeAskTurn.continueTargetTurnId)) ||
+      nextSuggestedTurn;
+
+    let finalPrompt = targetTurn.prompt;
     if (hasCustomAnswer) {
       const chosenLines = questions.map((q, i) => {
         const idx = questionChoices[q.id] ?? 0;
@@ -837,7 +843,7 @@ export const ChatStage: React.FC<ChatStageProps> = ({
     }
 
     setDismissedQuestionTurnId(activeAskTurn.id);
-    onSendTurn(nextSuggestedTurn, finalPrompt);
+    onSendTurn(targetTurn, finalPrompt);
   };
 
   const handleSkipQuestion = () => {
@@ -857,8 +863,18 @@ export const ChatStage: React.FC<ChatStageProps> = ({
     const trimmed = (fullPending ?? inputValue).trim();
     if (!trimmed && !nextSuggestedTurn) return;
 
+    const keywordMatchedTurn =
+      selectedTurnIndex === null && trimmed
+        ? scenario.turns.find((t) =>
+            t.triggerKeywords?.some((kw) =>
+              new RegExp(`\\b${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(trimmed)
+            )
+          )
+        : undefined;
+
     const turnToRun =
       (selectedTurnIndex !== null && scenario.turns[selectedTurnIndex]) ||
+      keywordMatchedTurn ||
       nextSuggestedTurn ||
       scenario.turns[scenario.turns.length - 1];
 
@@ -1148,6 +1164,8 @@ export const ChatStage: React.FC<ChatStageProps> = ({
                             </li>
                           ))}
                         </ol>
+
+                        {turn.securityFlow && <SecurityFlowCard flow={turn.securityFlow} />}
 
                         {turn.codeBlock && <TurnCodeBlockCard block={turn.codeBlock} />}
 

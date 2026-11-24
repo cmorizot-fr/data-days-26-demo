@@ -13,7 +13,8 @@ dependencies = [
     "pydantic>=2.9.0",
     "python-dotenv>=1.0.1",
     "google-cloud-pubsub>=2.44.0",
-    "pyiceberg[pyarrow,sql-sqlite]>=0.9.0",
+    "pyiceberg[glue,pyarrow,s3fs,sql-sqlite]>=0.9.0",
+    "boto3",
 ]
 
 [dependency-groups]
@@ -29,6 +30,10 @@ python-preference = "only-system"
 required-environments = [
     "sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple"
+default = true
 
 [tool.ruff]
 line-length = 100
