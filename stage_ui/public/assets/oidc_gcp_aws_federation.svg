@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900">
+  <defs>
+    <style>
+      .font { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+      .mono { font-family: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; }
+    </style>
+    <marker id="arrowDark" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#334155"/>
+    </marker>
+    <marker id="arrowGreen" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#15803D"/>
+    </marker>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#1D4ED8"/>
+    </marker>
+  </defs>
+
+  <!-- Pure Background -->
+  <rect width="1600" height="900" fill="#F8FAFC"/>
+
+  <!-- Header -->
+  <text x="80" y="78" class="font" font-size="34" font-weight="700" fill="#0F172A">Comment fonctionne OIDC entre Google Cloud et AWS ?</text>
+  <text x="80" y="116" class="font" font-size="20" fill="#475569">Principe : remplacer les clés secrètes statiques par un passeport numérique signé à la volée</text>
+
+  <!-- Top Right Badge (Zero colored border, pure surface luminance) -->
+  <rect x="1190" y="50" width="330" height="48" rx="24" fill="#DCFCE7"/>
+  <text x="1355" y="81" text-anchor="middle" class="font" font-size="17" font-weight="700" fill="#15803D">0 CLÉ SECRÈTE STOCKÉE</text>
+
+  <!-- ================= LEFT ZONE: GOOGLE CLOUD ================= -->
+  <rect x="80" y="165" width="430" height="545" rx="28" fill="#EFF6FF"/>
+  <rect x="112" y="197" width="245" height="36" rx="12" fill="#DBEAFE"/>
+  <text x="234" y="221" text-anchor="middle" class="font" font-size="15" font-weight="700" fill="#1D4ED8">GOOGLE CLOUD · europe-west1</text>
+
+  <text x="112" y="278" class="font" font-size="26" font-weight="700" fill="#0F172A">BigQuery &amp; BigLake</text>
+  <text x="112" y="310" class="font" font-size="17" fill="#475569">Catalogue fédéré aws_crm_catalog</text>
+
+  <!-- Inner White Card 1: Service Agent -->
+  <rect x="112" y="344" width="366" height="150" rx="20" fill="#FFFFFF"/>
+  <text x="136" y="382" class="font" font-size="16" font-weight="700" fill="#0F172A">Identité Google dédiée (Service Agent)</text>
+  <rect x="136" y="398" width="318" height="36" rx="8" fill="#F1F5F9"/>
+  <text x="295" y="422" text-anchor="middle" class="mono" font-size="15" font-weight="600" fill="#1E293B">ID : 111243748688109286426</text>
+  <text x="136" y="466" class="font" font-size="15" fill="#64748B">Créée automatiquement par Google Cloud</text>
+
+  <!-- Inner White Card 2: No Secret -->
+  <rect x="112" y="516" width="366" height="158" rx="20" fill="#FFFFFF"/>
+  <rect x="136" y="540" width="170" height="30" rx="8" fill="#DCFCE7"/>
+  <text x="221" y="560" text-anchor="middle" class="font" font-size="13" font-weight="700" fill="#15803D">SÉCURITÉ NATIVE</text>
+  <text x="136" y="600" class="font" font-size="17" font-weight="600" fill="#0F172A">Aucune clé AWS dans GCP</text>
+  <text x="136" y="628" class="font" font-size="15" fill="#475569">Ni dans Secret Manager, ni dans le code,</text>
+  <text x="136" y="650" class="font" font-size="15" fill="#475569">ni à renouveler manuellement.</text>
+
+  <!-- ================= CENTER BRIDGE: OIDC EXCHANGE ================= -->
+  <rect x="565" y="165" width="470" height="425" rx="28" fill="#0F172A"/>
+  <rect x="655" y="195" width="290" height="34" rx="17" fill="#1E293B"/>
+  <text x="800" y="218" text-anchor="middle" class="font" font-size="14" font-weight="700" fill="#93C5FD">HANDSHAKE OIDC AUTOMATIQUE</text>
+
+  <!-- Step 1 Card inside Center -->
+  <rect x="595" y="250" width="410" height="96" rx="16" fill="#1E293B"/>
+  <circle cx="633" cy="298" r="20" fill="#2563EB"/>
+  <text x="633" y="305" text-anchor="middle" class="font" font-size="18" font-weight="700" fill="#FFFFFF">1</text>
+  <text x="668" y="284" class="font" font-size="17" font-weight="700" fill="#F8FAFC">Passeport numérique signé (JWT)</text>
+  <text x="668" y="310" class="font" font-size="14.5" fill="#CBD5E1">accounts.google.com signe un jeton prouvant</text>
+  <text x="668" y="330" class="font" font-size="14.5" fill="#93C5FD">« Je suis bien l'ID 111243748688109286426 »</text>
+
+  <!-- Step 2 Card inside Center -->
+  <rect x="595" y="362" width="410" height="96" rx="16" fill="#1E293B"/>
+  <circle cx="633" cy="410" r="20" fill="#D97706"/>
+  <text x="633" y="417" text-anchor="middle" class="font" font-size="18" font-weight="700" fill="#FFFFFF">2</text>
+  <text x="668" y="396" class="font" font-size="17" font-weight="700" fill="#F8FAFC">Contrôle d'identité par AWS STS</text>
+  <text x="668" y="422" class="font" font-size="14.5" fill="#CBD5E1">AWS vérifie la signature publique de Google</text>
+  <text x="668" y="442" class="font" font-size="14.5" fill="#FCD34D">et vérifie que cet ID exact est autorisé</text>
+
+  <!-- Step 3 Card inside Center -->
+  <rect x="595" y="474" width="410" height="92" rx="16" fill="#1E293B"/>
+  <circle cx="633" cy="520" r="20" fill="#16A34A"/>
+  <text x="633" y="527" text-anchor="middle" class="font" font-size="18" font-weight="700" fill="#FFFFFF">3</text>
+  <text x="668" y="506" class="font" font-size="17" font-weight="700" fill="#F8FAFC">Badge d'accès temporaire (éphémère)</text>
+  <text x="668" y="532" class="font" font-size="14.5" fill="#CBD5E1">AWS délivre un jeton court limité à la lecture</text>
+  <text x="668" y="552" class="font" font-size="14.5" fill="#86EFAC">de crm_callcenter_db + 1 seul bucket S3</text>
+
+  <!-- ================= RIGHT ZONE: AWS ================= -->
+  <rect x="1090" y="165" width="430" height="545" rx="28" fill="#FEF3C7"/>
+  <rect x="1122" y="197" width="260" height="36" rx="12" fill="#FDE68A"/>
+  <text x="1252" y="221" text-anchor="middle" class="font" font-size="15" font-weight="700" fill="#B45309">AWS · eu-west-1 (835872720625)</text>
+
+  <text x="1122" y="278" class="font" font-size="26" font-weight="700" fill="#0F172A">AWS Glue &amp; Amazon S3</text>
+  <text x="1122" y="310" class="font" font-size="17" fill="#475569">4 tables Apache Iceberg (495 450 lignes)</text>
+
+  <!-- Inner White Card 1: IAM Role Trust Policy -->
+  <rect x="1122" y="344" width="366" height="150" rx="20" fill="#FFFFFF"/>
+  <text x="1146" y="382" class="font" font-size="16" font-weight="700" fill="#0F172A">Rôle IAM · Trust Relationship</text>
+  <rect x="1146" y="398" width="318" height="36" rx="8" fill="#F1F5F9"/>
+  <text x="1305" y="422" text-anchor="middle" class="mono" font-size="13.5" font-weight="600" fill="#1E293B">sub == 111243748688109286426</text>
+  <text x="1146" y="466" class="font" font-size="15" fill="#64748B">N'accepte QUE ce catalogue BigLake précis</text>
+
+  <!-- Inner White Card 2: Least Privilege -->
+  <rect x="1122" y="516" width="366" height="158" rx="20" fill="#FFFFFF"/>
+  <rect x="1146" y="540" width="185" height="30" rx="8" fill="#FEF3C7"/>
+  <text x="1238" y="560" text-anchor="middle" class="font" font-size="13" font-weight="700" fill="#B45309">MOINDRE PRIVILÈGE</text>
+  <text x="1146" y="600" class="font" font-size="17" font-weight="600" fill="#0F172A">Lecture seule strictement bornée</text>
+  <text x="1146" y="628" class="font" font-size="15" fill="#475569">• Glue : GetTable sur crm_callcenter_db</text>
+  <text x="1146" y="650" class="font" font-size="15" fill="#475569">• S3 : GetObject sur le bucket CRM Iceberg</text>
+
+  <!-- Connecting Arrows Left <-> Center <-> Right -->
+  <line x1="510" y1="298" x2="557" y2="298" stroke="#1D4ED8" stroke-width="3.5" marker-end="url(#arrowBlue)"/>
+  <line x1="1035" y1="410" x2="1082" y2="410" stroke="#334155" stroke-width="3.5" marker-end="url(#arrowDark)"/>
+  <line x1="565" y1="520" x2="518" y2="520" stroke="#15803D" stroke-width="3.5" marker-end="url(#arrowGreen)"/>
+
+  <!-- Step 4 Bottom Direct Data Read Banner -->
+  <rect x="565" y="612" width="470" height="98" rx="22" fill="#DCFCE7"/>
+  <circle cx="610" cy="661" r="20" fill="#15803D"/>
+  <text x="610" y="668" text-anchor="middle" class="font" font-size="18" font-weight="700" fill="#FFFFFF">4</text>
+  <text x="646" y="652" class="font" font-size="18" font-weight="700" fill="#14532D">Lecture SQL directe en TLS 1.3 (&lt; 1 s)</text>
+  <text x="646" y="680" class="font" font-size="15" fill="#166534">0 octet copié sur GCS · Cross-Cloud Cache actif</text>
+
+  <line x1="510" y1="661" x2="557" y2="661" stroke="#15803D" stroke-width="3.5" marker-end="url(#arrowGreen)"/>
+  <line x1="1035" y1="661" x2="1082" y2="661" stroke="#15803D" stroke-width="3.5" marker-end="url(#arrowGreen)"/>
+
+  <!-- Footer Summary Pills -->
+  <rect x="80" y="758" width="460" height="68" rx="20" fill="#FFFFFF"/>
+  <text x="310" y="799" text-anchor="middle" class="font" font-size="18" font-weight="600" fill="#0F172A">Zéro clé AKIA à stocker ou faire tourner</text>
+
+  <rect x="570" y="758" width="460" height="68" rx="20" fill="#FFFFFF"/>
+  <text x="800" y="799" text-anchor="middle" class="font" font-size="18" font-weight="600" fill="#0F172A">Identité vérifiée par cryptographie publique</text>
+
+  <rect x="1060" y="758" width="460" height="68" rx="20" fill="#FFFFFF"/>
+  <text x="1290" y="799" text-anchor="middle" class="font" font-size="18" font-weight="600" fill="#0F172A">Révocable en 1 clic côté console AWS IAM</text>
+</svg>

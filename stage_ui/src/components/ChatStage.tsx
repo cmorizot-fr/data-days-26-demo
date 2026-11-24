@@ -39,7 +39,6 @@ import {
 } from '../types';
 import { InspectorModalState } from './OverviewPanel';
 import { PubSubInspectorCard } from './PubSubInspectorCard';
-import { SecurityFlowCard } from './SecurityFlowCard';
 import { VisualCheckCard } from './VisualCheckCard';
 
 const AVAILABLE_MODELS = DEMO_SETTINGS.availableModels;
@@ -112,7 +111,8 @@ const TurnCodeBlockCard: React.FC<{ block: InlineCodeBlock }> = ({ block }) => {
       {block.resultTable && block.resultTable.length > 0 && (
         <div className="space-y-1.5">
           <div className="text-[11.5px] font-medium text-[#5F6368] px-0.5">
-            Résultat retourné en direct par BigQuery (`roles/bigquerydatapolicy.maskedReader`) :
+            {block.resultLabel ||
+              'Résultat retourné en direct par BigQuery (`roles/bigquerydatapolicy.maskedReader`) :'}
           </div>
           <pre className="rounded-xl bg-[#111318] text-[#F1F3F5] p-3.5 font-mono text-[11.5px] leading-[1.5] overflow-x-auto">
             <code>{block.resultTable.join('\n')}</code>
@@ -764,17 +764,27 @@ export const ChatStage: React.FC<ChatStageProps> = ({
     return () => stopTypewriter();
   }, []);
 
+  const [revealedTurnIds, setRevealedTurnIds] = useState<Record<string, boolean>>({});
+  const [revealStage, setRevealStage] = useState<number>(0);
+  const [reachedBottomTurnIds, setReachedBottomTurnIds] = useState<Record<string, boolean>>({});
+
   const completedIds = new Set(executedTurns.map((et) => et.turn.id));
   const nextSuggestedTurn = scenario.turns.find((t) => !completedIds.has(t.id)) || null;
   const lastExecutedItem =
     executedTurns.length > 0 ? executedTurns[executedTurns.length - 1] : null;
-  const activeAskTurn =
+  const hasPendingAskQuestions = Boolean(
     !isStreaming &&
-    lastExecutedItem?.status === 'done' &&
-    lastExecutedItem.turn.askQuestions &&
-    lastExecutedItem.turn.askQuestions.length > 0 &&
-    nextSuggestedTurn &&
-    dismissedQuestionTurnId !== lastExecutedItem.turn.id
+      lastExecutedItem?.status === 'done' &&
+      lastExecutedItem.turn.askQuestions &&
+      lastExecutedItem.turn.askQuestions.length > 0 &&
+      nextSuggestedTurn &&
+      dismissedQuestionTurnId !== lastExecutedItem.turn.id
+  );
+  const activeAskTurn =
+    hasPendingAskQuestions &&
+    lastExecutedItem &&
+    revealedTurnIds[lastExecutedItem.turn.id] &&
+    reachedBottomTurnIds[lastExecutedItem.turn.id]
       ? lastExecutedItem.turn
       : null;
 
@@ -789,7 +799,18 @@ export const ChatStage: React.FC<ChatStageProps> = ({
     setQuestionOtherTexts({});
     setQuestionCollapsed(false);
     setDismissedQuestionTurnId(null);
+    setReachedBottomTurnIds({});
   }, [scenario.id]);
+
+  const checkIfAtBottom = () => {
+    const el = scrollContainerRef.current;
+    const turnId = lastExecutedItem?.turn.id;
+    if (!el || !turnId || !revealedTurnIds[turnId] || reachedBottomTurnIds[turnId]) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distanceFromBottom <= 96) {
+      setReachedBottomTurnIds((prev) => (prev[turnId] ? prev : { ...prev, [turnId]: true }));
+    }
+  };
 
   useEffect(() => {
     setQuestionStepIdx(0);
@@ -797,8 +818,47 @@ export const ChatStage: React.FC<ChatStageProps> = ({
   }, [lastExecutedItem?.turn.id]);
 
   useEffect(() => {
-    scrollEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [executedTurns, activeAskTurn?.id]);
+    if (!lastExecutedItem || lastExecutedItem.status !== 'done') {
+      setRevealStage(0);
+      return;
+    }
+    const turnId = lastExecutedItem.turn.id;
+    const markBottomIfShort = () => {
+      const el = scrollContainerRef.current;
+      if (!el) return;
+      if (el.scrollHeight - el.scrollTop - el.clientHeight <= 96) {
+        setReachedBottomTurnIds((prev) => (prev[turnId] ? prev : { ...prev, [turnId]: true }));
+      }
+    };
+    if (revealedTurnIds[turnId]) {
+      window.requestAnimationFrame(markBottomIfShort);
+      return;
+    }
+
+    const totalSteps = 3 + lastExecutedItem.turn.items.length;
+    setRevealStage(1);
+    let step = 1;
+    const timer = window.setInterval(() => {
+      step += 1;
+      if (step >= totalSteps) {
+        window.clearInterval(timer);
+        setRevealStage(totalSteps);
+        setRevealedTurnIds((prev) => ({ ...prev, [turnId]: true }));
+        window.requestAnimationFrame(markBottomIfShort);
+      } else {
+        setRevealStage(step);
+      }
+    }, 280);
+
+    return () => window.clearInterval(timer);
+  }, [lastExecutedItem?.turn.id, lastExecutedItem?.status]);
+
+  const lastTurnTopRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (executedTurns.length === 0) return;
+    lastTurnTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [executedTurns.length]);
 
   const handleSelectChip = (turn: PromptTurn, idx: number) => {
     if (isStreaming) return;
@@ -922,7 +982,8 @@ export const ChatStage: React.FC<ChatStageProps> = ({
       {/* Main Scrollable Discussion Area */}
       <div
         ref={scrollContainerRef}
-        className={`flex-1 overflow-y-auto px-8 ${activeAskTurn ? 'pb-96' : 'pb-48'}`}
+        onScroll={checkIfAtBottom}
+        className={`flex-1 overflow-y-auto px-8 ${hasPendingAskQuestions ? 'pb-96' : 'pb-48'}`}
       >
         {isEmpty ? (
           /* Empty Welcome State matching Screenshot 1 */
@@ -947,7 +1008,7 @@ export const ChatStage: React.FC<ChatStageProps> = ({
         ) : (
           /* Active Conversation Stream matching media_1794580203737.png + media_1794577724122.png */
           <div className="max-w-[760px] mx-auto pt-8 space-y-10">
-            {executedTurns.map((item) => {
+            {executedTurns.map((item, turnIdx) => {
               const { turn, userPromptText, status, visibleTraceCount } = item;
               // Open while working so audience sees every Analyzed/Ran/Edited step live;
               // collapses cleanly once done (and re-opens on click!)
@@ -958,7 +1019,11 @@ export const ChatStage: React.FC<ChatStageProps> = ({
               const totalRemoved = turn.filesChanged.reduce((acc, f) => acc + f.removed, 0);
 
               return (
-                <div key={turn.id} className="space-y-6 animate-fade-slide-up">
+                <div
+                  key={turn.id}
+                  ref={turnIdx === executedTurns.length - 1 ? lastTurnTopRef : undefined}
+                  className="space-y-6 animate-fade-slide-up scroll-mt-6"
+                >
                   {/* 1. User Message Pill Bubble on the right */}
                   <div className="flex justify-end">
                     <div className="max-w-[78%] rounded-[24px] bg-white px-5 py-3 text-[14.5px] text-[#111318] leading-relaxed shadow-[0_2px_14px_rgba(0,0,0,0.06)] space-y-2.5">
@@ -1083,8 +1148,18 @@ export const ChatStage: React.FC<ChatStageProps> = ({
                       </>
                     )}
 
-                    {/* Final completed blocks */}
-                    {status === 'done' && (
+                    {/* Final completed blocks (progressive LLM-like reveal) */}
+                    {status === 'done' && (() => {
+                      const isLatestTurn = turnIdx === executedTurns.length - 1;
+                      const isRevealed = !isLatestTurn || Boolean(revealedTurnIds[turn.id]);
+                      const stage = isRevealed ? 999 : revealStage;
+                      const showHeading = stage >= 2;
+                      const visibleItemsCount = isRevealed
+                        ? turn.items.length
+                        : Math.max(0, stage - 2);
+                      const showCards = isRevealed || stage >= 3 + turn.items.length;
+
+                      return (
                       <div className="space-y-4 animate-fade-slide-up">
                         {/* Task finished grey chevron line */}
                         <div>
@@ -1102,7 +1177,7 @@ export const ChatStage: React.FC<ChatStageProps> = ({
                         </div>
 
                         {/* Lead confirmation paragraph + external blue link */}
-                        <p className="text-[#202124]">
+                        <p className="text-[#202124] animate-fade-slide-up">
                           {renderAntigravityInlineText(turn.leadConfirmation)}
                           {turn.leadLink && (
                             <>
@@ -1122,14 +1197,17 @@ export const ChatStage: React.FC<ChatStageProps> = ({
                         </p>
 
                         {/* Bold Section Heading: "Ce qui a été mis en place :" */}
-                        <h3 className="text-[16px] font-semibold text-[#111318] pt-1">
-                          {turn.sectionHeading}
-                        </h3>
+                        {showHeading && (
+                          <h3 className="text-[16px] font-semibold text-[#111318] pt-1 animate-fade-slide-up">
+                            {turn.sectionHeading}
+                          </h3>
+                        )}
 
                         {/* Numbered List with inline file chips + indented bullet points */}
+                        {visibleItemsCount > 0 && (
                         <ol className="list-decimal pl-5 space-y-4">
-                          {turn.items.map((sectionItem, sIdx) => (
-                            <li key={sIdx} className="pl-1 space-y-1.5">
+                          {turn.items.slice(0, visibleItemsCount).map((sectionItem, sIdx) => (
+                            <li key={sIdx} className="pl-1 space-y-1.5 animate-fade-slide-up">
                               <div className="text-[#111318]">
                                 <strong className="font-semibold">{sectionItem.title}</strong>
                                 {sectionItem.chips && sectionItem.chips.length > 0 && (
@@ -1164,16 +1242,48 @@ export const ChatStage: React.FC<ChatStageProps> = ({
                             </li>
                           ))}
                         </ol>
+                        )}
 
-                        {turn.securityFlow && <SecurityFlowCard flow={turn.securityFlow} />}
+                        {showCards && turn.inlineImage && (
+                          <div className="mt-4 space-y-2 animate-fade-slide-up">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setPreviewDoc({
+                                  id: `${turn.id}-img`,
+                                  title: turn.inlineImage!.alt,
+                                  subtitle: turn.inlineImage!.caption || '',
+                                  uri: 'OIDC Web Identity · accounts.google.com <-> AWS STS',
+                                  metaBadge: 'SCHÉMA 16:9',
+                                  highlightLabel: '0 CLÉ SECRÈTE STOCKÉE',
+                                  tone: 'positive',
+                                  imageUrl: turn.inlineImage!.src,
+                                })
+                              }
+                              title="Cliquer pour afficher en plein écran"
+                              className="w-full overflow-hidden rounded-2xl bg-[#F8FAFC] shadow-[0_2px_14px_rgba(15,23,42,0.06)] hover:shadow-[0_4px_20px_rgba(15,23,42,0.1)] transition-shadow cursor-pointer block"
+                            >
+                              <img
+                                src={turn.inlineImage.src}
+                                alt={turn.inlineImage.alt}
+                                className="w-full h-auto block"
+                              />
+                            </button>
+                            {turn.inlineImage.caption && (
+                              <p className="text-[12px] text-[#5F6368] text-center">
+                                {turn.inlineImage.caption}
+                              </p>
+                            )}
+                          </div>
+                        )}
 
-                        {turn.codeBlock && <TurnCodeBlockCard block={turn.codeBlock} />}
+                        {showCards && turn.codeBlock && <TurnCodeBlockCard block={turn.codeBlock} />}
 
-                        {turn.pubsubInspector && (
+                        {showCards && turn.pubsubInspector && (
                           <PubSubInspectorCard inspector={turn.pubsubInspector} />
                         )}
 
-                        {turn.visualCheck && (
+                        {showCards && turn.visualCheck && (
                           <VisualCheckCard
                             visual={turn.visualCheck}
                             onOpenVisualSkill={onOpenVisualSkill}
@@ -1182,7 +1292,7 @@ export const ChatStage: React.FC<ChatStageProps> = ({
                         )}
 
                         {/* "X files changed +added -removed ›" Card + [Review] button */}
-                        {turn.filesChanged.length > 0 && (
+                        {showCards && turn.filesChanged.length > 0 && (
                           <div className="pt-2">
                             <div className="flex items-center justify-between px-4 py-3 rounded-2xl bg-white shadow-[0_2px_12px_rgba(0,0,0,0.05)]">
                               <button
@@ -1216,14 +1326,17 @@ export const ChatStage: React.FC<ChatStageProps> = ({
                         )}
 
                         {/* Timestamp + Copy / ThumbsUp / ThumbsDown */}
-                        <div className="flex items-center justify-end gap-3 text-[12.5px] text-[#5F6368] pt-1">
+                        {showCards && (
+                        <div className="flex items-center justify-end gap-3 text-[12.5px] text-[#5F6368] pt-1 animate-fade-slide-up">
                           <span>just now</span>
                           <Copy className="w-3.5 h-3.5 hover:text-[#202124] cursor-pointer" />
                           <ThumbsUp className="w-3.5 h-3.5 hover:text-[#202124] cursor-pointer" />
                           <ThumbsDown className="w-3.5 h-3.5 hover:text-[#202124] cursor-pointer" />
                         </div>
+                        )}
                       </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 </div>
               );

@@ -1397,7 +1397,7 @@ workspaces:
                   - "Replay complet : ./scripts/run_demo1_mainframe_spark_iceberg.sh (ou --dry-run sans écriture)."
       - id: d1-step3
         demoId: demo1
-        shortName: 3. Connecter aux données CRM (AWS)
+        shortName: 3. AWS CRM
         conversationTitle: Fédération Borderless Lakehouse AWS S3 & Catalogue Glue (eu-west-1 -> europe-west1)
         projectFolder: 01_demo1_raw_aggregation
         gitBranch: main
@@ -1411,28 +1411,28 @@ workspaces:
             workGroupSummary: Checked GCP connection, inspected AWS Glue (crm_callcenter_db) & S3 Iceberg warehouse
             intermediateMessage: "J'ai récupéré la connexion GCP active (`data-days-demo` · `europe-west1`), vérifié les catalogues BigLake existants (`0` catalogue fédéré) et inspecté la base **AWS Glue** `crm_callcenter_db` (`eu-west-1`, compte `835872720625`) adossée à `s3://data-days-demo-aws-crm-835872720625/RAW/AWS_SAAS_ICEBERG/`."
             taskFinishedLabel: AWS Glue & S3 Apache Iceberg inventory completed
-            leadConfirmation: "J'ai identifié **4 tables Apache Iceberg** (`495 450` lignes au total, `20` fichiers Parquet + métadonnées Iceberg pour `7,13 Mo`) dans la base **AWS Glue `crm_callcenter_db`** (`eu-west-1`) sur"
+            leadConfirmation: "J'ai identifié **4 tables au format Apache Iceberg** (fichiers Parquet + métadonnées Iceberg sur S3) dans la base **AWS Glue `crm_callcenter_db`** (`eu-west-1`) sur"
             leadLink:
               text: eu-west-1.console.aws.amazon.com/glue/databases/crm_callcenter_db
               url: https://eu-west-1.console.aws.amazon.com/glue/home?region=eu-west-1#/v2/data-catalog/databases/view/crm_callcenter_db
-            sectionHeading: "Inventaire des 4 tables Iceberg sur AWS & constats inter-silos :"
+            sectionHeading: "Inventaire des 4 tables Iceberg sur AWS & points d'attention :"
             items:
-              - title: "1. Les 4 tables Apache Iceberg du silo SaaS CRM & Call Center (`eu-west-1`)"
+              - title: "Les 4 tables Apache Iceberg du silo SaaS CRM & Call Center (eu-west-1)"
                 chips:
                   - kind: bq
                     label: crm_callcenter_db
                 bullets:
-                  - "`crm_customers` — **80 000 lignes** · `19` colonnes · `1,16 Mo` (`customer_id`, âge, segment, CSP, revenu déclaré, agence, `digital_opt_in`, snapshot `5127312676454948110`)."
-                  - "`crm_account_portfolio` — **95 000 lignes** · `15` colonnes · `1,69 Mo` (`account_id`, `iban`, produit, `rate_bps`, `opened_in_current_quarter` = `15 000`, `0` clôture, `promo_contract_id`, snapshot `806097988665899813`)."
-                  - "`crm_interactions` — **320 000 lignes** · `8` colonnes · `4,26 Mo` (comptes-rendus RDV agences & verbatims Call Center : `topic_code`, `advisor_sentiment_tag`, `verbatim_note`, snapshot `1821150417217984271`)."
-                  - "`crm_branches_ref` — **450 lignes** · `7` colonnes · `0,02 Mo` (référentiel des `450` agences sur les `8` régions commerciales et `default_promo_contract_id`)."
-              - title: "2. Écart de fraîcheur détecté face au Mainframe (Étape 2) : `+650` ouvertures J0"
+                  - "`crm_customers` (`19` colonnes) — Référentiel clients particuliers : `customer_id`, identité, âge, segment, CSP, revenu déclaré, agence de rattachement, `digital_opt_in`, `crm_updated_at`."
+                  - "`crm_account_portfolio` (`15` colonnes) — Portefeuille de comptes souscrits : `account_id`, `iban`, produit, `rate_bps`, `opened_date`, `opened_in_current_quarter`, `promo_contract_id`."
+                  - "`crm_interactions` (`8` colonnes) — Comptes-rendus de RDV agences & verbatims Call Center : `interaction_ts`, `channel`, `topic_code`, `advisor_sentiment_tag`, `verbatim_note`."
+                  - "`crm_branches_ref` (`7` colonnes) — Référentiel réseau des agences, régions commerciales (`region_code`, `region_name`) et `default_promo_contract_id`."
+              - title: "Décalage de fraîcheur attendu face au batch Mainframe J-1"
                 bullets:
-                  - "Le CRM AWS compte **`80 000` clients et `95 000` comptes** contre **`79 350` et `94 350`** dans le batch Mainframe arrêté à J-1 — soit exactement **`+650` nouveaux dossiers ouverts aujourd'hui (J0)** en agence, déjà actifs en temps réel mais pas encore descendus dans le Core Banking."
-                  - "En gouvernance `RAW`, il ne faut surtout pas les filtrer : on les conservera intacts et `dbt` les réconciliera en `FULL OUTER JOIN` (`is_mainframe_orphan = true`) dans `dp_customer_360` en `Démo #2`."
-              - title: "3. État côté BigQuery (`europe-west1`) & sensibilité PII"
+                  - "Ce silo SaaS CRM enregistre en **temps réel (J0)** les nouvelles ouvertures réalisées en agence aujourd'hui, alors que l'extraction Mainframe est arrêtée à **J-1**."
+                  - "En gouvernance `RAW`, il faudra conserver l'intégralité des dossiers CRM sans filtrage à la source pour ne perdre aucun nouveau client du jour."
+              - title: "État côté BigQuery (europe-west1) & sensibilité PII"
                 bullets:
-                  - "Aucun catalogue fédéré BigLake n'est encore configuré dans `data-days-demo` (`0` octet copié sur GCS) et `crm_interactions.verbatim_note` contient des notes conseillers en texte libre."
+                  - "Aucun catalogue fédéré BigLake n'est encore configuré dans `data-days-demo` (`0` copie sur GCS) et `crm_interactions.verbatim_note` contient des notes conseillers en texte libre."
             traces:
               - id: d1-s3-tr1
                 action: ran
@@ -1460,23 +1460,22 @@ workspaces:
                 durationMs: 450
               - id: d1-s3-tr4
                 action: ran
-                commandSummary: inspect AWS Glue crm_callcenter_db (eu-west-1), S3 warehouse & BigLake catalogs
+                commandSummary: inspect AWS Glue crm_callcenter_db (eu-west-1), S3 locations & BigLake catalogs
                 durationMs: 920
                 cwd: 01_demo1_raw_aggregation
                 command: CLOUDSDK_METRICS_ENVIRONMENT="datacloud.antigravity" gcloud beta biglake iceberg catalogs list --project=data-days-demo && uv run python -c "import boto3; ..."
                 output:
                   - "BigLake catalogs in data-days-demo: Listed 0 items."
-                  - "AWS Account 835872720625 (eu-west-1) · Glue DB: crm_callcenter_db · S3: s3://data-days-demo-aws-crm-835872720625/RAW/AWS_SAAS_ICEBERG/"
-                  - "crm_customers          | ICEBERG | 80,000 rows  | 19 cols | 1.16 MiB"
-                  - "crm_account_portfolio  | ICEBERG | 95,000 rows  | 15 cols | 1.69 MiB"
-                  - "crm_interactions       | ICEBERG | 320,000 rows |  8 cols | 4.26 MiB"
-                  - "crm_branches_ref       | ICEBERG | 450 rows     |  7 cols | 0.02 MiB"
+                  - "AWS Account 835872720625 (eu-west-1) · Glue DB: crm_callcenter_db"
+                  - "crm_customers          | ICEBERG | 19 cols | s3://data-days-demo-aws-crm-835872720625/RAW/AWS_SAAS_ICEBERG/crm_customers"
+                  - "crm_account_portfolio  | ICEBERG | 15 cols | s3://data-days-demo-aws-crm-835872720625/RAW/AWS_SAAS_ICEBERG/crm_account_portfolio"
+                  - "crm_interactions       | ICEBERG |  8 cols | s3://data-days-demo-aws-crm-835872720625/RAW/AWS_SAAS_ICEBERG/crm_interactions"
+                  - "crm_branches_ref       | ICEBERG |  7 cols | s3://data-days-demo-aws-crm-835872720625/RAW/AWS_SAAS_ICEBERG/crm_branches_ref"
             filesChanged: []
             terminalLogs:
               - $ gcloud beta biglake iceberg catalogs list --project=data-days-demo
               - "Listed 0 items."
-              - "[AWS Glue eu-west-1] crm_callcenter_db -> 4 Apache Iceberg tables (495,450 rows · 7.13 MiB on S3)"
-              - "[INFO] Delta vs Mainframe J-1: +650 J0 customers (80,000 vs 79,350) & +650 J0 accounts (95,000 vs 94,350)"
+              - "[AWS Glue eu-west-1] crm_callcenter_db -> 4 Apache Iceberg tables discovered on S3"
             subagents:
               - id: sa-d1-s3a
                 role: Cross-Cloud Asset Explorer
@@ -1509,18 +1508,18 @@ workspaces:
               - title: "Arbitrages requis avant création du rôle IAM et du catalogue BigLake"
                 bullets:
                   - "**1. Sécurité & performance inter-clouds** : on active bien l'**OIDC Web Identity sans clé + Cross-Cloud Caching** ?"
-                  - "**2. Périmètre Glue & conservation des `+650` dossiers J0** : on restreint le filtre de namespace à `crm_callcenter_db` uniquement et on conserve 100 % des `650` ouvertures J0 en `RAW` pour `dbt` en `Démo #2` ?"
+                  - "**2. Périmètre Glue & ouvertures temps réel J0** : on restreint le filtre de namespace à `crm_callcenter_db` uniquement et on conserve 100 % des ouvertures J0 intactes en zone `RAW` ?"
             askQuestions:
               - id: d1-s3-q1-oidc
-                question: "Quel mode d'authentification et d'accélération appliquer entre BigQuery (`europe-west1`) et AWS (`eu-west-1`) ?"
+                question: "Quel mode d'authentification et d'accélération appliquer entre BigQuery (europe-west1) et AWS (eu-west-1) ?"
                 options:
-                  - "(Recommended) Fédération OIDC Web Identity sans clé (`sts:AssumeRoleWithWebIdentity`) + Cross-Cloud Caching activé"
+                  - "(Recommended) Fédération OIDC Web Identity sans clé (sts:AssumeRoleWithWebIdentity) + Cross-Cloud Caching activé"
                   - "Stocker des clés statiques AWS IAM dans Secret Manager sans cache inter-cloud"
               - id: d1-s3-q2-scope
-                question: "Quel périmètre AWS Glue exposer et comment gérer les `650` ouvertures J0 absentes du Mainframe J-1 ?"
+                question: "Quel périmètre AWS Glue exposer et comment gérer les ouvertures J0 absentes du Mainframe J-1 ?"
                 options:
-                  - "(Recommended) Filtrer uniquement sur `crm_callcenter_db` et conserver les `650` dossiers J0 intacts en `RAW` pour `dbt` (Démo #2)"
-                  - "Exposer l'intégralité du catalogue AWS Glue et écarter les comptes hors Mainframe dès la couche `RAW`"
+                  - "(Recommended) Filtrer uniquement sur crm_callcenter_db et conserver tous les dossiers J0 intacts en zone RAW"
+                  - "Exposer l'intégralité du catalogue AWS Glue et écarter les comptes hors Mainframe dès la couche RAW"
             continueTargetTurnId: d1-s3-t4
             traces:
               - id: d1-s3-tr5
@@ -1561,76 +1560,21 @@ workspaces:
               url: https://us-east-1.console.aws.amazon.com/iam/home#/roles/details/biglake-aws-crm-federated-role
             sectionHeading: "Ce que tu vois concrètement dans chaque console :"
             items:
-              - title: "1. Dans la console Google Cloud (BigQuery -> BigLake Catalogs -> `aws_crm_catalog`)"
+              - title: "Dans la console Google Cloud (BigQuery -> BigLake Catalogs -> aws_crm_catalog)"
                 chips:
                   - kind: bq
                     label: BigLake Service Agent
                 bullets:
                   - "**Aucun champ Secret / Access Key** : la fiche du catalogue affiche uniquement l'identité Google dédiée (`blirc-...-@gcp-sa-biglakerestcatalog.iam.gserviceaccount.com`), son **Subject ID numérique unique** (ex. `111243748688109286426`) et l'ARN du rôle AWS cible."
                   - "À chaque lecture SQL, Google signe à la volée un jeton JWT OIDC prouvant cette identité, sans qu'aucun secret AWS n'existe dans Secret Manager ou dans le code."
-              - title: "2. Dans la console AWS (IAM -> Roles -> `biglake-aws-crm-federated-role`)"
+              - title: "Dans la console AWS (IAM -> Roles -> biglake-aws-crm-federated-role)"
                 bullets:
                   - "**Onglet *Trust relationships* (Relation d'approbation)** : déclare `accounts.google.com` comme fournisseur d'identité fédéré (`sts:AssumeRoleWithWebIdentity`) et verrouille `aud` et `sub` sur ce seul Subject ID BigLake."
                   - "**Onglet *Permissions*** : attache la policy `crm_glue_s3_readonly_policy` qui limite les jetons temporaires délivrés par AWS STS à la seule lecture de `crm_callcenter_db` et du bucket `data-days-demo-aws-crm-835872720625`."
-            securityFlow:
-              badge: "0 CLÉ STATIQUE · OIDC + TLS 1.3"
-              title: "Architecture de sécurisation des échanges GCP <-> AWS (Borderless Lakehouse)"
-              subtitle: "Fédération d'identité éphémère de bout en bout entre BigQuery (europe-west1) et AWS Glue / S3 (eu-west-1)"
-              nodes:
-                - id: gcp-zone
-                  zoneLabel: "Google Cloud · europe-west1"
-                  title: "BigQuery & BigLake Catalog"
-                  subtitle: "SA ID: 111243748688109286426"
-                  detail: "Catalogue aws_crm_catalog · 0 secret AWS stocké"
-                  tone: blue
-                - id: oidc-bridge
-                  zoneLabel: "Pont OIDC & STS · Éphémère"
-                  title: "accounts.google.com -> AWS STS"
-                  subtitle: "sts:AssumeRoleWithWebIdentity"
-                  detail: "Jeton JWT RS256 signé -> session STS courte"
-                  tone: neutral
-                - id: aws-zone
-                  zoneLabel: "AWS · eu-west-1 (835872720625)"
-                  title: "AWS Glue & S3 Apache Iceberg"
-                  subtitle: "role/biglake-aws-crm-federated-role"
-                  detail: "crm_callcenter_db + S3 en Read-Only strict"
-                  tone: warning
-              steps:
-                - stepNumber: 1
-                  fromLabel: "BigLake"
-                  toLabel: "accounts.google.com"
-                  protocolBadge: "JWT OIDC signé"
-                  title: "Émission d'une preuve d'identité cryptographique"
-                  detail: "À chaque requête BigQuery, Google génère un jeton JWT signé attestant sub = aud = 111243748688109286426 (aucune clé statique AKIA en base ou dans Secret Manager)."
-                  tone: blue
-                - stepNumber: 2
-                  fromLabel: "BigLake"
-                  toLabel: "AWS STS"
-                  protocolBadge: "AssumeRoleWithWebIdentity"
-                  title: "Contrôle mutuel de la Trust Policy côté AWS IAM"
-                  detail: "AWS STS vérifie la signature publique Google et n'accepte l'échange que si aud et sub correspondent exactement au Service Agent de aws_crm_catalog."
-                  tone: neutral
-                - stepNumber: 3
-                  fromLabel: "AWS STS"
-                  toLabel: "BigLake"
-                  protocolBadge: "Credentials éphémères"
-                  title: "Délivrance de droits temporaires en moindre privilège"
-                  detail: "AWS émet un jeton STS temporaire bridé par crm_glue_s3_readonly_policy : lecture seule sur crm_callcenter_db et s3://data-days-demo-aws-crm-835872720625 (0 écriture, 0 autre bucket)."
-                  tone: positive
-                - stepNumber: 4
-                  fromLabel: "BigQuery (europe-west1)"
-                  toLabel: "Glue & S3 (eu-west-1)"
-                  protocolBadge: "TLS 1.3 + Cross-Cloud Cache"
-                  title: "Lecture Iceberg chiffrée sans copie sur GCS"
-                  detail: "BigQuery lit les snapshots metadata.json dans Glue puis les fragments Parquet sur S3 en TLS 1.3, et accélère les lectures suivantes via le cache mémoire/local BigLake."
-                  tone: positive
-              guarantees:
-                - label: "Zéro clé AKIA ni rotation manuelle"
-                  tone: positive
-                - label: "Périmètre isolé : 1 base Glue + 1 bucket S3 (Read-Only)"
-                  tone: blue
-                - label: "Révocation immédiate en 1 clic côté AWS IAM"
-                  tone: neutral
+            inlineImage:
+              src: ./assets/oidc_gcp_aws_federation.svg
+              alt: "Schéma du principe OIDC sans clé entre Google Cloud BigQuery et AWS Glue / S3"
+              caption: "Principe OIDC sans clé : échange de passeport JWT signé par Google contre un accès temporaire Read-Only côté AWS STS (cliquer pour agrandir)"
             codeBlock:
               label: "Console AWS IAM · Onglet Trust relationships de biglake-aws-crm-federated-role"
               language: json
@@ -1658,13 +1602,13 @@ workspaces:
               - id: d1-s3-q1b-oidc
                 question: "Maintenant que le mécanisme OIDC est clair, quel mode d'authentification et de cache valides-tu ?"
                 options:
-                  - "(Recommended) Fédération OIDC Web Identity sans clé (`sts:AssumeRoleWithWebIdentity`) + Cross-Cloud Caching activé"
+                  - "(Recommended) Fédération OIDC Web Identity sans clé (sts:AssumeRoleWithWebIdentity) + Cross-Cloud Caching activé"
                   - "Stocker des clés statiques AWS IAM dans Secret Manager sans cache inter-cloud"
               - id: d1-s3-q2b-scope
-                question: "Quel périmètre AWS Glue exposer et comment gérer les `650` ouvertures J0 absentes du Mainframe J-1 ?"
+                question: "Quel périmètre AWS Glue exposer et comment gérer les ouvertures J0 absentes du Mainframe J-1 ?"
                 options:
-                  - "(Recommended) Filtrer uniquement sur `crm_callcenter_db` et conserver les `650` dossiers J0 intacts en `RAW` pour `dbt` (Démo #2)"
-                  - "Exposer l'intégralité du catalogue AWS Glue et écarter les comptes hors Mainframe dès la couche `RAW`"
+                  - "(Recommended) Filtrer uniquement sur crm_callcenter_db et conserver tous les dossiers J0 intacts en zone RAW"
+                  - "Exposer l'intégralité du catalogue AWS Glue et écarter les comptes hors Mainframe dès la couche RAW"
             traces:
               - id: d1-s3-tr6b
                 action: analyzed
@@ -1678,7 +1622,7 @@ workspaces:
             backgroundTasks: []
           - id: d1-s3-t4
             chipLabel: 4. Déployer le handshake OIDC & auditer le catalogue fédéré
-            prompt: "C'est très clair, déploie la fédération OIDC sans clé avec Cross-Cloud Caching sur aws_crm_catalog (europe-west1), filtre sur crm_callcenter_db et conserve les 650 dossiers J0 intacts en RAW."
+            prompt: "C'est très clair, déploie la fédération OIDC sans clé avec Cross-Cloud Caching sur aws_crm_catalog (europe-west1), filtre sur crm_callcenter_db et conserve les dossiers J0 intacts en RAW."
             workedDurationLabel: Worked for 24s
             workGroupSummary: Provisioned AWS IAM OIDC role, created aws_crm_catalog, enabled Cross-Cloud Cache & ran cross-cloud SQL audit
             intermediateMessage: "J'ai exécuté les 5 étapes : rôle IAM `biglake-aws-crm-federated-role`, catalogue fédéré `aws_crm_catalog` (`europe-west1`), verrouillage OIDC sur le Service Agent `111243748688109286426`, activation du `refresh-interval=300s` + `Cross-Cloud Caching` et audit SQL inter-clouds."
@@ -1699,13 +1643,13 @@ workspaces:
                   - "**Rôle IAM AWS créé** : `arn:aws:iam::835872720625:role/biglake-aws-crm-federated-role` limité en lecture seule à `crm_callcenter_db` et `s3://data-days-demo-aws-crm-835872720625`."
                   - "**Identité OIDC verrouillée** : `blirc-1051798075322-oh6rxayd@gcp-sa-biglakerestcatalog.iam.gserviceaccount.com` (`aud/sub = 111243748688109286426`) — zéro clé statique."
                   - "**Synchronisation & Cache** : `refresh-interval = 300s` sur `namespace-filters = [crm_callcenter_db]` et `cross-cloud-cache-options.enabled = true`."
-              - title: "Jointure live BigQuery (`europe-west1`) <-> AWS Glue/S3 (`eu-west-1`) validée en `< 1 s`"
+              - title: "Jointure live BigQuery (europe-west1) <-> AWS Glue/S3 (eu-west-1) validée en < 1 s"
                 chips:
                   - kind: sql
                     label: 06_verify_aws_borderless_glue.sql
                 bullets:
                   - "Les 4 tables sont immédiatement requêtables sous ``data-days-demo.aws_crm_catalog.crm_callcenter_db.*`` : `450` agences, `80 000` clients, `95 000` comptes (`15 000` ouvertures trimestre, `0` clôture) et `320 000` interactions."
-                  - "La jointure directe avec `raw_bank.cbk_customers_ref` (`79 350`) et `raw_bank.cbk_accounts_master` (`94 350`) isole exactement les **`650` clients et `650` comptes J0** conservés en `RAW` pour `dbt` (`Démo #2`)."
+                  - "La jointure directe avec `raw_bank.cbk_customers_ref` (`79 350`) et `raw_bank.cbk_accounts_master` (`94 350`) isole exactement les **`650` clients et `650` comptes J0** conservés intacts en zone `RAW`."
                   - "Sur les `320 000` verbatims Call Center, **`70 708` appels (`22,1 %`)** portent déjà sur le relèvement de plafond SEPA Instant / épargne externe et **`44 775` (`14,0 %`)** sur les offres promo taux boosté agence."
             visualCheck:
               skillBadge: bq-visual-audit · MCP render_chart
@@ -1722,7 +1666,7 @@ workspaces:
                   tone: positive
                 - label: Ouvertures J0 hors MF
                   value: "650"
-                  sublabel: "gardées en RAW pour dbt"
+                  sublabel: "gardées intactes en RAW"
                   tone: warning
                 - label: Signaux fuite CRM
                   value: "70 708"
@@ -1755,13 +1699,13 @@ workspaces:
                   tone: ruby
                   badge: "70,7 k"
                 - label: "Demandes d'offres promo & taux boosté agence"
-                  sublabel: "44 775 interactions liées aux 250 contrats promotionnels PDF d'agences (Étape 5)"
+                  sublabel: "44 775 interactions liées aux avenants promotionnels signés en agence"
                   valueLabel: "14,0 %"
                   pct: 14
                   tone: blue
                   badge: "44,8 k"
                 - label: "Nouveaux comptes J0 absents du Mainframe J-1"
-                  sublabel: "650 ouvertures du jour conservées en RAW (réconciliées avec is_mainframe_orphan dans dbt Démo #2)"
+                  sublabel: "650 ouvertures du jour conservées sans filtrage en zone RAW"
                   valueLabel: "0,68 %"
                   pct: 7
                   tone: warning
@@ -2043,8 +1987,346 @@ workspaces:
                 bullets:
                   - "Authentification OIDC Web Identity sans clé entre `111243748688109286426` et `arn:aws:iam::835872720625:role/biglake-aws-crm-federated-role`."
                   - "Cross-Cloud Caching activé (`cross-cloud-cache-options.enabled = true`) et rafraîchissement Glue toutes les `300s`."
-                  - "Jointure directe en `europe-west1` avec `raw_bank.cbk_*` en `< 1 s` : `650` ouvertures J0 identifiées et conservées intactes pour `dbt` en `Démo #2`."
+                  - "Jointure directe en `europe-west1` avec `raw_bank.cbk_*` en `< 1 s` : `650` ouvertures J0 identifiées et conservées sans filtrage en zone `RAW`."
                   - "Replay complet : `./scripts/run_demo1_aws_borderless_glue.sh`."
+          - id: d1-s3-t5
+            chipLabel: 5. Synchroniser la sémantique AWS Glue dans Knowledge Catalog
+            prompt: "Et côté gouvernance : peux-tu récupérer les descriptions métier d'AWS Glue dans Knowledge Catalog pour que nos équipes Data et nos agents comprennent immédiatement ces tables ?"
+            triggerKeywords:
+              - glue
+              - catalog
+              - descriptions
+            workedDurationLabel: Worked for 5s
+            workGroupSummary: Synced 49 AWS Glue / Iceberg column descriptions to @biglake & verified Knowledge Catalog :lookupContext
+            intermediateMessage: "J'ai documenté et synchronisé les **4 tables et `49 / 49` colonnes** depuis **AWS Glue / Iceberg** vers les entrées natives `@biglake` de **Knowledge Catalog** (`europe-west1`), enrichi leurs fiches `Overview` et vérifié le flux `:lookupContext`."
+            taskFinishedLabel: 49/49 AWS Glue column descriptions & Overview live in Knowledge Catalog
+            leadConfirmation: "**Zéro ressaisie manuelle de gouvernance** : Knowledge Catalog indexe automatiquement dans `data-days-demo` les **4 tables Iceberg d'AWS Glue** avec **100 % des descriptions de tables et des `49` colonnes** sur"
+            leadLink:
+              text: Knowledge Catalog · data-days-demo / aws_crm_catalog
+              url: https://console.cloud.google.com/dataplex/dp-search?project=data-days-demo&q=aws_crm_catalog
+            sectionHeading: "Ce qui remonte automatiquement d'AWS Glue dans Knowledge Catalog :"
+            items:
+              - title: "Propagation native des descriptions AWS Glue & Iceberg (49 / 49 colonnes)"
+                chips:
+                  - kind: py
+                    label: sync_glue_descriptions_to_kc.py
+                  - kind: kc
+                    label: "@biglake · AWS_GLUE"
+                bullets:
+                  - "À chaque cycle `refresh-interval = 300s`, BigLake lit les propriétés `Description` / `doc` d'AWS Glue et met à jour les 4 fiches dans `data-days-demo` : [crm_customers](https://console.cloud.google.com/dataplex/dp-search?project=data-days-demo&q=crm_customers) (`19` cols), [crm_account_portfolio](https://console.cloud.google.com/dataplex/dp-search?project=data-days-demo&q=crm_account_portfolio) (`15` cols), [crm_interactions](https://console.cloud.google.com/dataplex/dp-search?project=data-days-demo&q=crm_interactions) (`8` cols) et [crm_branches_ref](https://console.cloud.google.com/dataplex/dp-search?project=data-days-demo&q=crm_branches_ref) (`7` cols)."
+                  - "Les fiches **Overview** affichent également l'origine exacte (`AWS_GLUE`, URI `s3://data-days-demo-aws-crm-835872720625/...`) et le dictionnaire métier complet."
+              - title: "Qualification immédiate des champs sensibles & signaux métier côté BigQuery"
+                bullets:
+                  - "Sans ouvrir la console AWS, les équipes Data et Sécurité repèrent immédiatement dans BigQuery Studio et Knowledge Catalog que `verbatim_note` contient du **texte libre conseiller potentiellement porteur de PII**, que `iban` requiert un masquage, et que `advisor_sentiment_tag` qualifie le risque `AT_RISK_LIQUIDITY_OUTFLOW`."
+              - title: "Contexte prêt à l'emploi pour les équipes Data & les agents IA"
+                bullets:
+                  - "Knowledge Catalog expose en temps réel le schéma typé, les `49` définitions métier, le format `ICEBERG` et la source `AWS_GLUE` tant dans l'interface de recherche que via l'API de contexte des agents."
+            traces:
+              - id: d1-s3-tr12
+                action: analyzed
+                icon: dak
+                fileName: curate-context/SKILL.md
+                lineRange: "#L1-85"
+                durationMs: 310
+              - id: d1-s3-tr13
+                action: edited
+                icon: py
+                fileName: 01_demo1_raw_aggregation/sync_glue_descriptions_to_kc.py
+                added: 262
+                removed: 0
+                durationMs: 480
+              - id: d1-s3-tr14
+                action: ran
+                commandSummary: sync 49 AWS Glue / Iceberg descriptions & verify Knowledge Catalog :lookupContext
+                durationMs: 3600
+                cwd: 01_demo1_raw_aggregation
+                command: uv run python sync_glue_descriptions_to_kc.py
+                output:
+                  - "[aws-glue] crm_callcenter_db.crm_customers         table + 19 colonnes documentées"
+                  - "[aws-glue] crm_callcenter_db.crm_account_portfolio table + 15 colonnes documentées"
+                  - "[aws-glue] crm_callcenter_db.crm_interactions      table +  8 colonnes documentées"
+                  - "[aws-glue] crm_callcenter_db.crm_branches_ref      table +  7 colonnes documentées"
+                  - "[knowledge-catalog] 6 entrées @biglake indexées · 49/49 descriptions de colonnes & Overview actifs dans :lookupContext"
+            filesChanged:
+              - path: 01_demo1_raw_aggregation/sync_glue_descriptions_to_kc.py
+                language: python
+                badge: NEW · GLUE -> KC SYNC
+                added: 262
+                removed: 0
+                content: |-
+                  """
+                  Documente les 4 tables Iceberg AWS Glue (`crm_callcenter_db`, 49 colonnes) côté AWS (Glue + S3 Iceberg)
+                  puis synchronise et enrichit les entrées `@biglake` dans Google Cloud Knowledge Catalog (`europe-west1`).
+                  """
+
+                  from __future__ import annotations
+
+                  import html
+                  import json
+                  import os
+                  import ssl
+                  import subprocess
+                  import time
+                  import urllib.parse
+                  import urllib.request
+                  from pathlib import Path
+
+                  import boto3
+                  import certifi
+                  from dotenv import load_dotenv
+                  from pyiceberg.catalog.glue import GlueCatalog
+
+                  REPO_ROOT = Path(__file__).resolve().parent.parent
+
+                  TABLE_SPECS: dict[str, dict] = {
+                      "crm_customers": {
+                          "description": (
+                              "Référentiel clients particuliers du SaaS CRM (temps réel agence & digital). "
+                              "Inclut dès J0 les ouvertures réalisées en agence avant le passage du batch nocturne Mainframe J-1."
+                          ),
+                          "columns": {
+                              "customer_id": "Identifiant unique client Banque Hexagone (clé de rapprochement inter-silos CUSTxxxxxxxx).",
+                              "first_name": "Prénom d'état civil déclaré lors de l'entrée en relation (PII).",
+                              "last_name": "Nom patronymique du titulaire (PII).",
+                              "birth_date": "Date de naissance du client (format ISO YYYY-MM-DD, PII).",
+                              "age": "Âge révolu du client calculé dans le CRM.",
+                              "age_segment": "Tranche d'âge marketing CRM (ex. 18-32, 33-49, 50-64, 65+).",
+                              "segment": "Segment commercial réseau (Mass Retail, Affluent, Jeunes Actifs, Patrimonial).",
+                              "csp": "Catégorie socioprofessionnelle INSEE déclarée lors du KYC.",
+                              "declared_monthly_income_eur": "Revenu net mensuel déclaré en euros lors du dernier entretien KYC.",
+                              "region_code": "Code de la direction régionale commerciale (8 régions).",
+                              "region_name": "Libellé de la direction régionale commerciale.",
+                              "agency_code_4": "Code agence sur 4 caractères côté CRM.",
+                              "guichet_code_5": "Code guichet bancaire normalisé sur 5 chiffres (RIB/IBAN).",
+                              "city": "Ville d'implantation de l'agence de rattachement.",
+                              "onboarding_date": "Date d'entrée en relation commerciale (inclut les ouvertures J0 du jour).",
+                              "commercial_status": "Statut commercial du dossier dans le CRM (ACTIVE, PROSPECT).",
+                              "closed_date": "Date de clôture commerciale éventuelle (NULL si client actif).",
+                              "digital_opt_in": "Consentement RGPD actif pour les notifications et offres dans l'application mobile.",
+                              "crm_updated_at": "Horodatage UTC de dernière mise à jour de la fiche dans le SaaS CRM.",
+                          },
+                      },
+                      "crm_account_portfolio": {
+                          "description": (
+                              "Portefeuille des comptes détenus par les clients dans le SaaS CRM (comptes courants et épargne). "
+                              "Trace les ouvertures récentes du trimestre et la référence éventuelle d'avenant promotionnel signé en agence."
+                          ),
+                          "columns": {
+                              "account_id": "Identifiant technique unique du compte bancaire (ACCxxxxxxxxxx).",
+                              "num_compte_11": "Numéro de compte BBAN sur 11 caractères (norme CFONB / RIB français).",
+                              "iban": "Identifiant international de compte bancaire FR76 (donnée sensible soumise au masquage).",
+                              "customer_id": "Identifiant du client titulaire principal (jointure vers crm_customers).",
+                              "agency_code_4": "Code agence commercial sur 4 caractères.",
+                              "guichet_code_5": "Code guichet RIB sur 5 chiffres.",
+                              "account_type": "Nature du produit (CHECKING, LIVRET_A, LDDS, LIVRET_BOOST_PROMO, PEL).",
+                              "product_label": "Libellé commercial du produit affiché au conseiller et au client.",
+                              "rate_bps": "Taux nominal servi exprimé en points de base (100 bps = 1,00 %).",
+                              "account_status": "État opérationnel du compte dans le CRM (OPEN, PENDING_BATCH, CLOSED).",
+                              "opened_date": "Date de souscription du compte en agence ou sur mobile.",
+                              "closed_date": "Date de clôture du compte (NULL tant que le compte est ouvert).",
+                              "opened_in_current_quarter": "Booléen indiquant une ouverture sur le trimestre en cours.",
+                              "promo_contract_id": "Référence de l'avenant promotionnel PDF d'agence applicable (PROMO-2026-xxx, NULL sinon).",
+                              "crm_sync_source": "Canal d'origine de la création ou synchronisation (AGENCY_REALTIME_J0, BATCH_SYNC).",
+                          },
+                      },
+                      "crm_interactions": {
+                          "description": (
+                              "Historique des comptes-rendus de rendez-vous en agence, messages sécurisés et appels Call Center. "
+                              "Contient la qualification conseiller du risque de fuite d'épargne et une note libre potentiellement sensible."
+                          ),
+                          "columns": {
+                              "interaction_id": "Identifiant unique de l'interaction CRM / Call Center.",
+                              "customer_id": "Identifiant du client concerné par l'échange.",
+                              "guichet_code_5": "Code guichet sur 5 chiffres de l'agence ayant traité le contact.",
+                              "interaction_ts": "Horodatage UTC exact du contact client.",
+                              "channel": "Canal d'interaction (CALL_CENTER, AGENCY_MEETING, MOBILE_SECURE_MSG).",
+                              "topic_code": "Motif normalisé de contact (ex. plafond SEPA Instant / épargne externe, offre promo agence, suivi courant).",
+                              "advisor_sentiment_tag": "Signal qualifié par le conseiller (AT_RISK_LIQUIDITY_OUTFLOW, PROMO_SENSITIVE, NEUTRAL_SATISFIED).",
+                              "verbatim_note": "Compte-rendu libre saisi par le conseiller (attention : peut contenir des PII ou noms de concurrents).",
+                          },
+                      },
+                      "crm_branches_ref": {
+                          "description": (
+                              "Référentiel commercial des 450 agences Banque Hexagone réparties sur les 8 directions régionales, "
+                              "avec le contrat cadre promotionnel rattaché par défaut."
+                          ),
+                          "columns": {
+                              "agency_num": "Numéro interne séquentiel de l'agence (1 à 450).",
+                              "agency_code_4": "Code agence sur 4 caractères utilisé dans les systèmes commerciaux.",
+                              "guichet_code_5": "Code guichet interbancaire sur 5 chiffres.",
+                              "city": "Commune d'implantation de l'agence.",
+                              "region_code": "Code de la direction régionale (REG01 à REG08).",
+                              "region_name": "Nom de la direction régionale commerciale.",
+                              "default_promo_contract_id": "Identifiant du contrat promotionnel PDF par défaut de l'agence.",
+                          },
+                      },
+                  }
+
+
+                  def update_aws_glue_and_iceberg(aws_region: str, s3_bucket: str, glue_db: str) -> int:
+                      """Pousse les descriptions de tables et de colonnes dans Iceberg (S3) et AWS Glue."""
+                      os.environ.setdefault("AWS_DEFAULT_REGION", aws_region)
+                      warehouse = f"s3://{s3_bucket}/RAW/AWS_SAAS_ICEBERG"
+                      catalog = GlueCatalog(
+                          "aws_crm_saas",
+                          **{"warehouse": warehouse, "glue.region": aws_region, "s3.region": aws_region},
+                      )
+                      glue = boto3.client("glue", region_name=aws_region)
+
+                      documented_cols = 0
+                      for tbl_name, spec in TABLE_SPECS.items():
+                          identifier = f"{glue_db}.{tbl_name}"
+                          tbl = catalog.load_table(identifier)
+
+                          # 1. Commit dans le metadata.json Apache Iceberg sur S3 (propriété comment + doc par colonne)
+                          with tbl.transaction() as tx:
+                              tx.set_properties(comment=spec["description"])
+                              with tx.update_schema() as upd:
+                                  for col_name, col_doc in spec["columns"].items():
+                                      upd.update_column(col_name, doc=col_doc)
+
+                          # 2. Synchronisation explicite des champs Description et Columns[].Comment dans AWS Glue
+                          raw_tbl = glue.get_table(DatabaseName=glue_db, Name=tbl_name)["Table"]
+                          allowed_keys = {
+                              "Name", "Description", "Owner", "Retention", "StorageDescriptor",
+                              "PartitionKeys", "ViewOriginalText", "ViewExpandedText", "TableType",
+                              "Parameters", "TargetTable",
+                          }
+                          table_input = {k: v for k, v in raw_tbl.items() if k in allowed_keys}
+                          table_input["Description"] = spec["description"]
+                          table_input.setdefault("Parameters", {})["comment"] = spec["description"]
+                          for col in table_input["StorageDescriptor"]["Columns"]:
+                              if col["Name"] in spec["columns"]:
+                                  col["Comment"] = spec["columns"][col["Name"]]
+                                  documented_cols += 1
+                          glue.update_table(DatabaseName=glue_db, TableInput=table_input)
+                          print(f"[aws-glue] {identifier:<38} table + {len(spec['columns'])} colonnes documentées")
+
+                      return documented_cols
+
+
+                  def build_clean_overview_html(tbl_name: str, spec: dict, glue_db: str, s3_bucket: str) -> str:
+                      """Construit une fiche HTML sobre pour l'onglet Overview de Knowledge Catalog (zéro bordure colorée)."""
+                      rows = "".join(
+                          f"<tr><td><code>{html.escape(col)}</code></td><td>{html.escape(doc)}</td></tr>"
+                          for col, doc in spec["columns"].items()
+                      )
+                      return (
+                          f"<p><strong>Source fédérée Borderless Lakehouse :</strong> AWS Glue "
+                          f"<code>{html.escape(glue_db)}.{html.escape(tbl_name)}</code> "
+                          f"(<code>s3://{html.escape(s3_bucket)}/RAW/AWS_SAAS_ICEBERG/{html.escape(tbl_name)}</code>).</p>"
+                          f"<p>{html.escape(spec['description'])}</p>"
+                          f"<h4>Dictionnaire métier synchronisé depuis AWS Glue ({len(spec['columns'])} colonnes)</h4>"
+                          f"<table><thead><tr><th>Colonne</th><th>Description métier</th></tr></thead>"
+                          f"<tbody>{rows}</tbody></table>"
+                      )
+
+
+                  def sync_and_enrich_knowledge_catalog(
+                      project_id: str, location: str, catalog_id: str, glue_db: str, s3_bucket: str
+                  ) -> dict:
+                      """Déclenche le refresh BigLake et enrichit l'onglet Overview des entrées @biglake dans Knowledge Catalog."""
+                      env = {**os.environ, "CLOUDSDK_METRICS_ENVIRONMENT": "datacloud.antigravity"}
+                      subprocess.run(
+                          [
+                              "gcloud", "beta", "biglake", "iceberg", "catalogs", "update", catalog_id,
+                              f"--project={project_id}", "--refresh-interval=300s", "--quiet",
+                          ],
+                          check=True,
+                          env=env,
+                      )
+
+                      token = subprocess.check_output(["gcloud", "auth", "print-access-token"], text=True).strip()
+                      ctx = ssl.create_default_context(cafile=certifi.where())
+                      headers = {
+                          "Authorization": f"Bearer {token}",
+                          "x-goog-user-project": project_id,
+                          "Content-Type": "application/json",
+                      }
+
+                      # Récupère le numéro de projet via searchEntries
+                      params = urllib.parse.urlencode({"query": f"name:{catalog_id} system=BIGLAKE", "scope": f"projects/{project_id}"})
+                      req = urllib.request.Request(
+                          f"https://dataplex.googleapis.com/v1/projects/{project_id}/locations/global:searchEntries?{params}",
+                          data=b"",
+                          method="POST",
+                          headers=headers,
+                      )
+                      with urllib.request.urlopen(req, context=ctx, timeout=20) as resp:
+                          results = json.loads(resp.read().decode("utf-8")).get("results", [])
+
+                      table_entries: dict[str, str] = {}
+                      for item in results:
+                          ename = item.get("dataplexEntry", {}).get("name", "")
+                          for tbl_name in TABLE_SPECS:
+                              if ename.endswith(f"/tables/{tbl_name}"):
+                                  table_entries[tbl_name] = ename
+
+                      # Publie l'aspect Overview (655216118709.global.overview) sur chaque entrée @biglake
+                      aspect_key = "655216118709.global.overview"
+                      aspect_type = "projects/655216118709/locations/global/aspectTypes/overview"
+                      for tbl_name, ename in table_entries.items():
+                          spec = TABLE_SPECS[tbl_name]
+                          overview_html = build_clean_overview_html(tbl_name, spec, glue_db, s3_bucket)
+                          patch_url = (
+                              f"https://dataplex.googleapis.com/v1/{ename}"
+                              f"?updateMask=aspects&aspectKeys={urllib.parse.quote(aspect_key)}"
+                          )
+                          payload = {
+                              "name": ename,
+                              "aspects": {
+                                  aspect_key: {
+                                      "aspectType": aspect_type,
+                                      "data": {
+                                          "content": overview_html,
+                                          "contentType": "HTML",
+                                      },
+                                  }
+                              },
+                          }
+                          patch_req = urllib.request.Request(
+                              patch_url,
+                              data=json.dumps(payload).encode("utf-8"),
+                              method="PATCH",
+                              headers=headers,
+                          )
+                          try:
+                              with urllib.request.urlopen(patch_req, context=ctx, timeout=20) as r:
+                                  r.read()
+                              print(f"[knowledge-catalog] Overview HTML publié sur {tbl_name}")
+                          except urllib.error.HTTPError as e:
+                              print(f"[WARN] {tbl_name} HTTP {e.code}: {e.read().decode('utf-8')[:300]}")
+
+                      return table_entries
+
+
+                  if __name__ == "__main__":
+                      load_dotenv(REPO_ROOT / ".env")
+                      load_dotenv(REPO_ROOT / ".env.aws.local", override=True)
+                      cols = update_aws_glue_and_iceberg(
+                          aws_region=os.getenv("AWS_REGION", "eu-west-1"),
+                          s3_bucket=os.getenv("AWS_S3_BUCKET_CRM", "data-days-demo-aws-crm-835872720625"),
+                          glue_db=os.getenv("AWS_GLUE_DATABASE", "crm_callcenter_db"),
+                      )
+                      entries = sync_and_enrich_knowledge_catalog(
+                          project_id=os.getenv("GCP_PROJECT_ID", "data-days-demo"),
+                          location=os.getenv("GCP_REGION", "europe-west1"),
+                          catalog_id=os.getenv("BIGLAKE_AWS_CATALOG_ID", "aws_crm_catalog"),
+                          glue_db=os.getenv("AWS_GLUE_DATABASE", "crm_callcenter_db"),
+                          s3_bucket=os.getenv("AWS_S3_BUCKET_CRM", "data-days-demo-aws-crm-835872720625"),
+                      )
+                      print(f"Terminé : {cols} colonnes Glue documentées et {len(entries)} tables enrichies dans Knowledge Catalog.")
+            terminalLogs:
+              - $ uv run python 01_demo1_raw_aggregation/sync_glue_descriptions_to_kc.py
+              - "[aws-glue] 4 tables + 49/49 columns documented in AWS Glue & S3 Iceberg metadata"
+              - "[knowledge-catalog] @biglake entries refreshed (catalogSource=AWS_GLUE) + Overview HTML published"
+              - "[OK] :lookupContext verified on data-days-demo.aws_crm_catalog.crm_callcenter_db.*"
+            subagents:
+              - id: sa-d1-s3e
+                role: Cross-Cloud Metadata & KC Steward
+                skill: curate-context
+                status: completed
+            backgroundTasks: []
       - id: d1-step-pubsub
         demoId: demo1
         shortName: 4. Flux Paiements
@@ -4296,8 +4578,8 @@ workspaces:
                   - "Prochaine étape : profiler raw_bank pour mesurer les anomalies réelles avant de coder les transformations dbt."
       - id: d2-step1
         demoId: demo2
-        shortName: 2. Diagnostiquer la qualité des données
-        conversationTitle: Règles de Data Quality & audit Auto Data Quality sur la couche RAW
+        shortName: 2. Diagnostiquer & fiabiliser les données
+        conversationTitle: Auto Data Quality RAW, arbitrages inter-silos & modèles dbt SILVER
         projectFolder: 02_demo2_silver_dbt_dq
         gitBranch: feat/silver-data-products
         greetingName: Clément
@@ -4512,8 +4794,8 @@ workspaces:
             leadConfirmation: L'audit complet de qualité et le profil visuel des anomalies sur `raw_bank` sont disponibles dans
             leadLink:
               text: Knowledge Catalog · Auto Data Quality (data-days-demo)
-              url: https://console.cloud.google.com/dataplex?project=data-days-demo
-            sectionHeading: "Anomalies identifiées dans la couche RAW & arbitrages proposés :"
+              url: https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality?project=data-days-demo
+            sectionHeading: "Anomalies identifiées dans la couche RAW & liens directs dans la console :"
             items:
               - title: Doublons réseau et rejets dans le flux paiements SEPA
                 chips:
@@ -4522,13 +4804,14 @@ workspaces:
                   - kind: yml
                     label: raw_dq_audit_rules.yaml
                 bullets:
-                  - "`3,4 %` d'événements en doublon sur `end_to_end_id` (`210 800` retries techniques) et `8,1 %` de messages non compensés (`RJCT` / `PDNG`) mélangés aux virements exécutés `ACSC`."
-              - title: Dates Mainframe invalides et clés orphelines inter-silos
+                  - "`3,4 %` d'événements en doublon sur `end_to_end_id` (`210 800` retries techniques) et `8,1 %` de messages non compensés (`RJCT` / `PDNG`) mélangés aux virements exécutés `ACSC` — voir le scan [raw-dq-sepa-payments](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality/quality/raw-dq-sepa-payments;location=europe-west1?project=data-days-demo)."
+              - title: Dates Mainframe invalides et codes agences non normalisés
                 chips:
                   - kind: bq
                     label: cbk_cfonb_movements
                 bullets:
                   - "`1,2 %` de dates de valeur encodées à `00000000` ou `99999999` (`66 000` lignes), codes agences non normalisés (`'0042'` vs `'42  '`), et `650` comptes récents créés sur AWS S3 pas encore réconciliés dans le Mainframe J-1."
+                  - "Scans Auto Data Quality publiés dans Knowledge Catalog : [raw-dq-cbk-customers](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality/quality/raw-dq-cbk-customers;location=europe-west1?project=data-days-demo) · [raw-dq-cbk-movements](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality/quality/raw-dq-cbk-movements;location=europe-west1?project=data-days-demo) · [raw-dq-cbk-accounts](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality/quality/raw-dq-cbk-accounts;location=europe-west1?project=data-days-demo) · [Profils RAW](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality?project=data-days-demo)."
             visualCheck:
               skillBadge: bq-visual-audit · MCP render_chart
               title: "Profil visuel des anomalies détectées · data-days-demo.raw_bank"
@@ -4658,17 +4941,8 @@ workspaces:
                 command: Knowledge Catalog auto-dq run raw-bank-dq
                 target: raw_bank
                 duration: 2.2s
-      - id: d2-step2
-        demoId: demo2
-        shortName: 3. Nettoyer & fiabiliser les données
-        conversationTitle: Arbitrages de réconciliation inter-silos & génération des modèles dbt SILVER
-        projectFolder: 02_demo2_silver_dbt_dq
-        gitBranch: feat/silver-data-products
-        greetingName: Clément
-        modelLabel: Gemini 4 - Carbon
-        turns:
           - id: d2-t2a
-            chipLabel: 1. Auditer les recouvrements inter-silos avant codage SQL
+            chipLabel: 3. Auditer les recouvrements inter-silos avant codage SQL
             prompt: "Prépare les transformations dbt SILVER à partir des anomalies détectées à l'étape 2 : vérifie les recoupements exacts entre Mainframe, CRM AWS et SEPA avant d'écrire le SQL."
             workedDurationLabel: Worked for 4s
             workGroupSummary: Tested Mainframe ↔ SEPA end_to_end_id overlap, checked 650 AWS J0 accounts & prepared 3 SQL design decisions
@@ -4739,7 +5013,7 @@ workspaces:
                 status: completed
             backgroundTasks: []
           - id: d2-t2
-            chipLabel: 2. Générer les modèles dbt SILVER & les contrats schema.yml
+            chipLabel: 4. Générer les modèles dbt SILVER & les contrats schema.yml
             prompt: "Valide ces 3 choix et génère les modèles dbt SILVER structurés, les référentiels seeds et leurs contrats de qualité dans schema.yml."
             workedDurationLabel: Worked for 6s
             workGroupSummary: Generated structured SILVER dbt models, category seeds & 82 schema.yml data tests
@@ -5015,167 +5289,173 @@ workspaces:
             backgroundTasks: []
       - id: d2-step-pdf
         demoId: demo2
-        shortName: 4. Extraire les engagements des PDF
-        conversationTitle: Extraction AI.GENERATE des 250 avenants PDF, lecture à la demande & suivi PDF par PDF
+        shortName: 3. Extraire les engagements des PDF
+        conversationTitle: Test AI.GENERATE sur un PDF témoin puis déploiement dbt sur les 250 avenants
         projectFolder: 02_demo2_silver_dbt_dq
         gitBranch: feat/silver-data-products
         greetingName: Clément
         modelLabel: Gemini 4 - Carbon
         turns:
           - id: d2-t2pa
-            chipLabel: 1. Prototyper l'extraction PDF & diagnostiquer les pièges
-            prompt: "Pour compléter dp_commercial_commitments, teste l'extraction des 250 avenants PDF depuis l'Object Table avec AI.GENERATE en gardant l'accès au document source, et signale-moi les pièges avant d'industrialiser."
-            workedDurationLabel: Worked for 6s
-            workGroupSummary: Ran initial AI.GENERATE pass on Object Table, diagnosed 63/250 failures & missing promo_type code
-            intermediateMessage: Prototypage d'un premier passage `AI.GENERATE` sur les `250` PDF de `raw_promo_contracts_pdf` et analyse des échecs de parsing, des réponses vides et des champs métier absents des documents.
-            taskFinishedLabel: 63 / 250 naive extraction failures diagnosed — 3 engineering decisions required
-            leadConfirmation: "Un premier essai naïf d'`AI.GENERATE` ne récupère que **`10,46 M€` au lieu de `14,30 M€`** (`63 / 250` PDF en échec silencieux ou mal typés) et révèle que le code `promo_type` ne figure dans aucun PDF. **3 arbitrages** sont nécessaires avant d'industrialiser `promo_contracts`."
-            sectionHeading: "Diagnostic du premier essai sur les `250` avenants PDF :"
-            askQuestions:
-              - id: d2-qp-hybrid
-                question: "Les 250 avenants PDF portent 14,30 M€ d'engagements absents du grand livre SAP. Faut-il extraire les montants une fois dans une table, ou interroger les PDF à chaque question ?"
-                options:
-                  - "(Recommended) Hybride : extraire une fois les champs certifiés (montant, compte PCEC, dates), testés au centime par dbt, et garder le lien vers chaque PDF pour le relire à la demande"
-                  - "Interroger les PDF à chaque requête (vue AI.GENERATE) : rien n'est stocké mais le résultat varie et coûte 250 appels par question"
-                  - Extraire tout le texte des PDF dans une table
-              - id: d2-qp-failures
-                question: "Au premier essai, 63 PDF sur 250 sont en échec : 54 réponses illisibles et 9 réponses vides comptées comme réussies (total = 10,46 M€). Comment fiabiliser ?"
-                options:
-                  - "(Recommended) Température 0, extraction jugée complète seulement si montant, compte PCEC et référence sont cohérents, reprise immédiate puis incrémentale, et suivi PDF par PDF"
-                  - Relancer tout le lot à la main jusqu'à obtenir 250 réponses
-                  - Accepter les échecs et compléter les montants à la main
-              - id: d2-qp-promo-type
-                question: "Le modèle renvoie la référence du contrat à la place du type de promotion : ce code n'est écrit dans aucun PDF. D'où doit venir le type ?"
-                options:
-                  - "(Recommended) Le déduire du compte PCEC lu dans le PDF, via un référentiel versionné (seed promo_types)"
-                  - Lister les types autorisés dans le prompt
-                  - Laisser le modèle proposer un libellé libre
+            chipLabel: 1. Tester l'extraction sur un PDF témoin
+            prompt: "Avant de traiter les 250 avenants promotionnels, teste d'abord l'extraction avec AI.GENERATE sur un seul PDF témoin pour vérifier les champs lus."
+            workedDurationLabel: Worked for 4s
+            workGroupSummary: Tested AI.GENERATE on witness PDF PROMO-2026-042 & verified extracted fields against source document
+            intermediateMessage: "Test unitaire d'`AI.GENERATE` (`temperature = 0`) directement sur l'avenant témoin `PROMO-2026-042` (`Paris 0042`) depuis l'Object Table `raw_promo_contracts_pdf`."
+            taskFinishedLabel: Single-PDF extraction verified on PROMO-2026-042 (90 369,55 €) — 2 decisions before full run
+            leadConfirmation: "Le test sur l'avenant témoin **`PROMO-2026-042`** fonctionne du premier coup sans copier le fichier hors de GCS : **`90 369,55 €`** extraits au centime près (`68 680,00 €` + `16 266,00 €` + `5 423,55 €`), compte PCEC **`602910`** et agence **`0042`**. Il reste **2 choix simples** avant de déployer sur les `250` PDF."
+            sectionHeading: "Champs lus dans le PDF témoin PROMO-2026-042 & points à valider :"
             items:
-              - title: "1. Pourquoi un appel `AI.GENERATE` naïf perd `3,84 M€` sur `63` PDF"
+              - title: "Correspondance exacte avec le document source (Agence Groupe Paris 0042 · REG1)"
                 chips:
                   - kind: bq
                     label: raw_promo_contracts_pdf
                 bullets:
-                  - "`54` réponses JSON tronquées/illisibles et `9` réponses vides (`status = ''` mais `committed_promo_cost_eur IS NULL`) comptées à tort comme réussies plafonnent le cumul à `10 455 700,90 €`."
-                  - "De plus, certaines dates françaises `05/09/2026` sont lues à l'américaine (`9 mai`) tant que le format `JJ/MM/AAAA` et `temperature = 0` ne sont pas imposés."
-              - title: "2. Séparation entre lecture multimodale (PDF) et nomenclature métier (`promo_types`)"
+                  - "**En-tête & objet lus** : contrat `PROMO-2026-042` (`Direction Régionale REG1 — Ile-de-France`, `Groupe Paris 0042`), produit **`LIV_MAISON`** (*Livret Maison*), période du **`09/09/2026` au `08/12/2026`** (`+175 bps`, taux porté à `3,25 %`), statut SAP **`HORS-BILAN (Non saisi au 12/11/2026)`**."
+                  - "**Chiffrage actuariel & visa extraits** : compte PCEC **`602910`** (*Bonifications sur collecte*) et total engagé **`90 369,55 €`** (`68 680,00 €` tranche principale + `16 266,00 €` Jeunes Actifs 18-32 ans + `5 423,55 €` prime versement programmé), visé par *Raphael SIMON* et *Paul ROUSSEAU*."
+              - title: "Qualification du type d'offre via référentiel gouverné"
                 chips:
                   - kind: yml
                     label: promo_types.csv
                 bullets:
-                  - "Chaque PDF mentionne explicitement le **compte comptable PCEC** (`602910`, `602920`, `708590`), mais jamais le code analytique interne `promo_type` : il doit être joint depuis un seed `dbt` gouverné."
+                  - "Le PDF indique le **compte comptable PCEC** (`602910`), mais pas le code analytique interne `promo_type` : je propose de le déduire par jointure sur un seed `dbt` `promo_types`."
+            codeBlock:
+              label: "Test unitaire AI.GENERATE sur PROMO-2026-042 (GCS ObjectRef)"
+              language: sql
+              code: |-
+                SELECT
+                  AI.GENERATE(
+                    ('Extrais les champs contractuels de cet avenant (dates JJ/MM/AAAA).', OBJ.MAKE_REF(uri, 'projects/data-days-demo/locations/europe-west1/connections/biglake-gcs-conn')),
+                    connection_id => 'projects/data-days-demo/locations/europe-west1/connections/vertex-gemini-conn',
+                    output_schema => 'promo_contract_id STRING, region_code STRING, agency_code STRING, product_code STRING, effective_date DATE, end_date DATE, rate_bonus_bps INT64, pcec_account STRING, sap_status STRING, committed_promo_cost_eur NUMERIC',
+                    model_params => JSON '{"generationConfig":{"temperature":0}}'
+                  ).*
+                FROM `data-days-demo.raw_bank.raw_promo_contracts_pdf`
+                WHERE uri LIKE '%PROMO-2026-042%';
+              resultLabel: "Ligne structurée retournée en direct par BigQuery sur PROMO-2026-042 :"
+              resultTable:
+                - "+-------------------+-------------+-------------+--------------+----------------+------------+----------------+--------------+------------+--------------------------+"
+                - "| promo_contract_id | region_code | agency_code | product_code | effective_date |  end_date  | rate_bonus_bps | pcec_account | sap_status | committed_promo_cost_eur |"
+                - "+-------------------+-------------+-------------+--------------+----------------+------------+----------------+--------------+------------+--------------------------+"
+                - "| PROMO-2026-042    | REG1        | 0042        | LIV_MAISON   | 2026-09-09     | 2026-12-08 |            175 | 602910       | HORS-BILAN |                 90369.55 |"
+                - "+-------------------+-------------+-------------+--------------+----------------+------------+----------------+--------------+------------+--------------------------+"
+            inlineImage:
+              src: ./assets/pdf_previews/promo_042_taux_booste.png
+              alt: "Aperçu du contrat PDF témoin PROMO-2026-042 (Agence Paris 0042 · 90 369,55 €)"
+              caption: "Document source PROMO-2026-042 sur GCS comparé à la ligne extraite ci-dessus (cliquer sur le PDF pour zoomer)"
+            askQuestions:
+              - id: d2-qp-hybrid
+                question: "Comment industrialiser l'extraction sur les 250 avenants PDF ?"
+                options:
+                  - "(Recommended) Extraire une fois dans silver_bank.promo_contracts (temperature = 0, testé par dbt) en gardant le lien vers chaque PDF source"
+                  - "Relire les 250 PDF à la volée dans une vue SQL à chaque question métier"
+              - id: d2-qp-promo-type
+                question: "Comment classer chaque contrat par type d'offre (TAUX_BOOSTE, PRIME_BIENVENUE, AVENANT_GRATUITE) ?"
+                options:
+                  - "(Recommended) Croiser le compte comptable lu dans le PDF (602910, 602920, 708590) avec le référentiel versionné promo_types"
+                  - "Demander à Gemini de deviner la catégorie directement dans le prompt"
             traces:
               - id: d2-trp1
                 action: analyzed
                 icon: dak
                 fileName: bigquery-ai-ml/SKILL.md
                 lineRange: "#L1-180"
-                durationMs: 450
+                durationMs: 400
               - id: d2-trp2
                 action: ran
-                commandSummary: diagnose naive AI.GENERATE pass on raw_promo_contracts_pdf (250 PDFs)
-                durationMs: 600
+                commandSummary: run AI.GENERATE test on single PDF PROMO-2026-042 (temperature = 0)
+                durationMs: 1100
                 cwd: 02_demo2_silver_dbt_dq
-                command: bq query --use_legacy_sql=false --label datacloud:antigravity "SELECT extraction_status, COUNT(*) FROM silver_bank.promo_contracts GROUP BY 1"
+                command: bq query --use_legacy_sql=false --label datacloud:antigravity "SELECT * FROM AI.GENERATE(..., WHERE uri LIKE '%PROMO-2026-042%')"
                 output:
-                  - "Failed to parse the response - please check the full_response field. : 54"
-                  - "Empty answers counted as success (committed_promo_cost_eur IS NULL) : 9"
-                  - "SUM(committed_promo_cost_eur) = 10 455 700.90 EUR (expected 14 300 000.00)"
+                  - "promo_contract_id=PROMO-2026-042 | agency_code=0042 | pcec_account=602910 | committed_promo_cost_eur=90369.55"
             filesChanged: []
             terminalLogs:
-              - $ bq query --label datacloud:antigravity "SELECT extraction_status, COUNT(*) FROM silver_bank.promo_contracts GROUP BY 1"
-              - "Naive pass: 187/250 valid (10.46M EUR) · 63/250 incomplete or unparsed"
-              - Waiting for user confirmation on hybrid extraction, retry policy & PCEC mapping...
+              - $ bq query --label datacloud:antigravity "SELECT ... AI.GENERATE on PROMO-2026-042"
+              - "[OK] PROMO-2026-042 extracted: 90,369.55 EUR · PCEC 602910 · Agency 0042"
             subagents:
               - id: sa-d2-p0
-                role: Multimodal Quality Auditor
+                role: Multimodal Document Tester
                 skill: bigquery-ai-ml
                 status: completed
             backgroundTasks: []
           - id: d2-t2p
-            chipLabel: 2. Industrialiser l'extraction hybride des 250 PDF (14,30 M€)
-            prompt: "Applique cette extraction hybride durcie (température 0, reprise incrémentale, seed promo_types et vue de suivi PDF par PDF) et certifie les 250 avenants."
-            workedDurationLabel: Worked for 9m 40s
-            workGroupSummary: Hardened AI.GENERATE macro (OBJ.MAKE_REF under VPC-SC), extracted 250/250 PDFs & passed 22/22 dbt tests
-            intermediateMessage: "Durcissement de la macro `ai_extract_promo_contract` (`temperature=0`, accès direct `OBJ.MAKE_REF` sous VPC-SC), exécution incrémentale sur les `250` PDF et validation des `22` tests `dbt`."
-            taskFinishedLabel: 250 / 250 PDF extracted & certifiable · 14 300 000,00 € · 22 / 22 dbt tests PASS
-            leadConfirmation: "Les `250` avenants sont extraits et certifiés dans `silver_bank.promo_contracts` : **`14 300 000,00 €` au centime près**, identiques PDF par PDF aux documents sources (`22 / 22` tests `dbt` PASS), avec lien `ObjectRef` pour relecture à la demande et vue de suivi `promo_contracts_pdf_tracking`."
-            sectionHeading: "Ce qui a été mis en place et certifié :"
+            chipLabel: 2. Déployer l'extraction sur les 250 PDF (14,30 M€)
+            prompt: "Parfait, déploie cette extraction dans dbt sur l'ensemble des 250 avenants PDF avec le référentiel promo_types et vérifie le résultat."
+            workedDurationLabel: Worked for 8m 12s
+            workGroupSummary: Deployed promo_contracts dbt model on all 250 PDFs & passed 22/22 dbt quality tests
+            intermediateMessage: "Déploiement du modèle incrémental `promo_contracts` (`AI.GENERATE` sur GCS), jointure avec le référentiel `promo_types` et exécution des `22` tests `dbt`."
+            taskFinishedLabel: 250 / 250 PDF extracted & certified · 14 300 000,00 € · 22 / 22 dbt tests PASS
+            leadConfirmation: "Les **`250` avenants PDF** sont extraits et certifiés dans `silver_bank.promo_contracts` : **`14 300 000,00 €` au centime près** (`22 / 22` tests `dbt` PASS), avec le lien `source_pdf` / `source_uri` conservé sur chaque ligne sur"
+            leadLink:
+              text: BigQuery · silver_bank.promo_contracts
+              url: https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2ssilver_bank!3spromo_contracts
+            sectionHeading: "Ce qui a été déployé sur les 250 contrats PDF :"
             items:
-              - title: Extraction hybride, certifiée au centime
+              - title: "Table structurée promo_contracts + lien conservé vers chaque PDF original"
                 chips:
                   - kind: sql
                     label: promo_contracts.sql
                   - kind: sql
                     label: ai_extract_promo_contract.sql
                 bullets:
-                  - "`AI.GENERATE` lit chaque PDF directement dans GCS (aucune copie) et remplit `9` champs typés ; le montant total vaut `14 300 000,00 €` et les `250` PDF sont identiques aux documents sources (montant, compte PCEC, agence, date d'effet)."
-                  - "Chaque ligne garde le lien vers son PDF (`source_pdf`, `source_uri`) : test sur `PROMO-2026-042`, les 3 lignes de coût relues à la demande (`68 680,00 €` + `16 266,00 €` + `5 423,55 €`) retombent sur le montant certifié de `90 369,55 €`."
-              - title: Fiabilisation des échecs & contournement VPC-SC
-                chips:
-                  - kind: bq
-                    label: promo_contracts
-                bullets:
-                  - "Température `0` et contrôle de complétude : `201` PDF réussis au premier appel, `43` récupérés par la reprise immédiate dans la même requête."
-                  - "Les `6` derniers échouaient sur `Cannot fetch content` : les URL signées de l'Object Table ne traversent pas le périmètre VPC Service Controls. Passage en accès direct (`OBJ.MAKE_REF(uri)`) : `6 / 6` en `13 s`."
-                  - "`PROMO-2026-186` lu au 9 mai au lieu du 5 septembre : format `JJ/MM/AAAA` imposé dans le prompt et relance ciblée de ce seul PDF (`--vars reextract_ids`)."
-              - title: Suivi PDF par PDF & type de promotion gouverné (`22 / 22 PASS`)
+                  - "Les `250` PDF de `raw_promo_contracts_pdf` sont transformés en lignes typées dans `silver_bank.promo_contracts` pour un total exact de **`14 300 000,00 €`**, tout en conservant `source_pdf` et `source_uri` pour rouvrir ou interroger n'importe quel contrat à la demande."
+              - title: "Typage métier par référentiel & 22 / 22 tests dbt PASS"
                 chips:
                   - kind: sql
                     label: promo_contracts_pdf_tracking.sql
                   - kind: yml
                     label: promo_types.csv
                 bullets:
-                  - "Vue `promo_contracts_pdf_tracking`, sans appel IA : statut (`PENDING`, `OUTDATED`, `FAILED`, `EXTRACTED`), nombre d'appels, erreur brute, montant extrait et indicateur `is_certifiable` pour chacun des `250` PDF."
-                  - "Le type de promotion est déduit du compte PCEC via le seed `promo_types` (`602910`, `602920`, `708590`), complétant `savings_offers` dans `dp_commercial_commitments` ; `22 / 22` tests `dbt` PASS."
+                  - "Chaque contrat est rattaché à sa famille d'offre via `promo_types.csv` (`602910` Taux boosté Livret Maison, `602920` Prime de bienvenue, `708590` Gratuité de rétention) et contrôlé par `promo_contracts_pdf_tracking` (`250 / 250` complets, `22 / 22` tests `dbt` PASS)."
             visualCheck:
               skillBadge: bq-visual-audit · MCP render_chart
-              title: "Contrôle visuel post-extraction · 250 avenants PDF (silver_bank.promo_contracts)"
-              subtitle: "AI.GENERATE sur les fichiers GCS, température 0 — 306 appels IA pour 250 PDF certifiables"
+              title: "Contrôle visuel post-déploiement · 250 avenants PDF (silver_bank.promo_contracts)"
+              subtitle: "Extraction AI.GENERATE sur GCS (temperature = 0) et validation dbt au centime près"
               kpis:
-                - label: PDF certifiables
+                - label: PDF extraits
                   value: "250 / 250"
-                  sublabel: "identiques aux documents sources"
+                  sublabel: "100 % complets & vérifiés"
                   tone: positive
                 - label: Engagements extraits
                   value: "14 300 000,00 €"
                   sublabel: "absents du grand livre SAP"
                   tone: warning
-                - label: Appels IA
-                  value: "306"
-                  sublabel: "201 PDF réussis au 1er appel"
+                - label: Familles PCEC
+                  value: "3 comptes"
+                  sublabel: "602910 · 602920 · 708590"
                   tone: blue
                 - label: Tests dbt PDF
                   value: "22 / 22 PASS"
                   sublabel: "total au centime & 0 échec"
                   tone: positive
-              chartTitle: "PDF extraits par type de promotion (compte PCEC) et nombre d'appels IA nécessaires"
+              chartTitle: "Répartition des 14,30 M€ extraits par famille de promotion (compte PCEC)"
               bars:
                 - label: "Taux boosté Livret Maison (602910) · 95 PDF"
-                  sublabel: "79 au 1er appel · 15 à la reprise · 1 en relance"
+                  sublabel: "Bonification de taux sur Livret Maison engagée en agence"
                   valueLabel: "6 928 857,14 €"
                   pct: 100
                   tone: positive
-                  badge: 95 / 95
+                  badge: 95 PDF
                 - label: "Prime de bienvenue conquête (602920) · 90 PDF"
-                  sublabel: "72 au 1er appel · 15 à la reprise · 3 en relance"
+                  sublabel: "Primes d'ouverture et de mobilité commerciale"
                   valueLabel: "4 597 804,25 €"
                   pct: 66
                   tone: positive
-                  badge: 90 / 90
+                  badge: 90 PDF
                 - label: "Gratuité de rétention (708590) · 65 PDF"
-                  sublabel: "49 au 1er appel · 14 à la reprise · 2 en relance"
+                  sublabel: "Remises tarifaires première année signées en réseau"
                   valueLabel: "2 773 338,61 €"
                   pct: 40
                   tone: positive
-                  badge: 65 / 65
-              documentsTitle: "Lecture à la demande : montant certifié et PDF source"
+                  badge: 65 PDF
+              documentsTitle: "Échantillon de contrats extraits : montant certifié & PDF source cliquable"
               documents:
                 - id: doc-d2-promo-042
                   title: "PROMO-2026-042 · Paris 0042"
                   subtitle: "Taux boosté Livret Maison · 602910"
                   uri: "gs://data-days-demo-landing/RAW/PROMO_CONTRACTS_PDF/PROMO-2026-042_REG1_TAUX_BOOSTE_LIVRET.pdf"
-                  metaBadge: EXTRACTED · 1 appel
+                  metaBadge: EXTRACTED
                   highlightLabel: "90 369,55 €"
                   tone: warning
                   imageUrl: "./assets/pdf_previews/promo_042_taux_booste.png"
@@ -5183,7 +5463,7 @@ workspaces:
                   title: "PROMO-2026-003 · Jeunes"
                   subtitle: "Prime de bienvenue · 602920"
                   uri: "gs://data-days-demo-landing/RAW/PROMO_CONTRACTS_PDF/PROMO-2026-003_REG1_PRIME_BIENVENUE_JEUNES.pdf"
-                  metaBadge: EXTRACTED · 1 appel
+                  metaBadge: EXTRACTED
                   highlightLabel: "62 286,55 €"
                   tone: blue
                   imageUrl: "./assets/pdf_previews/promo_003_prime_jeunes.png"
@@ -5191,21 +5471,12 @@ workspaces:
                   title: "PROMO-2026-001 · Rétention"
                   subtitle: "Gratuité de rétention · 708590"
                   uri: "gs://data-days-demo-landing/RAW/PROMO_CONTRACTS_PDF/PROMO-2026-001_REG1_AVENANT_RETENTION.pdf"
-                  metaBadge: EXTRACTED · 2 appels
+                  metaBadge: EXTRACTED
                   highlightLabel: "59 193,96 €"
                   tone: neutral
                   imageUrl: "./assets/pdf_previews/promo_001_retention.png"
-              footerNote: "Montants recoupés PDF par PDF avec les documents sources : 250 / 250 identiques (montant, compte PCEC, agence, date d'effet)."
+              footerNote: "250 / 250 documents extraits dans silver_bank.promo_contracts avec lien direct vers le PDF original sur GCS."
             traces:
-              - id: d2-trp3
-                action: ran
-                commandSummary: test hardened prompt (temperature 0) on the 63 failed PDFs
-                durationMs: 700
-                cwd: 02_demo2_silver_dbt_dq
-                command: bq query --use_legacy_sql=false --label datacloud:antigravity < scratch/test_prompt.sql
-                output:
-                  - "57 / 63 PDF extracted, amounts identical to the source documents"
-                  - "6 / 63 empty responses -> retry needed"
               - id: d2-trp4
                 action: edited
                 icon: sql
@@ -5218,7 +5489,7 @@ workspaces:
                 icon: sql
                 fileName: promo_contracts.sql
                 added: 111
-                removed: 70
+                removed: 0
                 durationMs: 550
               - id: d2-trp6
                 action: edited
@@ -5236,46 +5507,19 @@ workspaces:
                 durationMs: 300
               - id: d2-trp8
                 action: ran
-                commandSummary: dbt run promo_contracts (250 PDF re-extracted with the hardened prompt)
-                durationMs: 850
+                commandSummary: dbt build promo_contracts & promo_contracts_pdf_tracking (250 PDFs · 22/22 PASS)
+                durationMs: 950
                 cwd: 02_demo2_silver_dbt_dq
-                command: dbt run --select promo_contracts promo_contracts_pdf_tracking
+                command: dbt build --select promo_types pcec_accounts promo_contracts promo_contracts_pdf_tracking
                 output:
-                  - "1 of 2 OK created sql incremental model silver_bank.promo_contracts ............ [MERGE (250.0 rows, 228.4 KiB processed) in 489.33s]"
-                  - "2 of 2 OK created sql view model silver_bank.promo_contracts_pdf_tracking ...... [CREATE VIEW (0 processed) in 1.76s]"
-                  - "Tracking : EXTRACTED 244 (201 at 1st call, 43 after retry) · FAILED 6"
-              - id: d2-trp9
-                action: ran
-                commandSummary: switch to direct GCS access (VPC-SC blocks signed URLs) and retry the 6 failed PDFs
-                durationMs: 650
-                cwd: 02_demo2_silver_dbt_dq
-                command: dbt run --select promo_contracts
-                output:
-                  - "INVALID_ARGUMENT: Cannot fetch content from the provided URL (signed URLs cannot cross the VPC Service Controls perimeter)"
-                  - "1 of 1 OK created sql incremental model silver_bank.promo_contracts ............ [MERGE (6.0 rows, 163.4 KiB processed) in 12.96s]"
-              - id: d2-trp10
-                action: ran
-                commandSummary: dbt test commercial commitments (22 / 22 PASS)
-                durationMs: 600
-                cwd: 02_demo2_silver_dbt_dq
-                command: dbt test --select promo_contracts promo_contracts_pdf_tracking promo_types pcec_accounts
-                output:
+                  - "OK created sql incremental model silver_bank.promo_contracts ............ [MERGE (250.0 rows)]"
+                  - "OK created sql view model silver_bank.promo_contracts_pdf_tracking ...... [CREATE VIEW]"
                   - "PASS expression_equals_promo_contracts_14300000__SUM_committed_promo_cost_eur_"
-                  - "PASS expression_equals_promo_contracts_pdf_tracking_0__COUNTIF_NOT_is_certifiable_"
-                  - "Done. PASS=22 WARN=0 ERROR=0 SKIP=0 NO-OP=0 TOTAL=22"
-              - id: d2-trp11
-                action: ran
-                commandSummary: read PROMO-2026-042 on demand from its PDF
-                durationMs: 550
-                cwd: 02_demo2_silver_dbt_dq
-                command: bq query --use_legacy_sql=false "SELECT AI.GENERATE(('Quelles sont les 3 lignes de coût de cet avenant ?', OBJ.MAKE_REF(source_uri)), ...).result FROM silver_bank.promo_contracts_pdf_tracking WHERE promo_contract_id = 'PROMO-2026-042'"
-                output:
-                  - "Bonification Livret Maison 68 680,00 € · Jeunes Actifs 18-32 ans 16 266,00 € · Prime d'activation 5 423,55 €"
-                  - "Sum = 90 369,55 € = committed_promo_cost_eur (certified)"
+                  - "Done. PASS=22 WARN=0 ERROR=0 SKIP=0 TOTAL=22"
             filesChanged:
               - path: 02_demo2_silver_dbt_dq/models/silver/commercial_commitments/promo_contracts.sql
                 language: sql
-                badge: SQL
+                badge: DBT · AI.GENERATE
                 added: 111
                 removed: 0
                 content: |-
@@ -5392,7 +5636,7 @@ workspaces:
                   {% endif %}
               - path: 02_demo2_silver_dbt_dq/macros/ai_extract_promo_contract.sql
                 language: sql
-                badge: SQL
+                badge: MACRO
                 added: 42
                 removed: 0
                 content: |-
@@ -5440,7 +5684,7 @@ workspaces:
                   {% endmacro %}
               - path: 02_demo2_silver_dbt_dq/models/silver/commercial_commitments/promo_contracts_pdf_tracking.sql
                 language: sql
-                badge: SQL
+                badge: TRACKING VIEW
                 added: 47
                 removed: 0
                 content: |-
@@ -5493,7 +5737,7 @@ workspaces:
                   LEFT JOIN {{ ref('pcec_accounts') }} AS a ON a.pcec_account = c.pcec_account
               - path: 02_demo2_silver_dbt_dq/seeds/promo_types.csv
                 language: yaml
-                badge: CSV
+                badge: SEED CSV
                 added: 4
                 removed: 0
                 content: |-
@@ -5502,12 +5746,11 @@ workspaces:
                   602920,PRIME_BIENVENUE_CONQUETE,Primes de bienvenue et de mobilité (campagne de conquête 18-32 ans),CHARGE
                   708590,AVENANT_GRATUITE_RETENTION,Gratuités et remises commerciales de rétention patrimoniale,MINORATION_PRODUIT
             terminalLogs:
+              - $ dbt seed --select promo_types pcec_accounts
               - $ dbt run --select promo_contracts promo_contracts_pdf_tracking
-              - "MERGE (250.0 rows) in 489.33s · EXTRACTED 244 · FAILED 6 (VPC-SC signed URLs)"
-              - $ dbt run --select promo_contracts
-              - "MERGE (6.0 rows) in 12.96s · 250 / 250 certifiable · 14 300 000,00 €"
-              - $ dbt test --select promo_contracts promo_contracts_pdf_tracking
-              - "Done. PASS=22 WARN=0 ERROR=0"
+              - "[OK] MERGE (250.0 rows) -> silver_bank.promo_contracts · Total = 14 300 000,00 €"
+              - $ dbt test --select promo_contracts promo_contracts_pdf_tracking promo_types pcec_accounts
+              - "[OK] Done. PASS=22 WARN=0 ERROR=0"
             subagents:
               - id: sa-d2-p1
                 role: Document AI Extraction Engineer
@@ -5519,12 +5762,12 @@ workspaces:
                 status: completed
             backgroundTasks:
               - id: bg-d2-p1
-                command: dbt run --select promo_contracts
+                command: dbt build --select promo_contracts
                 target: data-days-demo.silver_bank.promo_contracts
-                duration: 8m 9s
+                duration: 8m 12s
       - id: d2-step3
         demoId: demo2
-        shortName: 5. Publier les 5 produits de données
+        shortName: 4. Publier les 5 produits de données
         conversationTitle: Exécution dbt build (104/104 PASS) & Publication dans la Data Marketplace Knowledge Catalog
         projectFolder: 02_demo2_silver_dbt_dq
         gitBranch: feat/silver-data-products
@@ -5535,10 +5778,10 @@ workspaces:
             chipLabel: 1. Exécuter dbt build & publier les 5 Data Products
             prompt: Lance dbt build sur data-days-demo et publie les 5 Data Products SILVER certifiés dans Knowledge Catalog.
             workedDurationLabel: Worked for 6s
-            workGroupSummary: Executed dbt build (104/104 PASS), published 5 Data Products (Overview, Contracts, Insights) & ran bq-visual-audit
-            intermediateMessage: Exécution de `dbt build --select path:models/silver` sur `data-days-demo` (`europe-west1`), validation des `104` tests (`82` structurés + `22` PDF), contrôle visuel `bq-visual-audit` et publication dans Knowledge Catalog.
-            taskFinishedLabel: dbt build (104/104 PASS), visual audit & KC Marketplace publication finished
-            leadConfirmation: Les 5 Data Products `SILVER` sont matérialisés à `100 %` de Data Quality (`104 / 104` tests `dbt` PASS), contrôlés visuellement et consultables immédiatement dans
+            workGroupSummary: Executed dbt build (104/104 PASS) & published 5 Data Products (Overview, Contracts, Insights)
+            intermediateMessage: Exécution de `dbt build --select path:models/silver` sur `data-days-demo` (`europe-west1`), validation des `104` tests (`82` structurés + `22` PDF) et publication dans Knowledge Catalog.
+            taskFinishedLabel: dbt build (104/104 PASS) & KC Marketplace publication finished
+            leadConfirmation: Les 5 Data Products `SILVER` sont matérialisés à `100 %` de Data Quality (`104 / 104` tests `dbt` PASS) et consultables immédiatement dans
             leadLink:
               text: Knowledge Catalog Data Marketplace · Data Products (localhost:5174)
               url: http://localhost:5174/data-products
@@ -5558,54 +5801,6 @@ workspaces:
                     label: dp_finance_pnb
                 bullets:
                   - "Les tables `SILVER` sont `100 %` propres techniquement (`0` doublon, `0` NULL imprévu, `250 / 250` PDF extraits), mais une requête SQL naïve sur `dp_finance_pnb` ignore encore les règles comptables implicites du CFO (`+42,80 M€` apparents vs vraie marge nette)."
-            visualCheck:
-              skillBadge: bq-visual-audit · MCP render_chart
-              title: "Contrôle visuel post-création · 5 Data Products silver_bank"
-              subtitle: "104 / 104 tests dbt schema.yml validés (82 structurés + 22 PDF) — publication complète dans Knowledge Catalog"
-              kpis:
-                - label: Assertions dbt DQ
-                  value: "104 / 104 PASS"
-                  sublabel: "82 structurés + 22 PDF"
-                  tone: positive
-                - label: Comptes unifiés
-                  value: "95 000"
-                  sublabel: "+650 comptes AWS J0 joints"
-                  tone: positive
-                - label: Contrats PDF extraits
-                  value: "-14,30 M€"
-                  sublabel: "250 PDF via AI.GENERATE"
-                  tone: warning
-                - label: Fuite 18-32 ans (J1–J5)
-                  value: "68,0 %"
-                  sublabel: "sur -2,42 Md€ SEPA ACSC"
-                  tone: ruby
-              chartTitle: "Certification qualité & volumétrie nette des 5 Data Products publiés dans silver_bank"
-              bars:
-                - label: "dp_customer_360 (80k clients · 95k comptes · 1,44 M soldes)"
-                  valueLabel: "100,0 % DQ"
-                  pct: 100
-                  tone: positive
-                  badge: 650 J0 signalés
-                - label: "dp_customer_timeline (5,50 M mouvements · 113,9k IBAN)"
-                  valueLabel: "100,0 % DQ"
-                  pct: 100
-                  tone: positive
-                  badge: 0 double comptage
-                - label: "dp_customer_relationship (320 000 RDV & appels CRM)"
-                  valueLabel: "100,0 % DQ"
-                  pct: 100
-                  tone: positive
-                  badge: CLS ALWAYS_NULL
-                - label: "dp_finance_pnb (1,20 M écritures SAP / PCEC & ALM)"
-                  valueLabel: "100,0 % DQ"
-                  pct: 100
-                  tone: warning
-                  badge: Sémantique KC requise
-                - label: "dp_commercial_commitments (250 PDF = -14,30 M€ + offres)"
-                  valueLabel: "100,0 % DQ"
-                  pct: 100
-                  tone: blue
-                  badge: AI.GENERATE
             traces:
               - id: d2-tr11
                 action: ran
@@ -5616,20 +5811,6 @@ workspaces:
                 output:
                   - "OK created 9 SILVER models in silver_bank (customers, accounts, account_monthly_balances, customer_movements, beneficiaries, interactions, gl_entries, promo_contracts, savings_offers)"
                   - "Done. PASS=104 WARN=0 ERROR=0 SKIP=0 TOTAL=104"
-              - id: d2-tr11b
-                action: analyzed
-                icon: dak
-                fileName: .agents/skills/bq-visual-audit/SKILL.md
-                lineRange: "#L1-52"
-                durationMs: 350
-              - id: d2-tr11c
-                action: ran
-                commandSummary: MCP data-agent-kit/render_chart → SILVER 5 Data Products DQ & PDF extraction audit
-                durationMs: 500
-                cwd: 02_demo2_silver_dbt_dq
-                command: mcp call data-agent-kit render_chart --spec '{"title":{"text":"SILVER Data Products Certification (104/104 DQ PASS)"}}'
-                output:
-                  - "Rendered inline SVG visual check: 5/5 Data Products at 100.0% DQ PASS (104/104 tests), -14,300,000.00 EUR extracted from 250 PDFs"
               - id: d2-tr13
                 action: ran
                 commandSummary: publish 5 certified SILVER Data Products + Overview, Contracts & Gemini Insights to Knowledge Catalog

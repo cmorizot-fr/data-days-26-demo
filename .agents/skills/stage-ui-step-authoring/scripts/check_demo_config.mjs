@@ -107,12 +107,6 @@ for (const ws of cfg.workspaces ?? []) {
         (vc.kpis ?? []).forEach((k) => inEnum(k.tone, 'tone', `${tw} · visualCheck.kpis`));
         (vc.bars ?? []).forEach((b) => inEnum(b.tone, 'tone', `${tw} · visualCheck.bars`));
       }
-      const sf = turn.securityFlow;
-      if (sf) {
-        (sf.nodes ?? []).forEach((n) => inEnum(n.tone, 'tone', `${tw} · securityFlow.nodes`));
-        (sf.steps ?? []).forEach((st) => inEnum(st.tone, 'tone', `${tw} · securityFlow.steps`));
-        (sf.guarantees ?? []).forEach((g) => inEnum(g.tone, 'tone', `${tw} · securityFlow.guarantees`));
-      }
       const psi = turn.pubsubInspector;
       if (psi) {
         (psi.topics ?? []).forEach((tp) => {

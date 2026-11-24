@@ -178,6 +178,7 @@ export interface InlineCodeBlock {
   label: string;
   language: string;
   code: string;
+  resultLabel?: string;
   resultTable?: string[];
   actionLink?: {
     label: string;
@@ -185,37 +186,10 @@ export interface InlineCodeBlock {
   };
 }
 
-export interface SecurityFlowNode {
-  id: string;
-  zoneLabel: string;
-  title: string;
-  subtitle: string;
-  detail: string;
-  tone?: VisualTone;
-}
-
-export interface SecurityFlowStep {
-  stepNumber: number;
-  fromLabel: string;
-  toLabel: string;
-  protocolBadge: string;
-  title: string;
-  detail: string;
-  tone?: VisualTone;
-}
-
-export interface SecurityFlowGuarantee {
-  label: string;
-  tone?: VisualTone;
-}
-
-export interface SecurityFlowBlock {
-  badge?: string;
-  title: string;
-  subtitle?: string;
-  nodes: SecurityFlowNode[];
-  steps: SecurityFlowStep[];
-  guarantees?: SecurityFlowGuarantee[];
+export interface InlineImageBlock {
+  src: string;
+  alt: string;
+  caption?: string;
 }
 
 export interface PromptTurn {
@@ -234,7 +208,7 @@ export interface PromptTurn {
   };
   sectionHeading: string;
   items: EditorialSectionItem[];
-  securityFlow?: SecurityFlowBlock;
+  inlineImage?: InlineImageBlock;
   codeBlock?: InlineCodeBlock;
   pubsubInspector?: PubSubInspectorBlock;
   visualCheck?: VisualCheckBlock;
