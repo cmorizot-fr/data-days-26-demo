@@ -213,7 +213,7 @@ workspaces:
             workGroupSummary: Inspected COBOL copybooks, RAW bucket & designed Spark Serverless Iceberg plan
             intermediateMessage: J'ai inspecté le dataset `data-days-demo.raw_bank`, le bucket `gs://data-days-demo-landing/RAW/corebanking/` (`25` objets, `969 Mo`) et analysé les 3 Copybooks COBOL (`CBK_CUSTOMERS_REF.cpy`, `CBK_ACCOUNTS_MSTR.cpy`, `CFONB120_BAL_OPS.cpy`).
             taskFinishedLabel: COBOL copybooks & Dataproc Serverless BigLake Iceberg plan ready
-            leadConfirmation: "Les 3 Copybooks COBOL sont décodés et le plan d'exécution **Managed Service for Apache Spark (Serverless `2.2`)** est prêt pour alimenter"
+            leadConfirmation: "Les 3 Copybooks COBOL sont décodés et le plan d'exécution **Managed Service for Apache Spark (Serverless `2.3` · Lightning Engine)** est prêt pour alimenter"
             leadLink:
               text: bigquery.cloud.google.com/dataset/data-days-demo:raw_bank
               url: https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m4!1m3!3m2!1sdata-days-demo!2sraw_bank
@@ -244,7 +244,7 @@ workspaces:
               - id: d1-s2-q3-raw
                 question: Que fait-on des anomalies de contenu (`00000000`, guichets `'42   '`) pendant le job Spark ?
                 options:
-                  - "(Recommended) Conserver 100 % des valeurs brutes en `RAW` (traçabilité d'audit, nettoyage en aval) et lancer sur Dataproc Serverless `2.2`"
+                  - "(Recommended) Conserver 100 % des valeurs brutes en `RAW` (traçabilité d'audit, nettoyage en aval) et lancer sur Dataproc Serverless `2.3` (Lightning Engine)"
                   - "Nettoyer silencieusement les dates et codes agences dès le décodage binaire"
             traces:
               - id: d1-s2-tr1
@@ -306,10 +306,10 @@ workspaces:
             chipLabel: 2. Créer les 4 tables Iceberg, lancer Spark Serverless & vérifier
             prompt: "Oui sur les 2 points : crée les 4 tables BigLake Managed Iceberg documentées (72 colonnes), lance le batch PySpark Serverless en préservant les anomalies RAW, puis vérifie le chargement dans BigQuery."
             workedDurationLabel: Worked for 14s
-            workGroupSummary: Provisioned BigLake Iceberg DDL, started Dataproc Serverless Spark 2.2 batch & ran bq-visual-audit
-            intermediateMessage: "Démarrage du runtime **Managed Service for Apache Spark Serverless (`2.2`)** sur `spark-sless-ew1` (allocation automatique des executors), décodage binaire `EBCDIC CP500 + COMP-3` / `CFONB 04+05`, rejet de `202610_RUN01.cfonb` (`RC=0012`) et écriture directe dans les 4 tables **BigLake Managed Iceberg**."
+            workGroupSummary: Provisioned BigLake Iceberg DDL, started Dataproc Serverless Spark 2.3 (Lightning Engine) batch & ran bq-visual-audit
+            intermediateMessage: "Démarrage du runtime **Managed Service for Apache Spark Serverless `2.3` (`Lightning Engine` · `dataproc.tier=premium`)** sur `spark-sless-ew1`, décodage binaire `EBCDIC CP500 + COMP-3` / `CFONB 04+05`, rejet de `202610_RUN01.cfonb` (`RC=0012`) et écriture directe dans les 4 tables **BigLake Managed Iceberg**."
             taskFinishedLabel: BigLake Iceberg DDL, Dataproc Serverless PySpark batch & bq-visual-audit completed
-            leadConfirmation: "Les **4 tables BigLake Managed Iceberg** (`72 / 72` colonnes documentées), le batch **Dataproc Serverless PySpark** et le **contrôle visuel post-chargement** sont validés au centime près sur"
+            leadConfirmation: "Les **4 tables BigLake Managed Iceberg** (`72 / 72` colonnes documentées), le batch **Dataproc Serverless PySpark (`Lightning Engine`)** et le **contrôle visuel post-chargement** sont validés au centime près sur"
             leadLink:
               text: console.cloud.google.com/dataproc/batches?project=data-days-demo
               url: https://console.cloud.google.com/dataproc/batches?project=data-days-demo
@@ -324,7 +324,7 @@ workspaces:
                 bullets:
                   - "Connexion `data-days-demo.europe-west1.biglake-gcs-conn` (`roles/storage.admin` + `roles/biglake.admin`) et pré-création `table_format = 'ICEBERG'` / `PARQUET` sous `gs://data-days-demo-landing/iceberg/raw_bank/`."
                   - "Volumétries certifiées dans `INFORMATION_SCHEMA` : [cbk_customers_ref](https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2sraw_bank!3scbk_customers_ref) = **`79 350`** clients, [cbk_accounts_master](https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2sraw_bank!3scbk_accounts_master) = **`94 350`** comptes, [cbk_cfonb_balances](https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2sraw_bank!3scbk_cfonb_balances) = **`2 875 062`** soldes `01`/`07`, [cbk_cfonb_movements](https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2sraw_bank!3scbk_cfonb_movements) = **`5 500 000`** mouvements."
-              - title: Décodage distribué Dataproc Serverless `2.2` & script de replay idempotent
+              - title: Décodage distribué Dataproc Serverless `2.3` (`Lightning Engine`) & script de replay idempotent
                 chips:
                   - kind: py
                     label: parse_corebanking_iceberg.py
@@ -438,17 +438,17 @@ workspaces:
                 durationMs: 500
               - id: d1-s2-tr12
                 action: ran
-                commandSummary: "Dataproc Serverless Spark 2.2 — provisioning serverless driver & executors on spark-sless-ew1 (cold start)"
+                commandSummary: "Dataproc Serverless Spark 2.3 (Lightning Engine) — provisioning driver & executors on spark-sless-ew1"
                 durationMs: 600
                 cwd: 01_demo1_raw_aggregation
-                command: CLOUDSDK_METRICS_ENVIRONMENT="datacloud.antigravity" gcloud dataproc batches submit pyspark spark/parse_corebanking_iceberg.py --project=data-days-demo --region=europe-west1 --version=2.2 --subnet=spark-sless-ew1 --deps-bucket=gs://data-days-demo-landing --labels="datacloud=antigravity,domain=corebanking,env=demo2026" -- --project-id data-days-demo --dataset raw_bank --raw-gcs-uri gs://data-days-demo-landing/RAW/corebanking --write-method direct
+                command: CLOUDSDK_METRICS_ENVIRONMENT="datacloud.antigravity" gcloud dataproc batches submit pyspark spark/parse_corebanking_iceberg.py --project=data-days-demo --region=europe-west1 --version=2.3 --properties="dataproc.tier=premium,spark.dataproc.lightningEngine.runtime=native" --subnet=spark-sless-ew1 --deps-bucket=gs://data-days-demo-landing --labels="datacloud=antigravity,domain=corebanking,env=demo2026" -- --project-id data-days-demo --dataset raw_bank --raw-gcs-uri gs://data-days-demo-landing/RAW/corebanking --write-method direct
                 output:
-                  - "Batch [cbk-mainframe-iceberg-20261113-192341] submitted to Dataproc Serverless (europe-west1 · runtime=2.2)"
-                  - "[PROVISIONING] Allocation VPC subnet=spark-sless-ew1 (Private Google Access=true) & staging script on gs://data-days-demo-landing..."
-                  - "[PROVISIONING] Spark driver & dynamic executors ready (autoscaling 2 -> 8 executors, 0 cluster to manage)"
+                  - "Batch [cbk-mainframe-iceberg-20261113-192341] submitted to Dataproc Serverless (europe-west1 · runtime=2.3 · engine=lightningEngine)"
+                  - "[PROVISIONING] Allocation VPC subnet=spark-sless-ew1 (dataproc.tier=premium) & staging script on gs://data-days-demo-landing..."
+                  - "[PROVISIONING] Lightning Engine native runtime & dynamic executors ready (autoscaling 2 -> 8 executors)"
               - id: d1-s2-tr13
                 action: ran
-                commandSummary: "Dataproc Serverless Spark 2.2 — decoding EBCDIC/COMP-3 & CFONB 04+05 → BigLake Iceberg (5.5M rows)"
+                commandSummary: "Dataproc Serverless Spark 2.3 (Lightning Engine) — decoding EBCDIC/COMP-3 & CFONB 04+05 → BigLake Iceberg"
                 durationMs: 10000
                 cwd: 01_demo1_raw_aggregation
                 command: gcloud dataproc batches wait cbk-mainframe-iceberg-20261113-192341 --region=europe-west1 --project=data-days-demo
@@ -1355,11 +1355,11 @@ workspaces:
             terminalLogs:
               - $ bq mk --connection --connection_type=CLOUD_RESOURCE --location=europe-west1 --label datacloud:antigravity biglake-gcs-conn
               - $ bq --location=europe-west1 query --use_legacy_sql=false < 00_create_documented_mainframe_iceberg_tables.sql
-              - $ gcloud dataproc batches submit pyspark parse_corebanking_iceberg.py --version=2.2 --subnet=spark-sless-ew1
-              - "[PROVISIONING] Dataproc Serverless Spark 2.2 driver & executors allocated (europe-west1)"
+              - $ gcloud dataproc batches submit pyspark parse_corebanking_iceberg.py --version=2.3 --properties=dataproc.tier=premium,spark.dataproc.lightningEngine.runtime=native --subnet=spark-sless-ew1
+              - "[PROVISIONING] Dataproc Serverless Spark 2.3 (Lightning Engine) driver & executors allocated (europe-west1)"
               - "[WARNING] CFT ABEND DETECTE — Rejet automatique de CFONB120_MVTS_202610_RUN01.cfonb (RC=0012)"
               - "[OK] cbk_customers_ref=79,350 | cbk_accounts_master=94,350 | cbk_cfonb_balances=2,875,062 | cbk_cfonb_movements=5,500,000"
-              - "[OK] 72/72 colonnes documentées | 66,000 dates RAW préservées | Fuite 90j = -2,420,000,000.00 €"
+              - "[OK] 72/72 colonnes documentées | 66,000 dates RAW préservées"
             subagents:
               - id: sa-d1-s2b
                 role: PySpark Serverless & Iceberg Engineer
@@ -1371,13 +1371,13 @@ workspaces:
                 status: completed
             backgroundTasks:
               - id: bg-d1-s2
-                command: gcloud dataproc batches submit pyspark (v2.2 · serverless)
+                command: gcloud dataproc batches submit pyspark (v2.3 · Lightning Engine)
                 target: data-days-demo.raw_bank
-                duration: 3m 56s
+                duration: 3m 12s
             artifact:
               id: art-d1-s2
               title: Certification BigLake Managed Iceberg · Silo Mainframe
-              subtitle: Dataproc Serverless PySpark 2.2 → data-days-demo.raw_bank
+              subtitle: Dataproc Serverless PySpark 2.3 (Lightning Engine) → data-days-demo.raw_bank
               markdownSummary:
                 heading: Contrôle post-chargement Core Banking z/OS (18 mois)
                 metrics:
@@ -4662,456 +4662,155 @@ workspaces:
       - id: d2-step1
         demoId: demo2
         shortName: 2. Diagnostiquer & fiabiliser les données
-        conversationTitle: Auto Data Quality RAW, arbitrages inter-silos & modèles dbt SILVER
+        conversationTitle: Profilage RAW one-shot, règles DQ déterministes & pipeline dbt SILVER
         projectFolder: 02_demo2_silver_dbt_dq
         gitBranch: feat/silver-data-products
         greetingName: Clément
         modelLabel: Gemini 4 - Carbon
         turns:
           - id: d2-t1a
-            chipLabel: 1. Définir les règles de qualité à mettre en œuvre
-            prompt: "Maintenant que les Data Products et la structure du projet dbt SILVER sont prêts, quelles règles de Data Quality doit-on mettre en œuvre ? Et surtout, comment l'Agentic Data Cloud m'aide-t-il à les trouver sans les écrire une par une à la main ?"
-            workedDurationLabel: Worked for 6s
-            workGroupSummary: Profiled raw_bank with Knowledge Catalog, generated rule recommendations & matched them with Data Product contracts
-            intermediateMessage: Profilage Knowledge Catalog des `13,2 M` de lignes de `raw_bank`, génération des recommandations de règles Auto Data Quality et rapprochement avec les contrats des 5 Data Products.
-            taskFinishedLabel: 31 Data Quality rules discovered from 4 sources & mapped to the 5 Data Products
-            leadConfirmation: "`31` règles de qualité ont été trouvées automatiquement à partir de 4 sources et rangées par Data Product dans `02_demo2_silver_dbt_dq/dq_scans/dq_rules_catalog.yaml`. Il reste 3 arbitrages à valider."
-            sectionHeading: "Comment l'Agentic Data Cloud a trouvé les règles :"
+            chipLabel: 1. Profiler la couche RAW (one-shot)
+            prompt: "Maintenant que les Data Products et la structure du projet dbt SILVER sont prêts, lance un profilage one-shot sur la couche RAW pour voir l'état réel des données."
+            workedDurationLabel: Worked for 4s
+            workGroupSummary: Ran one-shot Knowledge Catalog Data Profile scans on raw_bank (13.2M rows)
+            intermediateMessage: Lancement d'un profilage one-shot **Knowledge Catalog (`DATA_PROFILE`)** sur les tables principales de `data-days-demo.raw_bank` (`13,2 M` lignes) pour détecter automatiquement les anomalies de forme.
+            taskFinishedLabel: One-shot Data Profile on raw_bank finished — 2 key anomaly families detected
+            leadConfirmation: "Le profilage one-shot sur `raw_bank` est terminé (`4` scans publiés dans Knowledge Catalog). Voici **2 exemples concrets** d'anomalies détectées directement dans la console sur"
+            leadLink:
+              text: Knowledge Catalog · Data Profiling (data-days-demo)
+              url: https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality?project=data-days-demo
+            sectionHeading: "Ce que le profilage one-shot RAW a mis en évidence :"
             askQuestions:
-              - id: d2-q1a-where
-                question: "Où appliquer ces 31 règles ?"
+              - id: d2-q1a-integrate
+                question: "Veux-tu que je génère les règles de Data Quality déterministes correspondantes (surveillance Knowledge Catalog sur RAW + intégration comme tests bloquants dans le pipeline dbt SILVER) ?"
                 options:
-                  - "(Recommended) Knowledge Catalog Auto Data Quality sur RAW pour surveiller et alerter à la source + tests dbt sur SILVER pour bloquer la publication d'un Data Product non conforme"
-                  - Uniquement des tests dbt sur SILVER
-                  - Uniquement des scans Knowledge Catalog Auto Data Quality
-              - id: d2-q1a-anomalies
-                question: "Que faire des lignes en anomalie ?"
-                options:
-                  - "(Recommended) Corriger quand c'est sûr (date de valeur -> date comptable, code agence -> LPAD), signaler sinon ; ne retirer que les doublons techniques et les paiements non réglés"
-                  - Isoler toutes les lignes en anomalie dans une table de quarantaine
-                  - Bloquer tout le chargement à la première anomalie
-              - id: d2-q1a-thresholds
-                question: "Quels seuils d'alerte sur la couche RAW ?"
-                options:
-                  - "(Recommended) Seuils calés sur le profil actuel (doublons <= 3,5 %, dates invalides <= 1,3 %, statuts non réglés <= 8,5 %) : alerte en cas de dérive"
-                  - Zéro tolérance sur toutes les règles
-                  - Pas de seuil, simple suivi
+                  - "(Recommended) Oui : créer les règles DQ déterministes sur RAW (surveillance) et les intégrer dans notre pipeline dbt SILVER (correction + blocage)"
+                  - "Créer uniquement des scans de surveillance Knowledge Catalog sur RAW"
+                  - "Écrire uniquement des tests dbt sur SILVER sans surveiller le RAW"
             items:
-              - title: "Le profil Knowledge Catalog révèle les anomalies de forme"
+              - title: "Exemple 1 — Paiements SEPA : doublons réseau & opérations non réglées"
                 chips:
                   - kind: bq
-                    label: raw_bank
+                    label: raw_sepa_payments_unified
                 bullets:
-                  - "Le scan de profilage mesure, colonne par colonne, les taux de NULL, les valeurs distinctes, les formats et les valeurs les plus fréquentes :"
-                  - "Sur [cbk_cfonb_movements](https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2sraw_bank!3scbk_cfonb_movements) : `66 000` dates de valeur à `00000000` / `99999999` ([Voir le scan Profile raw-profile-cbk-movements](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality/profile/raw-profile-cbk-movements;location=europe-west1?project=data-days-demo))."
-                  - "Sur [cbk_customers_ref](https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2sraw_bank!3scbk_customers_ref) : `9 773` codes agence mal formés dont `475` vides ([Voir le scan Profile raw-profile-cbk-customers](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality/profile/raw-profile-cbk-customers;location=europe-west1?project=data-days-demo))."
-              - title: "Knowledge Catalog recommande les règles à partir du profil"
-                chips:
-                  - kind: yml
-                    label: generateDataQualityRules
-                bullets:
-                  - "L'API Knowledge Catalog `generateDataQualityRules` transforme le profil en règles prêtes à l'emploi : unicité de `end_to_end_id`, format `^[0-9]{4}$` des codes agence, valeurs autorisées de `tx_status`, plages de dates. `19` règles techniques proposées sans en écrire une seule."
-              - title: "Knowledge Catalog apporte les règles métier"
-                chips:
-                  - kind: kc
-                    label: Knowledge Catalog
-                  - kind: yml
-                    label: data_products_catalog.yaml
-                bullets:
-                  - "Les contrats des Data Products et le glossaire donnent les règles qu'aucun profil ne peut deviner : `80 000` clients et `95 000` comptes, fuite néobanques 90 j = `2 420 000 000,00 €`, `0` clôture sur le trimestre, offre d'épargne seulement si reste à vivre >= `100 €` (ACPR). `8` règles métier."
-              - title: "L'agent raisonne entre les silos"
+                  - "Le profil [raw-profile-sepa-payments](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality/profile/raw-profile-sepa-payments;location=europe-west1?project=data-days-demo) fait ressortir **`3,4 %` de doublons** sur `end_to_end_id` (l'identifiant unique de chaque virement SEPA : `210 800` réémissions réseau) et **`8,1 %` de statuts `tx_status` non réglés** (`RJCT` = rejeté ou `PDNG` = en attente, mélangés aux virements réellement exécutés `ACSC`)."
+              - title: "Exemple 2 — Mainframe : dates impossibles & codes agence non normalisés"
                 chips:
                   - kind: bq
-                    label: cbk_accounts_master
+                    label: cbk_cfonb_movements
                   - kind: bq
-                    label: aws_crm_account_portfolio
+                    label: cbk_customers_ref
                 bullets:
-                  - "En croisant les silos via le catalogue (skills DAK `discover-assets` et `data-autocleaning`), l'agent ajoute les règles de cohérence : `650` comptes du CRM AWS absents du Mainframe J-1, chaque mouvement rattaché à un compte connu, chaque compte rattaché à un client. `4` règles inter-silos."
-              - title: Les 31 règles par dimension de qualité
-                chips:
-                  - kind: yml
-                    label: dq_rules_catalog.yaml
-                bullets:
-                  - "Complétude (6) · Unicité (5) · Validité (9) · Cohérence inter-silos (4) · Exactitude métier (5) · Fraîcheur (2) — chacune rattachée à son Data Product, à sa source de découverte et à son point d'application (Knowledge Catalog sur RAW ou test dbt sur SILVER)."
+                  - "Sur [raw-profile-cbk-movements](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality/profile/raw-profile-cbk-movements;location=europe-west1?project=data-days-demo) : **`66 000` dates de valeur impossibles** (`00000000` ou `99999999`)."
+                  - "Sur [raw-profile-cbk-customers](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality/profile/raw-profile-cbk-customers;location=europe-west1?project=data-days-demo) : **`9 773` codes agence mal formatés** (`'42  '` au lieu de `'0042'`, dont `475` vides), plus `650` nouveaux comptes du jour sur AWS pas encore dans le batch Mainframe J-1."
             traces:
               - id: d2-tr1a
                 action: analyzed
                 icon: dak
                 fileName: data-autocleaning/SKILL.md
                 lineRange: "#L1-120"
-                durationMs: 400
+                durationMs: 380
               - id: d2-tr1b
                 action: ran
-                commandSummary: Knowledge Catalog data profiling scan on raw_bank (sampled > 1M rows)
+                commandSummary: Knowledge Catalog one-shot DATA_PROFILE scans on raw_bank (4 tables · 13.2M rows)
                 durationMs: 750
                 cwd: 02_demo2_silver_dbt_dq
-                command: python3 scripts/dataplex_scanner.py --tables data-days-demo.raw_bank.cbk_customers_ref data-days-demo.raw_bank.cbk_accounts_master data-days-demo.raw_bank.cbk_cfonb_movements data-days-demo.raw_bank.raw_sepa_payments_unified --location europe-west1 --output-dir dq_scans/profiles
+                command: uv run python scripts/run_raw_dq_scans.py --profile-only
                 output:
-                  - "4 profile jobs SUCCEEDED (13,249,412 rows, dynamic sampling on tables > 1M rows)"
-                  - "cbk_cfonb_movements.date_valeur_raw: top values 00000000 / 99999999 = 1.20%"
-                  - "cbk_customers_ref.code_agence_raw: 12.32% not matching ^[0-9]{4}$ (475 blank)"
-                  - "raw_sepa_payments_unified.end_to_end_id: distinct ratio 96.60%"
-              - id: d2-tr1c
-                action: ran
-                commandSummary: Knowledge Catalog generateDataQualityRules from the profiles
-                durationMs: 600
-                cwd: 02_demo2_silver_dbt_dq
-                command: POST https://dataplex.googleapis.com/v1/projects/data-days-demo/locations/europe-west1/dataScans/raw-bank-profile:generateDataQualityRules
-                output:
-                  - "19 recommended rules (uniqueness, regex, set membership, range, non-null)"
-              - id: d2-tr1d
-                action: analyzed
-                icon: yml
-                fileName: data_products_catalog.yaml
-                lineRange: "#L1-96"
-                durationMs: 350
-              - id: d2-tr1e
-                action: ran
-                commandSummary: search Knowledge Catalog glossary & Data Product contracts (discover-assets)
-                durationMs: 500
-                cwd: 02_demo2_silver_dbt_dq
-                command: mcp call bigquery search_catalog --query "dp_customer_360 OR dp_customer_timeline contract invariants"
-                output:
-                  - "8 business rules found (volumes, 2.42bn EUR deposit leak, 0 closures, ACPR >= 100 EUR)"
-              - id: d2-tr1f
-                action: edited
-                icon: yml
-                fileName: dq_rules_catalog.yaml
-                added: 58
-                removed: 0
-                durationMs: 550
-            filesChanged:
-              - path: 02_demo2_silver_dbt_dq/dq_scans/dq_rules_catalog.yaml
-                language: yaml
-                badge: YML
-                added: 58
-                removed: 0
-                content: |-
-                  # 31 règles trouvées par l'Agentic Data Cloud, rangées par Data Product
-                  # discovered_by : profile | kc_recommendation | knowledge_catalog | agent_cross_silo
-                  # enforced_in   : kc_raw (surveillance) | dbt_silver (blocage publication)
-                  dp_customer_360:
-                    - rule: customer_id unique & not null
-                      dimension: uniqueness
-                      discovered_by: kc_recommendation
-                      enforced_in: dbt_silver
-                    - rule: agency_code matches ^[0-9]{4}$ (LPAD des codes '42  ' et vides)
-                      dimension: validity
-                      discovered_by: profile
-                      enforced_in: [kc_raw, dbt_silver]
-                    - rule: 650 comptes CRM absents du Mainframe J-1 conservés et signalés
-                      dimension: consistency
-                      discovered_by: agent_cross_silo
-                      enforced_in: dbt_silver
-                    - rule: exactly 80 000 customers and 95 000 accounts
-                      dimension: accuracy
-                      discovered_by: knowledge_catalog
-                      enforced_in: dbt_silver
-                  dp_customer_timeline:
-                    - rule: end_to_end_id unique (doublons techniques <= 3,5 % en RAW)
-                      dimension: uniqueness
-                      discovered_by: kc_recommendation
-                      enforced_in: [kc_raw, dbt_silver]
-                    - rule: tx_status IN ('ACSC') pour les mouvements publiés
-                      dimension: validity
-                      discovered_by: kc_recommendation
-                      enforced_in: dbt_silver
-                    - rule: value_date valide (00000000 / 99999999 -> date comptable)
-                      dimension: validity
-                      discovered_by: profile
-                      enforced_in: [kc_raw, dbt_silver]
-                    - rule: neobank outflows 90 d = 2 420 000 000,00 EUR
-                      dimension: accuracy
-                      discovered_by: knowledge_catalog
-                      enforced_in: dbt_silver
-                    - rule: batch Mainframe <= J-1 (fraîcheur)
-                      dimension: freshness
-                      discovered_by: knowledge_catalog
-                      enforced_in: kc_raw
+                  - "4 DATA_PROFILE scans SUCCEEDED (raw-profile-sepa-payments, raw-profile-cbk-movements, raw-profile-cbk-customers, raw-profile-cbk-accounts)"
+                  - "raw_sepa_payments_unified: 3.40% duplicate end_to_end_id · 8.10% RJCT/PDNG"
+                  - "cbk_cfonb_movements.date_valeur_raw: 66,000 rows in 00000000 / 99999999"
+                  - "cbk_customers_ref.code_agence_raw: 9,773 non-4-digit values (475 blank)"
+            filesChanged: []
             terminalLogs:
-              - $ python3 scripts/dataplex_scanner.py --tables raw_bank.* --location europe-west1
-              - 4 Knowledge Catalog profile jobs SUCCEEDED (13,249,412 rows)
-              - $ kc-cli dataScans:generateDataQualityRules raw-bank-profile
-              - 19 recommended technical rules
-              - $ mcp call bigquery search_catalog "Data Product contracts"
-              - 8 business rules + 4 cross-silo rules -> dq_scans/dq_rules_catalog.yaml (31 rules)
+              - $ uv run python scripts/run_raw_dq_scans.py --profile-only
+              - "[OK] 4 DATA_PROFILE scans SUCCEEDED (13,249,412 rows)"
+              - "Detected: SEPA duplicates/RJCT + CFONB 00000000 dates + malformed agency codes"
             subagents:
               - id: sa-d2-1a
-                role: Data Quality Rule Miner
+                role: Data Quality Profiler
                 skill: data-autocleaning
                 status: completed
-              - id: sa-d2-1b
-                role: Business Context Analyst
-                skill: discover-assets
-                status: completed
-            backgroundTasks:
-              - id: bg-d2-1a
-                command: Knowledge Catalog data-profile raw_bank (4 tables)
-                target: raw_bank
-                duration: 2.8s
-            artifact:
-              id: art-d2-1a
-              title: Catalogue des règles de Data Quality
-              subtitle: 31 règles trouvées par l'Agentic Data Cloud · Demo 2
-              markdownSummary:
-                heading: "D'où viennent les 31 règles"
-                metrics:
-                  - label: Recommandations KC
-                    value: 19 règles
-                    tone: positive
-                  - label: Contrats Knowledge Catalog
-                    value: 8 règles
-                    tone: positive
-                  - label: Raisonnement inter-silos
-                    value: 4 règles
-                    tone: warning
-                bullets:
-                  - "Le profil Knowledge Catalog détecte les anomalies de forme ; l'API generateDataQualityRules les transforme en règles."
-                  - "Knowledge Catalog fournit les règles métier que le profil ne peut pas deviner (volumes, fuite 2,42 Md€, seuil ACPR)."
-                  - "L'agent croise les silos pour les règles de cohérence (650 comptes absents du Mainframe J-1)."
+            backgroundTasks: []
           - id: d2-t1
-            chipLabel: 2. Appliquer les règles (scan Auto Data Quality RAW)
-            prompt: OK pour tes 3 recommandations. Applique ces règles avec un scan Auto Data Quality complet sur raw_bank et détaille toutes les anomalies avant qu'on construise la couche SILVER.
+            chipLabel: 2. Générer les règles DQ déterministes (RAW + plan dbt)
+            prompt: "Oui : génère automatiquement les règles de Data Quality déterministes sur RAW dans Knowledge Catalog et montre-moi concrètement quelles règles tu vas intégrer dans le pipeline dbt SILVER."
             workedDurationLabel: Worked for 5s
-            workGroupSummary: Ran Knowledge Catalog Auto DQ scan on raw_bank & rendered bq-visual-audit anomaly chart
-            intermediateMessage: Le scan Auto Data Quality Knowledge Catalog / BigQuery et le contrôle visuel `bq-visual-audit` analysent les `13,2 M` d'enregistrements de `data-days-demo.raw_bank`.
-            taskFinishedLabel: Auto Data Quality scan & visual anomaly profile on raw_bank finished
-            leadConfirmation: L'audit complet de qualité et le profil visuel des anomalies sur `raw_bank` sont disponibles dans
+            workGroupSummary: Generated deterministic Auto DQ rules from profiles, ran RAW scans & mapped dbt SILVER fixes
+            intermediateMessage: Génération automatique des règles **Auto Data Quality** à partir des profils (`generateDataQualityRules`), exécution des 4 scans de surveillance sur `raw_bank` et traduction de chaque règle pour le pipeline `dbt` `SILVER`.
+            taskFinishedLabel: 4 Auto Data Quality scans active on RAW & deterministic dbt SILVER plan ready
+            leadConfirmation: "Les **règles DQ déterministes** sont créées et exécutées sur `raw_bank` (les scans `RAW` sont volontairement rouges : on ne modifie jamais le `RAW`, on surveille et on alerte les équipes sources). Voici les règles réelles retenues, prêtes à être intégrées dans `dbt` sur"
             leadLink:
               text: Knowledge Catalog · Auto Data Quality (data-days-demo)
               url: https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality?project=data-days-demo
-            sectionHeading: "Anomalies identifiées dans la couche RAW & liens directs dans la console :"
-            items:
-              - title: Doublons réseau et rejets dans le flux paiements SEPA
-                chips:
-                  - kind: bq
-                    label: raw_sepa_payments
-                  - kind: yml
-                    label: raw_dq_audit_rules.yaml
-                bullets:
-                  - "`3,4 %` d'événements en doublon sur `end_to_end_id` (`210 800` retries techniques) et `8,1 %` de messages non compensés (`RJCT` / `PDNG`) mélangés aux virements exécutés `ACSC` — voir le scan [raw-dq-sepa-payments](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality/quality/raw-dq-sepa-payments;location=europe-west1?project=data-days-demo)."
-              - title: Dates Mainframe invalides et codes agences non normalisés
-                chips:
-                  - kind: bq
-                    label: cbk_cfonb_movements
-                bullets:
-                  - "`1,2 %` de dates de valeur encodées à `00000000` ou `99999999` (`66 000` lignes), codes agences non normalisés (`'0042'` vs `'42  '`), et `650` comptes récents créés sur AWS S3 pas encore réconciliés dans le Mainframe J-1."
-                  - "Scans Auto Data Quality publiés dans Knowledge Catalog : [raw-dq-cbk-customers](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality/quality/raw-dq-cbk-customers;location=europe-west1?project=data-days-demo) · [raw-dq-cbk-movements](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality/quality/raw-dq-cbk-movements;location=europe-west1?project=data-days-demo) · [raw-dq-cbk-accounts](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality/quality/raw-dq-cbk-accounts;location=europe-west1?project=data-days-demo) · [Profils RAW](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality?project=data-days-demo)."
-              - title: "Comment ces erreurs RAW vont être résolues en SILVER (sans jamais altérer la zone RAW)"
-                chips:
-                  - kind: yml
-                    label: dbt_project.yml
-                bullets:
-                  - "**Pourquoi le scan `RAW` reste rouge :** on ne corrige jamais la zone `RAW` (elle sert de preuve d'audit et d'alerte pour les équipes sources). Chaque erreur mesurée ici devient une **règle de nettoyage automatique dans `dbt`** pour produire une couche `SILVER` à `100 %` verte :"
-                  - "`210 800` doublons + `502 200` `RJCT`/`PDNG` → dédoublonnés (`ROW_NUMBER = 1`) et filtrés `ACSC` dans `stg_sepa_payments` · `66 000` dates `00000000`/`99999999` → date comptable + flag `value_date_was_invalid` · `9 773` agences → `LPAD(..., 4, '0')` · `650` comptes J0 AWS → conservés + flag `is_mainframe_orphan`."
-            visualCheck:
-              skillBadge: bq-visual-audit · MCP render_chart
-              title: "Profil visuel des anomalies détectées · data-days-demo.raw_bank"
-              subtitle: "13 249 412 lignes inspectées par Knowledge Catalog Auto Data Quality avant transformation dbt SILVER"
-              kpis:
-                - label: Statuts non compensés
-                  value: "8,10 %"
-                  sublabel: "502 200 RJCT / PDNG"
-                  tone: ruby
-                - label: Doublons techniques
-                  value: "3,40 %"
-                  sublabel: "210 800 end_to_end_id"
-                  tone: ruby
-                - label: Dates CFONB invalides
-                  value: "1,20 %"
-                  sublabel: "66 000 en 00000000/99999999"
-                  tone: warning
-                - label: Orphelins AWS S3 J0
-                  value: "650 comptes"
-                  sublabel: "Absents du maître z/OS J-1"
-                  tone: warning
-              chartTitle: "Distribution visuelle des non-conformités à corriger dans les modèles dbt SILVER"
-              bars:
-                - label: "Guichets Mainframe non normalisés ('42   ' vs '0042')"
-                  valueLabel: "12,08 % (664 637)"
-                  pct: 100
-                  tone: warning
-                  badge: LPAD requis
-                - label: "Messages SEPA non réglés (statuts RJCT & PDNG)"
-                  valueLabel: "8,10 % (502 200)"
-                  pct: 67
-                  tone: ruby
-                  badge: Filtrer ACSC
-                - label: "Retries réseau en doublon sur end_to_end_id"
-                  valueLabel: "3,40 % (210 800)"
-                  pct: 28
-                  tone: ruby
-                  badge: ROW_NUMBER = 1
-                - label: "Dates de valeur CFONB 00000000 / 99999999"
-                  valueLabel: "1,20 % (66 000)"
-                  pct: 14
-                  tone: ruby
-                  badge: Fallback compta
-                - label: "Comptes ouverts J0 sur AWS S3 hors Mainframe J-1"
-                  valueLabel: "0,68 % (650)"
-                  pct: 9
-                  tone: warning
-                  badge: FULL OUTER JOIN
-            traces:
-              - id: d2-tr1
-                action: analyzed
-                icon: dak
-                fileName: data-autocleaning/SKILL.md
-                lineRange: "#L1-86"
-                durationMs: 450
-              - id: d2-tr2
-                action: analyzed
-                icon: yml
-                fileName: _raw_sources.yml
-                lineRange: "#L1-38"
-                durationMs: 400
-              - id: d2-tr3
-                action: ran
-                commandSummary: profile uniqueness, date formats & cross-silo keys in data-days-demo.raw_bank
-                durationMs: 750
-                cwd: 02_demo2_silver_dbt_dq
-                command: CLOUDSDK_METRICS_ENVIRONMENT="datacloud.antigravity" gcloud dataplex datascans run raw-bank-dq-scan --project=data-days-demo --location=europe-west1
-                output:
-                  - "Job state: SUCCEEDED (scanned 13,249,412 records across raw_bank)"
-                  - "[FAIL] raw_sepa_payments.end_to_end_id uniqueness: 96.60% (210,800 duplicate retries)"
-                  - "[FAIL] raw_sepa_payments.tx_status settled_only: 91.90% (8.10% RJCT / PDNG)"
-                  - "[FAIL] cbk_cfonb_movements.date_valeur_raw valid_iso_date: 98.80% (66,000 rows in 00000000 / 99999999)"
-                  - "[WARN] cross_silo_key_check (ext_aws_crm vs cbk_accounts_master): 650 recent J0 orphan accounts"
-              - id: d2-tr3b
-                action: analyzed
-                icon: dak
-                fileName: .agents/skills/bq-visual-audit/SKILL.md
-                lineRange: "#L1-52"
-                durationMs: 350
-              - id: d2-tr3c
-                action: ran
-                commandSummary: MCP data-agent-kit/render_chart → RAW anomaly distribution chart
-                durationMs: 450
-                cwd: 02_demo2_silver_dbt_dq
-                command: mcp call data-agent-kit render_chart --spec '{"title":{"text":"RAW Layer Data Quality Anomalies"}}'
-                output:
-                  - "Rendered inline SVG anomaly distribution chart across 5 RAW findings"
-              - id: d2-tr4
-                action: edited
-                icon: yml
-                fileName: raw_dq_audit_rules.yaml
-                added: 32
-                removed: 0
-                durationMs: 550
-            filesChanged:
-              - path: 02_demo2_silver_dbt_dq/dq_scans/raw_dq_audit_rules.yaml
-                language: yaml
-                badge: YML
-                added: 32
-                removed: 0
-                content: |-
-                  kc_auto_dq:
-                    project: data-days-demo
-                    location: europe-west1
-                    findings:
-                      raw_sepa_payments:
-                        duplicate_end_to_end_id_pct: 3.40
-                        non_settled_status_rjct_pdng_pct: 8.10
-                      cbk_cfonb_movements:
-                        invalid_date_00000000_99999999_pct: 1.20
-                        unnormalized_branch_code_rows: 664637
-                      cross_silo_aws_mainframe:
-                        orphan_recent_accounts: 650
-            terminalLogs:
-              - $ gcloud dataplex datascans run raw-bank-dq-scan --project=data-days-demo --location=europe-west1
-              - "[FAIL] raw_sepa_payments.end_to_end_id uniqueness: 96.60% (threshold 100%)"
-              - "[FAIL] cbk_cfonb_movements.date_valeur_raw valid_date: 98.80% (threshold 100%)"
-              - "[WARN] cross-silo AWS CRM <-> Mainframe account key match: 650 unmatched J0 accounts"
-              - $ mcp call data-agent-kit render_chart [bq-visual-audit anomaly chart ready]
-            subagents:
-              - id: sa-d2-1
-                role: Data Quality Auditor
-                skill: data-autocleaning
-                status: completed
-            backgroundTasks:
-              - id: bg-d2-1
-                command: Knowledge Catalog auto-dq run raw-bank-dq
-                target: raw_bank
-                duration: 2.2s
-          - id: d2-t2a
-            chipLabel: 3. Préparer les corrections & l'unification avant dbt SILVER
-            prompt: "Maintenant que les anomalies RAW sont mesurées, prépare les corrections automatiques et l'unification inter-silos (Mainframe, CRM AWS et SEPA) dans dbt SILVER avant d'écrire le SQL."
-            workedDurationLabel: Worked for 4s
-            workGroupSummary: Tested Mainframe ↔ SEPA end_to_end_id overlap, checked 650 AWS J0 accounts & prepared 3 SQL design decisions
-            intermediateMessage: Rapprochement sur `end_to_end_id` entre `cbk_cfonb_movements` (`5,5 M` lignes) et `raw_sepa_payments_unified`, analyse des `650` comptes J0 sur AWS et préparation des corrections `dbt` `SILVER`.
-            taskFinishedLabel: 100% SEPA-CFONB overlap verified — 3 reconciliation decisions required
-            leadConfirmation: "Les corrections automatiques des anomalies `RAW` (doublons, `RJCT`/`PDNG`, dates `00000000`, `LPAD` agences) sont prêtes à être générées dans `stg_*`. Avant d'écrire les modèles `SILVER`, un contrôle inter-silos révèle que **100 % des virements SEPA réglés (`ACSC`) des comptes Mainframe J-1 figurent déjà à l'identique dans `cbk_cfonb_movements`** — il faut trancher **3 arbitrages métier**."
-            sectionHeading: "Points à arbitrer avant de générer le SQL de nettoyage et d'unification `dbt` :"
+            sectionHeading: "Règles DQ déterministes créées (surveillance RAW → correction & blocage dbt SILVER) :"
             askQuestions:
-              - id: d2-q2-double-count
-                question: "Un même virement figure à la fois dans les mouvements Mainframe (CFONB) et dans le flux SEPA, reliés par end_to_end_id. Comment éviter de le compter deux fois dans la vie du client ?"
+              - id: d2-q1-go-dbt
+                question: "On valide ces règles de nettoyage + la réconciliation sans double comptage (Mainframe J-1 + SEPA temps réel + 650 comptes AWS J0) pour générer le pipeline dbt SILVER ?"
                 options:
-                  - "(Recommended) Le Mainframe fait foi ; SEPA enrichit chaque mouvement (bénéficiaire, IBAN, schéma) et on n'ajoute que les paiements postérieurs au batch J-1 ou des comptes absents du Mainframe"
-                  - "SEPA fait foi ; le Mainframe ne sert qu'au solde de la veille"
-                  - "Additionner les deux sources puis dédoublonner a posteriori"
-              - id: d2-q2-orphans
-                question: "Les 650 comptes ouverts en agence sur le CRM AWS détectés au scan DQ ne sont pas encore dans le batch Mainframe J-1. Que fait-on ?"
-                options:
-                  - "(Recommended) Les garder dans dp_customer_360 et les signaler (is_mainframe_orphan) ; leurs paiements SEPA du jour alimentent la timeline"
-                  - "Les exclure jusqu'au prochain batch Mainframe"
-                  - "Les isoler dans une table de quarantaine"
-              - id: d2-q2-categories
-                question: "Comment catégoriser les 5,5 M de mouvements (salaire, loyer, abonnement, carte, néobanque...) ?"
-                options:
-                  - "(Recommended) Règles versionnées dans un référentiel dbt (seed movement_category_rules), modifiables par le métier sans toucher au SQL"
-                  - "Appel IA (AI.GENERATE) sur chaque libellé"
-                  - "Catégories codées en dur dans le SQL"
+                  - "(Recommended) Go : générer les 8 modèles dbt SILVER structurés, les référentiels seeds et les 84 tests bloquants schema.yml"
+                  - "Exclure les 650 nouveaux comptes AWS en attendant le prochain batch Mainframe"
             items:
-              - title: "Recouvrement Mainframe CFONB ↔ Flux SEPA (`end_to_end_id`)"
+              - title: "Règles choisies sur Exemple 1 — Paiements SEPA (`raw-dq-sepa-payments`)"
                 chips:
-                  - kind: bq
-                    label: cbk_cfonb_movements
                   - kind: bq
                     label: raw_sepa_payments_unified
                 bullets:
-                  - "Chaque virement réglé (`ACSC`) antérieur au cut-off nuit est présent **dans les deux silos** avec le même `end_to_end_id` et le même montant : un `UNION ALL` naïf doublerait la fuite de dépôts (`4,84 Md€` au lieu de `2,42 Md€`)."
-                  - "En revanche, SEPA apporte le nom, l'IBAN complet et les opérations intraday post-batch ainsi que celles des `650` comptes créés en J0."
-              - title: "Référentiels métier externalisés en seeds `dbt` (zéro règle en dur)"
+                  - "**Règles déterministes créées :** unicité de `end_to_end_id` (l'identifiant unique du virement, pour ne jamais compter deux fois un même paiement) + statut `tx_status = 'ACSC'` (ne retenir que les virements réellement réglés, en excluant les rejets `RJCT` et attentes `PDNG`) — voir le scan [raw-dq-sepa-payments](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality/quality/raw-dq-sepa-payments;location=europe-west1?project=data-days-demo)."
+                  - "**Dans le pipeline `dbt` :** dédoublonnage par identifiant unique (`ROW_NUMBER = 1` sur `end_to_end_id`) et filtre sur les virements réglés (`tx_status = 'ACSC'`) dans `stg_sepa_payments.sql`, puis verrouillage par tests bloquants `unique` & `accepted_values` dans `schema.yml`."
+              - title: "Règles choisies sur Exemple 2 — Mainframe (`raw-dq-cbk-movements` & `raw-dq-cbk-customers`)"
+                chips:
+                  - kind: bq
+                    label: cbk_cfonb_movements
+                  - kind: bq
+                    label: cbk_customers_ref
+                bullets:
+                  - "**Règles déterministes créées :** format date `^[0-9]{8}$` hors `00000000`/`99999999` ([raw-dq-cbk-movements](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality/quality/raw-dq-cbk-movements;location=europe-west1?project=data-days-demo)) et code agence sur 4 chiffres `^[0-9]{4}$` ([raw-dq-cbk-customers](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality/quality/raw-dq-cbk-customers;location=europe-west1?project=data-days-demo) · [raw-dq-cbk-accounts](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality/quality/raw-dq-cbk-accounts;location=europe-west1?project=data-days-demo))."
+                  - "**Dans le pipeline `dbt` :** fallback vers la date comptable + flag `value_date_was_invalid`, normalisation `LPAD(..., 4, '0')` et tests bloquants `not_null` / regex dans `schema.yml`."
+              - title: "Règle inter-silos intégrée d'office : zéro double comptage & 650 comptes J0"
                 chips:
                   - kind: yml
                     label: movement_category_rules.csv
                 bullets:
-                  - "Conformément aux conventions d'architecture, les listes de BIC néobanques/courtiers (`competitor_institutions`) et les motifs de catégorisation doivent vivre dans des `seeds/` versionnés plutôt qu'en dur dans le SQL."
+                  - "Les virements SEPA réglés de la veille existent aussi dans le Mainframe (`end_to_end_id`) : le **Mainframe fait foi à J-1**, **SEPA enrichit** (IBAN/bénéficiaire) et ajoute uniquement les opérations du jour + les **`650` nouveaux comptes AWS** (signalés `is_mainframe_orphan`)."
             traces:
-              - id: d2-tr5
+              - id: d2-tr1
                 action: analyzed
                 icon: dak
                 fileName: dbt-bigquery/SKILL.md
-                lineRange: "#L1-312"
-                durationMs: 450
-              - id: d2-tr5b
+                lineRange: "#L1-180"
+                durationMs: 380
+              - id: d2-tr3
                 action: ran
-                commandSummary: overlap Mainframe CFONB vs SEPA payments by end_to_end_id
-                durationMs: 650
+                commandSummary: generateDataQualityRules & run 4 Auto Data Quality scans on raw_bank
+                durationMs: 850
                 cwd: 02_demo2_silver_dbt_dq
-                command: bq query --use_legacy_sql=false --label datacloud:antigravity "SELECT COUNTIF(m.e2e IS NOT NULL) FROM sepa_acsc s LEFT JOIN cfonb m USING (e2e)"
+                command: uv run python scripts/run_raw_dq_scans.py --dq-only
                 output:
-                  - "SEPA settled payments on Mainframe accounts: 100% matched in CFONB (same end_to_end_id, date & amount)"
-                  - "Risk detected: summing both sources would double count every SEPA payment"
+                  - "Generated deterministic rules via DataScan:generateDataQualityRules"
+                  - "[ACTIVE] raw-dq-sepa-payments   -> 96.6% unique end_to_end_id · 91.9% ACSC"
+                  - "[ACTIVE] raw-dq-cbk-movements   -> 98.8% valid value dates (66,000 in 00000000/99999999)"
+                  - "[ACTIVE] raw-dq-cbk-customers   -> 87.7% 4-digit agency codes (9,773 malformed)"
+                  - "[ACTIVE] raw-dq-cbk-accounts    -> 100% RIB/currency valid · 650 J0 AWS accounts flagged"
             filesChanged: []
             terminalLogs:
-              - $ bq query --label datacloud:antigravity "SELECT COUNTIF(m.e2e IS NOT NULL) FROM sepa_acsc s LEFT JOIN cfonb m USING (e2e)"
-              - 100% overlap confirmed on settled J-1 SEPA movements -> awaiting reconciliation choice
-              - Waiting for user confirmation on 3 dbt design decisions...
+              - $ uv run python scripts/run_raw_dq_scans.py --dq-only
+              - "[OK] 4 Auto Data Quality scans published to Knowledge Catalog"
+              - "Ready to generate 8 structured dbt SILVER models + 84 blocking schema.yml tests"
             subagents:
-              - id: sa-d2-2a
-                role: Data Quality Rule Engineer
+              - id: sa-d2-1
+                role: Auto Data Quality Architect
                 skill: data-autocleaning
                 status: completed
             backgroundTasks: []
           - id: d2-t2
-            chipLabel: 4. Générer les modèles dbt SILVER & les contrats schema.yml
-            prompt: "Valide ces 3 choix et génère les modèles dbt SILVER structurés (nettoyage des anomalies RAW + unification), les référentiels seeds et leurs contrats de qualité dans schema.yml."
+            chipLabel: 3. Construire le pipeline dbt SILVER (8 modèles & 84 tests)
+            prompt: "Go : applique ces règles de nettoyage et de réconciliation, et génère les 8 modèles dbt SILVER structurés, les seeds métier et les 84 tests bloquants dans schema.yml."
             workedDurationLabel: Worked for 6s
             workGroupSummary: Generated 8 structured SILVER dbt models, category seeds & 84 schema.yml data tests
-            intermediateMessage: Écriture des vues `stg_*` (correction des 4 anomalies rouges du scan `RAW`), des `8` modèles `dbt` structurés (`dp_customer_360`, `dp_customer_timeline`, `dp_customer_relationship`, `dp_finance_pnb` + `savings_offers`), des seeds métier et validation `dbt parse` (`84` tests).
+            intermediateMessage: Écriture des vues `stg_*` (correction des anomalies rouges du scan `RAW`), des `8` modèles `dbt` structurés (`dp_customer_360`, `dp_customer_timeline`, `dp_customer_relationship`, `dp_finance_pnb` + `savings_offers`), des seeds métier et validation `dbt parse` (`84` tests).
             taskFinishedLabel: 8 structured SILVER dbt models, RAW anomaly fixes & 84 dbt tests generated
-            leadConfirmation: "Les **4 anomalies rouges des scans `RAW`** sont désormais corrigées automatiquement dans le SQL `dbt` (`stg_*` → `silver_bank`) et **verrouillées par `84` tests bloquants `schema.yml`** (`8` modèles structurés prêts — il ne reste plus qu'à brancher les PDF non structurés dans ce même projet `dbt`)."
+            leadConfirmation: "C'est prêt : les **anomalies rouges des scans `RAW`** sont corrigées automatiquement dans le SQL `dbt` (`stg_*` → `silver_bank`) et **verrouillées par `84` tests bloquants `schema.yml`** (`8` modèles structurés prêts — il ne reste plus qu'à brancher les PDF non structurés dans ce même projet `dbt`)."
             sectionHeading: "Ce qui a été généré dans le projet `dbt` :"
             items:
               - title: Vie du client sans double comptage (`dp_customer_timeline`)
