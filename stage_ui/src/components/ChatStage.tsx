@@ -478,7 +478,8 @@ const VoiceSparkleIcon: React.FC = () => (
 );
 
 /** The question tray shows plain text only: no bold, no inline code chips. */
-const stripInlineMarkup = (text: string): string => text.replace(/\*\*/g, '').replace(/`/g, '');
+const stripInlineMarkup = (text: unknown): string =>
+  typeof text === 'string' ? text.replace(/\*\*/g, '').replace(/`/g, '') : String(text ?? '');
 
 const AskQuestionGlyph: React.FC = () => (
   <svg viewBox="0 0 20 20" fill="none" className="w-[19px] h-[19px] shrink-0 text-[#5F6368]">
@@ -1141,9 +1142,25 @@ export const ChatStage: React.FC<ChatStageProps> = ({
                         {(status === 'done' ||
                           (status === 'streaming' &&
                             visibleTraceCount >= Math.ceil(turn.traces.length / 2))) && (
-                          <p className="text-[#202124] animate-fade-slide-up">
-                            {renderAntigravityInlineText(turn.intermediateMessage)}
-                          </p>
+                          <div className="space-y-2.5 animate-fade-slide-up">
+                            <p className="text-[#202124]">
+                              {renderAntigravityInlineText(turn.intermediateMessage)}
+                            </p>
+                            {status === 'streaming' && turn.id === 'd1-s2-t2' && turn.leadLink && (
+                              <p className="text-[13.5px] text-[#5F6368]">
+                                Suivi du batch en direct :{' '}
+                                <a
+                                  href={turn.leadLink.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-0.5 text-[#1A73E8] hover:underline font-medium"
+                                >
+                                  <span>{turn.leadLink.text}</span>
+                                  <ExternalLink className="w-3.5 h-3.5 inline ml-0.5" />
+                                </a>
+                              </p>
+                            )}
+                          </div>
                         )}
                       </>
                     )}

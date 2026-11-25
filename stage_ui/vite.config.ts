@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -14,6 +15,21 @@ const PYSPARK_SCRIPT_PATH = path.resolve(
   REPO_ROOT,
   '01_demo1_raw_aggregation/spark/parse_corebanking_iceberg.py'
 );
+
+function resolveGcloudBin(): { bin: string; extraPath: string } {
+  const candidates = [
+    process.env.GCLOUD_BIN,
+    path.join(os.homedir(), 'google-cloud-sdk/bin/gcloud'),
+    '/opt/homebrew/bin/gcloud',
+    '/usr/local/bin/gcloud',
+  ].filter((p): p is string => Boolean(p));
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return { bin: candidate, extraPath: path.dirname(candidate) };
+    }
+  }
+  return { bin: 'gcloud', extraPath: '' };
+}
 
 function loadRootEnv(): Record<string, string> {
   const envPath = path.resolve(REPO_ROOT, '.env');
@@ -147,9 +163,18 @@ function liveSparkTriggerPlugin(): Plugin {
     );
     console.log(`[stage_ui] Console : ${consoleUrl}`);
 
-    const child = spawn('gcloud', gcloudArgs, {
+    const { bin: gcloudBin, extraPath } = resolveGcloudBin();
+    const mergedPath = extraPath
+      ? `${extraPath}:${process.env.PATH || '/usr/bin:/bin'}`
+      : process.env.PATH;
+
+    const child = spawn(gcloudBin, gcloudArgs, {
       cwd: REPO_ROOT,
-      env: { ...process.env, CLOUDSDK_METRICS_ENVIRONMENT: metricsEnv },
+      env: {
+        ...process.env,
+        PATH: mergedPath,
+        CLOUDSDK_METRICS_ENVIRONMENT: metricsEnv,
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -158,6 +183,11 @@ function liveSparkTriggerPlugin(): Plugin {
     });
     child.stderr?.on('data', (chunk) => {
       process.stderr.write(`[spark-dryrun] ${chunk.toString()}`);
+    });
+    child.on('exit', (code) => {
+      if (code !== 0) {
+        console.error(`[spark-dryrun] gcloud exited with code ${code}`);
+      }
     });
     child.on('error', (err) => {
       console.error(`[spark-dryrun] Impossible de lancer gcloud : ${err.message}`);

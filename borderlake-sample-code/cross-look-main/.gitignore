@@ -1,0 +1,19 @@
+# Local environment overrides (never commit project IDs or credentials)
+.env
+.env.*
+!.env.example
+
+# Jupyter / Colab checkpoints & local copies
+.ipynb_checkpoints/
+*.local.ipynb
+
+# Python cache & virtual environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# OS & temporary staging files
+.DS_Store
+tmp/
+*.tmp

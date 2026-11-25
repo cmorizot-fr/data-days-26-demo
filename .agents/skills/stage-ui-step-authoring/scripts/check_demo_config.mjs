@@ -88,7 +88,13 @@ for (const ws of cfg.workspaces ?? []) {
       const tw = `turn ${turn.id}`;
       uniq(turn.id, tw);
       TURN_FIELDS.forEach((f) => turn[f] === undefined && err(`${tw} : champ « ${f} » manquant`));
-      (turn.items ?? []).forEach((it, i) => (it.chips ?? []).forEach((c) => inEnum(c.kind, 'chipKind', `${tw} · items[${i}].chips`)));
+      (turn.items ?? []).forEach((it, i) => {
+        if (typeof it.title !== 'string') err(`${tw} · items[${i}].title n'est pas une chaîne (mettre entre guillemets si contient ': ')`);
+        (it.bullets ?? []).forEach((b, bi) => {
+          if (typeof b !== 'string') err(`${tw} · items[${i}].bullets[${bi}] n'est pas une chaîne (mettre entre guillemets si contient ': ')`);
+        });
+        (it.chips ?? []).forEach((c) => inEnum(c.kind, 'chipKind', `${tw} · items[${i}].chips`));
+      });
       (turn.traces ?? []).forEach((tr) => {
         inEnum(tr.action, 'traceAction', `${tw} · trace ${tr.id}`);
         if (tr.action !== 'ran') inEnum(tr.icon, 'icon', `${tw} · trace ${tr.id}`);
@@ -99,6 +105,10 @@ for (const ws of cfg.workspaces ?? []) {
       if (qs.length && (qs.length < 2 || qs.length > 3)) warn(`${tw} : ${qs.length} question(s) d'arbitrage (2 à 3 attendues)`);
       qs.forEach((q) => {
         uniq(q.id, `${tw} · question`);
+        if (typeof q.question !== 'string') err(`${tw} · question ${q.id} : question n'est pas une chaîne`);
+        (q.options ?? []).forEach((opt, oi) => {
+          if (typeof opt !== 'string') err(`${tw} · question ${q.id} · options[${oi}] n'est pas une chaîne (mettre entre guillemets si contient ': ')`);
+        });
         if ((q.options ?? []).length < 2) err(`${tw} · question ${q.id} : au moins 2 options`);
         if (!String(q.options?.[0] ?? '').startsWith('(Recommended) ')) err(`${tw} · question ${q.id} : la 1re option doit commencer par « (Recommended) »`);
       });

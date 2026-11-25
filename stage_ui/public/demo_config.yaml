@@ -41,8 +41,8 @@ workspaces:
             taskFinishedLabel: Local file server & existing GCS RAW bucket inspection finished
             leadConfirmation: "Le bucket `gs://data-days-demo-landing` est bien présent et accessible en `europe-west1` (attention : les maîtres `.ebcdic` sont en binaire continu `RECFM=FB` `EBCDIC CP500 + COMP-3` sans saut de ligne, atterrissage binaire brut sur GCS indispensable avant tout décodage) sur"
             leadLink:
-              text: console.cloud.google.com/storage/browser/data-days-demo-landing/raw
-              url: https://console.cloud.google.com/storage/browser?project=data-days-demo
+              text: console.cloud.google.com/storage/browser/data-days-demo-landing/RAW
+              url: https://console.cloud.google.com/storage/browser/data-days-demo-landing/RAW?project=data-days-demo
             sectionHeading: "Avant de lancer le transfert vers la zone RAW, un point demande ton arbitrage :"
             items:
               - title: "Incident détecté sur le mois passé (`202610`) : double fichier `ABEND` vs `RERUN`"
@@ -134,8 +134,8 @@ workspaces:
             taskFinishedLabel: Mainframe October drop transferred to gs://data-days-demo-landing/raw/
             leadConfirmation: Les fichiers Mainframe du mois passé, les référentiels `.ebcdic` et les Copybooks `.cpy` sont déposés sans altération binaire dans
             leadLink:
-              text: gs://data-days-demo-landing/raw/corebanking/202610/
-              url: https://console.cloud.google.com/storage/browser?project=data-days-demo
+              text: gs://data-days-demo-landing/RAW/corebanking/
+              url: https://console.cloud.google.com/storage/browser/data-days-demo-landing/RAW/corebanking?project=data-days-demo
             sectionHeading: "Ce qui a été transféré et vérifié :"
             items:
               - title: Copie binaire fidèle au bordereau CFT (`datacloud.antigravity`)
@@ -219,22 +219,22 @@ workspaces:
               url: https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m4!1m3!3m2!1sdata-days-demo!2sraw_bank
             sectionHeading: "Ce que j'applique d'office & 2 arbitrages avant lancement :"
             items:
-              - title: "Rejet CFT `RC=0000` & rattachement `CFONB 04 + 05` intégrés d'office"
+              - title: "Règles automatiques d'office : filtrage du fichier en erreur & décodage Mainframe"
                 chips:
                   - kind: py
                     label: CFONB120_BAL_OPS.cpy
                 bullets:
-                  - "Conformément à ton arbitrage précédent, le job Spark rejette automatiquement `CFONB120_MVTS_202610_RUN01.cfonb` (`99CFT_TRL RC=0012`) et vérifie `DATA_RECORDS` + `CHECKSUM_MVTS_04`."
-                  - "Lecture binaire `RECFM=FB` (`EBCDIC CP500 + COMP-3`) via `sc.binaryRecords` et rattachement positionnel en streaming des lignes `05` (`BIC` / `EndToEndId`) sur leur mouvement `04` parent."
+                  - "**Écarter le fichier planté d'octobre** : le job Spark lit le code retour en fin de fichier, rejette automatiquement l'envoi incomplet `RUN01` (`RC=0012`) et vérifie le nombre de lignes et la somme de contrôle."
+                  - "**Décoder le binaire Mainframe & relier les détails SEPA** : les fichiers `EBCDIC` (sans saut de ligne) sont traduits grâce aux Copybooks COBOL, et chaque ligne de détail SEPA (`05`, portant le BIC de la banque destinataire) est rattachée au virement parent (`04`) qui la précède."
               - title: "1. Cible de stockage : 4 tables BigLake Managed Iceberg pré-documentées"
                 chips:
                   - kind: bq
                     label: biglake-gcs-conn
                 bullets:
                   - "Je crée la connexion `biglake-gcs-conn` (`europe-west1`) et pré-documente **4 tables BigLake Managed Iceberg** (`cbk_customers_ref`, `cbk_accounts_master`, `cbk_cfonb_balances`, `cbk_cfonb_movements` — `72` colonnes documentées), ou préfères-tu des tables BigQuery natives sans Iceberg ?"
-              - title: "2. Gouvernance `RAW` : préserver les anomalies métier pour `dbt` (Démo #2)"
+              - title: "2. Gouvernance `RAW` : préserver les anomalies métier pour la couche de nettoyage en aval"
                 bullets:
-                  - "Les fichiers contiennent `66 000` dates `00000000` / `99999999` (`1,20 %`), `12,08 %` de guichets décalés (`'42   '`) et `650` comptes récents absents du Mainframe. On conserve 100 % de ces valeurs brutes en `RAW` pour les traiter proprement dans `dbt` en `Démo #2`, ou on nettoie dès Spark ?"
+                  - "Les fichiers contiennent `66 000` dates `00000000` / `99999999` (`1,20 %`), `12,08 %` de guichets décalés (`'42   '`) et `650` comptes récents absents du Mainframe. On conserve 100 % de ces valeurs brutes en `RAW` pour les auditer et les nettoyer en aval (couche `SILVER`), ou on nettoie dès Spark ?"
             askQuestions:
               - id: d1-s2-q2-iceberg
                 question: Quelle cible de stockage utiliser pour les 4 tables décodées (`04 + 05` rattachés) ?
@@ -244,7 +244,7 @@ workspaces:
               - id: d1-s2-q3-raw
                 question: Que fait-on des anomalies de contenu (`00000000`, guichets `'42   '`) pendant le job Spark ?
                 options:
-                  - "(Recommended) Conserver 100 % des valeurs brutes en `RAW` pour `dbt` (Démo #2) et lancer sur Dataproc Serverless `2.2`"
+                  - "(Recommended) Conserver 100 % des valeurs brutes en `RAW` (traçabilité d'audit, nettoyage en aval) et lancer sur Dataproc Serverless `2.2`"
                   - "Nettoyer silencieusement les dates et codes agences dès le décodage binaire"
             traces:
               - id: d1-s2-tr1
@@ -305,7 +305,7 @@ workspaces:
           - id: d1-s2-t2
             chipLabel: 2. Créer les 4 tables Iceberg, lancer Spark Serverless & vérifier
             prompt: "Oui sur les 2 points : crée les 4 tables BigLake Managed Iceberg documentées (72 colonnes), lance le batch PySpark Serverless en préservant les anomalies RAW, puis vérifie le chargement dans BigQuery."
-            workedDurationLabel: Worked for 37s
+            workedDurationLabel: Worked for 14s
             workGroupSummary: Provisioned BigLake Iceberg DDL, started Dataproc Serverless Spark 2.2 batch & ran bq-visual-audit
             intermediateMessage: "Démarrage du runtime **Managed Service for Apache Spark Serverless (`2.2`)** sur `spark-sless-ew1` (allocation automatique des executors), décodage binaire `EBCDIC CP500 + COMP-3` / `CFONB 04+05`, rejet de `202610_RUN01.cfonb` (`RC=0012`) et écriture directe dans les 4 tables **BigLake Managed Iceberg**."
             taskFinishedLabel: BigLake Iceberg DDL, Dataproc Serverless PySpark batch & bq-visual-audit completed
@@ -323,7 +323,7 @@ workspaces:
                     label: 00_create_documented_mainframe_iceberg_tables.sql
                 bullets:
                   - "Connexion `data-days-demo.europe-west1.biglake-gcs-conn` (`roles/storage.admin` + `roles/biglake.admin`) et pré-création `table_format = 'ICEBERG'` / `PARQUET` sous `gs://data-days-demo-landing/iceberg/raw_bank/`."
-                  - "Volumétries certifiées dans `INFORMATION_SCHEMA` : `cbk_customers_ref` = **`79 350`** clients (`650` orphelins AWS attendus), `cbk_accounts_master` = **`94 350`** comptes, `cbk_cfonb_balances` = **`2 875 062`** soldes `01`/`07`, `cbk_cfonb_movements` = **`5 500 000`** mouvements."
+                  - "Volumétries certifiées dans `INFORMATION_SCHEMA` : [cbk_customers_ref](https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2sraw_bank!3scbk_customers_ref) = **`79 350`** clients, [cbk_accounts_master](https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2sraw_bank!3scbk_accounts_master) = **`94 350`** comptes, [cbk_cfonb_balances](https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2sraw_bank!3scbk_cfonb_balances) = **`2 875 062`** soldes `01`/`07`, [cbk_cfonb_movements](https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2sraw_bank!3scbk_cfonb_movements) = **`5 500 000`** mouvements."
               - title: Décodage distribué Dataproc Serverless `2.2` & script de replay idempotent
                 chips:
                   - kind: py
@@ -331,16 +331,16 @@ workspaces:
                 bullets:
                   - "Rejet automatique de `CFONB120_MVTS_202610_RUN01.cfonb` (`ABEND_S0C7` `RC=0012`), décompactage `COMP-3` signé et rattachement en streaming des `3 080 073` lignes `05` sur les `5 500 000` mouvements `04`."
                   - "Script de replay prêt : `./scripts/run_demo1_mainframe_spark_iceberg.sh [--skip-upload]` (et mode `--dry-run` sans écriture pour validation en direct)."
-              - title: Signal métier déjà visible (`-2,42 Md€`) & anomalies `RAW` préservées pour `dbt`
+              - title: Anomalies `RAW` préservées & schéma documenté vérifié dans BigQuery
                 chips:
                   - kind: bq
                     label: INFORMATION_SCHEMA.COLUMN_FIELD_PATHS
                 bullets:
-                  - "Les virements sortants `0810` vers les BIC néobanques/courtiers extraits des lignes `05` (`REVOLT21XXX`, `TRBKDEBBXXX`, `NTSBDEB1XXX`, `BOURFRPPXXX`, `DEGIRO2AXXX`) totalisent exactement **`-2 420 000 000,00 €`** sur 90 jours, tandis que les `66 000` dates `00000000`/`99999999` (`1,20 %`) restent intactes pour `dbt` en `Démo #2`."
+                  - "Conformément à ton arbitrage, les `66 000` dates `00000000`/`99999999` (`1,20 %`) et les `12,08 %` de codes guichets non normalisés (`'42   '`) sont préservés intacts en `RAW` pour traçabilité d'audit, et les `72 / 72` colonnes sont bien documentées dans `INFORMATION_SCHEMA`."
             visualCheck:
               skillBadge: bq-visual-audit · MCP render_chart
               title: "Validation du chargement · 4 tables BigLake Managed Iceberg (raw_bank)"
-              subtitle: "Réconciliation binaire z/OS → BigQuery, intégrité CFT et profiling RAW avant Démo #2"
+              subtitle: "Réconciliation binaire z/OS → BigQuery, intégrité CFT et profiling RAW"
               kpis:
                 - label: Tables Iceberg
                   value: "4 / 4"
@@ -356,7 +356,7 @@ workspaces:
                   tone: blue
                 - label: Anomalies RAW
                   value: "66 000"
-                  sublabel: "dates brutes gardées pour dbt"
+                  sublabel: "dates brutes préservées en RAW"
                   tone: warning
               chartTitle: "Contrôles de complétude, de parsing et d'état RAW post-chargement Spark Serverless"
               bars:
@@ -385,13 +385,13 @@ workspaces:
                   tone: blue
                   badge: "3,08 M"
                 - label: "Codes guichets non normalisés"
-                  sublabel: "Valeurs brutes '42   ' / '     ' conservées volontairement en RAW pour nettoyage dbt (Démo #2)"
+                  sublabel: "Valeurs brutes '42   ' / '     ' conservées volontairement en RAW (nettoyage en aval)"
                   valueLabel: "12,08 %"
                   pct: 12
                   tone: warning
                   badge: "RAW"
                 - label: "Dates de valeur invalides"
-                  sublabel: "66 000 dates '00000000' / '99999999' conservées intactes en RAW pour Auto Data Quality (Démo #2)"
+                  sublabel: "66 000 dates '00000000' / '99999999' conservées intactes en RAW pour audit qualité en aval"
                   valueLabel: "1,20 %"
                   pct: 4
                   tone: warning
@@ -449,7 +449,7 @@ workspaces:
               - id: d1-s2-tr13
                 action: ran
                 commandSummary: "Dataproc Serverless Spark 2.2 — decoding EBCDIC/COMP-3 & CFONB 04+05 → BigLake Iceberg (5.5M rows)"
-                durationMs: 30000
+                durationMs: 10000
                 cwd: 01_demo1_raw_aggregation
                 command: gcloud dataproc batches wait cbk-mainframe-iceberg-20261113-192341 --region=europe-west1 --project=data-days-demo
                 output:
@@ -461,8 +461,8 @@ workspaces:
                   - "Batch [cbk-mainframe-iceberg-20261113-192341] SUCCEEDED."
               - id: d1-s2-tr14
                 action: ran
-                commandSummary: bq query — verify 4 Iceberg row counts, 72 column descriptions & -2.42B€ 90d flight
-                durationMs: 4000
+                commandSummary: bq query — verify 4 Iceberg row counts, 72 column descriptions & RAW anomalies preserved
+                durationMs: 700
                 cwd: 01_demo1_raw_aggregation
                 command: bq --location=europe-west1 query --project_id=data-days-demo --use_legacy_sql=false --label datacloud:antigravity "SELECT check_name, observed_value, expected_value FROM ..."
                 output:
@@ -475,7 +475,7 @@ workspaces:
                   - "| 4_cbk_cfonb_movements         | 5500000         | 5500000        |"
                   - "| 5_documented_columns          | 72              | 72             |"
                   - "| 6_raw_invalid_dates_preserved | 66000           | 66000          |"
-                  - "| 7_deposit_flight_90d_eur      | -2420000000.00  | -2420000000.00 |"
+                  - "| 7_raw_non_norm_branches_pct   | 12.08%          | 12.08%         |"
                   - "+-------------------------------+-----------------+----------------+"
               - id: d1-s2-tr14b
                 action: analyzed
@@ -1395,6 +1395,71 @@ workspaces:
                   - "Référentiels EBCDIC CP500 + COMP-3 décompactés sans perte : 79 350 clients et 94 350 comptes."
                   - "Anomalies métier conservées intactes en RAW pour Demo 2 : 66 000 dates '00000000'/'99999999' et 12,08 % de guichets non normalisés."
                   - "Replay complet : ./scripts/run_demo1_mainframe_spark_iceberg.sh (ou --dry-run sans écriture)."
+          - id: d1-s2-t3
+            chipLabel: 3. Vérifier les mouvements vers néobanques
+            prompt: "Vois-tu déjà des mouvements vers des néobanques depuis ces données brutes ?"
+            workedDurationLabel: Worked for 3s
+            workGroupSummary: Queried raw_bank.cbk_cfonb_movements for SEPA 0810 outflows to neobank BICs (90 days)
+            intermediateMessage: "Exécution directe d'une requête BigQuery sur la table BigLake Iceberg [cbk_cfonb_movements](https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2sraw_bank!3scbk_cfonb_movements) en filtrant les virements sortants `0810` sur 90 jours via le BIC contrepartie (`counterparty_bic`) extrait des lignes CFONB `05`."
+            taskFinishedLabel: BigQuery query on raw_bank.cbk_cfonb_movements completed (-2,42 Md€ identified)
+            leadConfirmation: "**Oui, le signal est déjà très net dès la couche brute :** sur les 90 derniers jours (`2026-08-15` → `2026-11-12`), on observe **`200 000` virements sortants** vers 5 néobanques et courtiers en ligne pour un total de **`-2 420 000 000,00 €`** sur"
+            leadLink:
+              text: data-days-demo.raw_bank.cbk_cfonb_movements
+              url: https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2sraw_bank!3scbk_cfonb_movements
+            sectionHeading: "Répartition par BIC contrepartie (extrait des lignes CFONB 05) :"
+            items:
+              - title: "Top 5 des destinations néobanques & courtiers (`-2,42 Md€` sur 90 jours)"
+                chips:
+                  - kind: bq
+                    label: cbk_cfonb_movements
+                bullets:
+                  - "Grâce au rattachement positionnel des lignes `05` effectué par Spark, `counterparty_bic` est directement interrogeable en SQL sans attendre le nettoyage complet."
+                  - "À ce stade `RAW`, nous avons uniquement le montant brut par BIC : pour comprendre **quels profils clients** (`18-32 ans`, patrimoine, récurrence) transfèrent ces fonds, il faudra croiser avec le CRM et nettoyer les anomalies en aval."
+            codeBlock:
+              label: "Requête directe sur BigLake Iceberg (raw_bank.cbk_cfonb_movements)"
+              language: sql
+              code: |-
+                SELECT
+                  counterparty_bic,
+                  COUNT(*) AS nb_virements,
+                  ROUND(SUM(signed_amount_eur), 2) AS total_eur
+                FROM `data-days-demo.raw_bank.cbk_cfonb_movements`
+                WHERE code_op_interne = '0810'
+                  AND date_compta_raw BETWEEN '20260815' AND '20261112'
+                  AND counterparty_bic IN ('REVOLT21XXX', 'TRBKDEBBXXX', 'NTSBDEB1XXX', 'BOURFRPPXXX', 'DEGIRO2AXXX')
+                GROUP BY counterparty_bic
+                ORDER BY total_eur ASC;
+              resultLabel: "Résultat retourné par BigQuery (200 000 virements = -2 420 000 000,00 €) :"
+              resultTable:
+                - "+------------------+--------------+---------------+"
+                - "| counterparty_bic | nb_virements |   total_eur   |"
+                - "+------------------+--------------+---------------+"
+                - "| REVOLT21XXX      |        66875 | -815112017.02 |"
+                - "| TRBKDEBBXXX      |        66549 | -805947048.66 |"
+                - "| NTSBDEB1XXX      |        25530 | -307986936.42 |"
+                - "| BOURFRPPXXX      |        25269 | -301872329.10 |"
+                - "| DEGIRO2AXXX      |        15777 | -189081668.80 |"
+                - "+------------------+--------------+---------------+"
+            traces:
+              - id: d1-s2-tr16
+                action: ran
+                commandSummary: bq query — neobank BIC outflows on raw_bank.cbk_cfonb_movements (90d)
+                durationMs: 900
+                cwd: 01_demo1_raw_aggregation
+                command: bq --location=europe-west1 query --project_id=data-days-demo --use_legacy_sql=false --label datacloud:antigravity "SELECT counterparty_bic, COUNT(*) AS nb_virements, ROUND(SUM(signed_amount_eur), 2) AS total_eur FROM \`data-days-demo.raw_bank.cbk_cfonb_movements\` WHERE code_op_interne = '0810' ..."
+                output:
+                  - "REVOLT21XXX: 66,875 tx | -815,112,017.02 EUR"
+                  - "TRBKDEBBXXX: 66,549 tx | -805,947,048.66 EUR"
+                  - "NTSBDEB1XXX: 25,530 tx | -307,986,936.42 EUR"
+                  - "BOURFRPPXXX: 25,269 tx | -301,872,329.10 EUR"
+                  - "DEGIRO2AXXX: 15,777 tx | -189,081,668.80 EUR"
+                  - "Total 90d: 200,000 tx | -2,420,000,000.00 EUR"
+            filesChanged: []
+            terminalLogs:
+              - $ bq --location=europe-west1 query --label datacloud:antigravity "SELECT counterparty_bic, COUNT(*), SUM(signed_amount_eur) ..."
+              - "[OK] 5 BICs returned · 200,000 outflows · Total = -2,420,000,000.00 EUR"
+            subagents: []
+            backgroundTasks: []
       - id: d1-step3
         demoId: demo1
         shortName: 3. AWS CRM
@@ -1623,7 +1688,7 @@ workspaces:
           - id: d1-s3-t4
             chipLabel: 4. Déployer le handshake OIDC & auditer le catalogue fédéré
             prompt: "C'est très clair, déploie la fédération OIDC sans clé avec Cross-Cloud Caching sur aws_crm_catalog (europe-west1), filtre sur crm_callcenter_db et conserve les dossiers J0 intacts en RAW."
-            workedDurationLabel: Worked for 24s
+            workedDurationLabel: Worked for 7s
             workGroupSummary: Provisioned AWS IAM OIDC role, created aws_crm_catalog, enabled Cross-Cloud Cache & ran cross-cloud SQL audit
             intermediateMessage: "J'ai exécuté les 5 étapes : rôle IAM `biglake-aws-crm-federated-role`, catalogue fédéré `aws_crm_catalog` (`europe-west1`), verrouillage OIDC sur le Service Agent `111243748688109286426`, activation du `refresh-interval=300s` + `Cross-Cloud Caching` et audit SQL inter-clouds."
             taskFinishedLabel: Borderless Lakehouse catalog aws_crm_catalog synced & verified (< 1s query)
@@ -1722,7 +1787,7 @@ workspaces:
               - id: d1-s3-tr8
                 action: ran
                 commandSummary: create BigLake federated catalog aws_crm_catalog & complete AWS IAM OIDC handshake
-                durationMs: 18400
+                durationMs: 2500
                 cwd: 01_demo1_raw_aggregation
                 command: CLOUDSDK_METRICS_ENVIRONMENT="datacloud.antigravity" gcloud beta biglake iceberg catalogs create aws_crm_catalog --project=data-days-demo --primary-location=europe-west1 --catalog-type=federated --federated-catalog-type=glue --glue-warehouse=835872720625 --glue-aws-region=eu-west-1 --glue-aws-role-arn=arn:aws:iam::835872720625:role/biglake-aws-crm-federated-role --namespace-filters=crm_callcenter_db && uv run python federate_aws_glue_catalog.py
                 output:
@@ -4031,115 +4096,34 @@ workspaces:
             backgroundTasks: []
           - id: d1-spdf-t2
             chipLabel: 2. Lancer la découverte auto & vérifier les Object Tables PDF
-            prompt: "Oui : cible uniquement les 2 dossiers PDF, lance le scan hexagone-raw-pdf-discovery et expose les 2 vues gouvernées dans raw_bank avec un contrôle visuel."
-            workedDurationLabel: Worked for 6s
-            workGroupSummary: Ran DataScan hexagone-raw-pdf-discovery, created governed views & visually audited ObjectRef PDFs
-            intermediateMessage: Exécution du scan **Knowledge Catalog Cloud Storage Discovery** `hexagone-raw-pdf-discovery` (`tableType=BIGLAKE`), création des 2 vues dans `raw_bank` et contrôle visuel `ObjectRef` sur les `250 + 6` PDF.
-            taskFinishedLabel: 256 PDFs auto-discovered, cataloged & visually verified in BigQuery (0 Object Table DDL)
-            leadConfirmation: "Le scan **Knowledge Catalog Cloud Storage Discovery** (`hexagone-raw-pdf-discovery`) est `ACTIVE` / `SUCCEEDED`, a publié automatiquement l'**Object Table BigLake** `data_days_demo_landing.raw` et exposé les **256 documents PDF** prêts pour Gemini dans"
+            prompt: "Oui : cible uniquement les 2 dossiers PDF, lance le scan hexagone-raw-pdf-discovery et expose les 2 vues gouvernées dans raw_bank."
+            workedDurationLabel: Worked for 5s
+            workGroupSummary: Ran DataScan hexagone-raw-pdf-discovery, published Object Table & created governed views
+            intermediateMessage: Exécution du scan **Knowledge Catalog Cloud Storage Discovery** `hexagone-raw-pdf-discovery` (`tableType=BIGLAKE`) et création des 2 vues dans `raw_bank` sur les `250 + 6` PDF.
+            taskFinishedLabel: 256 PDFs auto-discovered & cataloged in BigQuery and Knowledge Catalog (0 Object Table DDL)
+            leadConfirmation: "Le scan **Knowledge Catalog Cloud Storage Discovery** (`hexagone-raw-pdf-discovery`) est `ACTIVE` / `SUCCEEDED` : il a créé automatiquement l'**Object Table BigLake** `data_days_demo_landing.raw` (`256` PDF indexés, prêts pour Gemini) dans"
             leadLink:
               text: Knowledge Catalog · Cloud Storage Discovery (data-days-demo)
               url: https://console.cloud.google.com/dataplex/govern/cloud-storage-discovery?project=data-days-demo
-            sectionHeading: "Ce qui a été provisionné, catalogué et vérifié :"
+            sectionHeading: "Ce qui a été créé et catalogué :"
             items:
-              - title: "1. Object Table BigLake `data_days_demo_landing.raw` publiée sans DDL (`discovery_managed`)"
+              - title: "Object Table BigLake `data_days_demo_landing.raw` créée automatiquement (sans DDL)"
                 chips:
                   - kind: kc
                     label: hexagone-raw-pdf-discovery
                   - kind: bq
                     label: data_days_demo_landing.raw
                 bullets:
-                  - "Cache de métadonnées `AUTOMATIC`, connexion `biglake-gcs-conn` et colonne `ref` (`ObjectRef`) native prête pour `AI.GENERATE_TABLE` en `Démo #2`."
-                  - "Console Knowledge Catalog : [Recherche d'actifs (`dp-search`)](https://console.cloud.google.com/dataplex/dp-search?project=data-days-demo) · [Knowledge Studio](https://console.cloud.google.com/dataplex/studio?project=data-days-demo) · [Object Table `data_days_demo_landing.raw`](https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2sdata_days_demo_landing!3sraw)."
-              - title: "2. Deux vues PDF gouvernées dans `raw_bank` alignées sur le reste du Lakehouse"
+                  - "L'Object Table `data_days_demo_landing.raw` expose les `256` PDF (`250` contrats agences + `6` normes CFO) avec cache de métadonnées `AUTOMATIC`, connexion `biglake-gcs-conn` et colonne `ref` (`ObjectRef`) native."
+                  - "Accès direct : [Table BigQuery data_days_demo_landing.raw](https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2sdata_days_demo_landing!3sraw) · [Fiche Knowledge Catalog (data_days_demo_landing.raw)](https://console.cloud.google.com/dataplex/dp-search?project=data-days-demo&q=data_days_demo_landing.raw)."
+              - title: "Deux vues PDF gouvernées dans `raw_bank` alignées sur le reste du Lakehouse"
                 chips:
                   - kind: sql
                     label: 01_expose_discovered_pdf_views.sql
                   - kind: bq
                     label: raw_promo_contracts_pdf
                 bullets:
-                  - "[Vue `raw_promo_contracts_pdf`](https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2sraw_bank!3sraw_promo_contracts_pdf) (`250` contrats agences `PROMO-2026-001` à `250`, jointure native sur `promo_contract_id` AWS CRM) et [Vue `raw_cfo_regulatory_pdf`](https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2sraw_bank!3sraw_cfo_regulatory_pdf) (`6` normes ANC / ALM / ILAAP / ACPR)."
-            visualCheck:
-              skillBadge: bq-visual-audit · ObjectRef + render_chart
-              title: "Contrôle visuel post-découverte · data_days_demo_landing.raw & vues raw_bank"
-              subtitle: "256 fichiers application/pdf indexés automatiquement par Knowledge Catalog Cloud Storage Discovery (0 DDL Object Table)"
-              kpis:
-                - label: Cache BigLake Object Table
-                  value: AUTOMATIC
-                  sublabel: discovery_managed actif
-                  tone: positive
-                - label: Avenants Agences PDF
-                  value: 250 PDF
-                  sublabel: "PROMO-2026-001 → 250"
-                  tone: blue
-                - label: Corpus Normatif CFO
-                  value: 6 PDF
-                  sublabel: ANC · ALM · ILAAP · ACPR
-                  tone: positive
-                - label: Clés jointes AWS CRM
-                  value: "250 / 250"
-                  sublabel: "100 % promo_contract_id"
-                  tone: positive
-              chartTitle: "Répartition des 256 PDF découverts sur GCS et exposés via ObjectRef"
-              bars:
-                - label: "Gabarit A · Avenant Taux Boosté Livret Maison"
-                  sublabel: "raw_promo_contracts_pdf"
-                  valueLabel: "95 PDF (37,1 %)"
-                  pct: 100
-                  tone: blue
-                  badge: ObjectRef OK
-                - label: "Gabarit B · Prime Cash Bienvenue 18-32 ans"
-                  sublabel: "raw_promo_contracts_pdf"
-                  valueLabel: "90 PDF (35,2 %)"
-                  pct: 95
-                  tone: blue
-                  badge: ObjectRef OK
-                - label: "Gabarit C · Dérogation Rétention Anti-Néobanque"
-                  sublabel: "raw_promo_contracts_pdf"
-                  valueLabel: "65 PDF (25,4 %)"
-                  pct: 68
-                  tone: warning
-                  badge: Non structuré
-                - label: "Normes Prudentielles & Comptables CFO"
-                  sublabel: "raw_cfo_regulatory_pdf"
-                  valueLabel: "6 PDF (2,3 %)"
-                  pct: 14
-                  tone: positive
-                  badge: Doctrine CFO
-              documentsTitle: "Inspection visuelle d'échantillons ObjectRef découverts sur GCS (cliquer pour agrandir)"
-              documents:
-                - id: doc-promo-042
-                  title: "PROMO-2026-042 · Paris 0042"
-                  subtitle: "Gabarit A · Livret Maison +175 bps"
-                  uri: "gs://data-days-demo-landing/RAW/PROMO_CONTRACTS_PDF/PROMO-2026-042_REG1_TAUX_BOOSTE_LIVRET.pdf"
-                  metaBadge: PROMO-2026-042
-                  highlightLabel: "Agence 0042 · Taux boosté"
-                  tone: warning
-                  imageUrl: "./assets/pdf_previews/promo_042_taux_booste.png"
-                - id: doc-promo-003
-                  title: "PROMO-2026-003 · Jeunes"
-                  subtitle: "Gabarit B · Prime Cash 18-32 ans"
-                  uri: "gs://data-days-demo-landing/RAW/PROMO_CONTRACTS_PDF/PROMO-2026-003_REG1_PRIME_BIENVENUE_JEUNES.pdf"
-                  metaBadge: PROMO-2026-003
-                  highlightLabel: "Prime Cash + Parrainage"
-                  tone: blue
-                  imageUrl: "./assets/pdf_previews/promo_003_prime_jeunes.png"
-                - id: doc-promo-001
-                  title: "PROMO-2026-001 · Rétention"
-                  subtitle: "Gabarit C · Contre-offre Néobanque"
-                  uri: "gs://data-days-demo-landing/RAW/PROMO_CONTRACTS_PDF/PROMO-2026-001_REG1_AVENANT_RETENTION.pdf"
-                  metaBadge: PROMO-2026-001
-                  highlightLabel: "Dérogation Niveau II"
-                  tone: ruby
-                  imageUrl: "./assets/pdf_previews/promo_001_retention.png"
-                - id: doc-reg-02
-                  title: "REG_02 · Charte ALM TCI"
-                  subtitle: "Refinancement interne €STR"
-                  uri: "gs://data-days-demo-landing/RAW/REGULATORY_CFO_PDF/REG_02_CHARTE_ALM_TCI_REFINANCEMENT_BCE.pdf"
-                  metaBadge: REG_02_ALM
-                  highlightLabel: "Méthodologie TCI ALM"
-                  tone: positive
-                  imageUrl: "./assets/pdf_previews/reg_02_charte_alm_cfo.png"
+                  - "[Vue raw_promo_contracts_pdf](https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2sraw_bank!3sraw_promo_contracts_pdf) (`250` contrats agences `PROMO-2026-001` à `250`, jointure native sur `promo_contract_id`) et [Vue raw_cfo_regulatory_pdf](https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2sraw_bank!3sraw_cfo_regulatory_pdf) (`6` normes ANC / ALM / ILAAP / ACPR)."
             traces:
               - id: d1-spdf-tr5
                 action: analyzed
@@ -4178,21 +4162,6 @@ workspaces:
                   - "| 2_promo_contracts_view    | raw_bank.raw_promo_contracts_pdf | 250           | 250 PDF AGENCES        |"
                   - "| 3_cfo_regulatory_view     | raw_bank.raw_cfo_regulatory_pdf  | 6             | 6 PDF (ANC/ALM/ACPR)   |"
                   - "+---------------------------+----------------------------------+---------------+------------------------+"
-              - id: d1-spdf-tr11
-                action: analyzed
-                icon: dak
-                fileName: .agents/skills/bq-visual-audit/SKILL.md
-                lineRange: "#L1-52"
-                durationMs: 350
-              - id: d1-spdf-tr12
-                action: ran
-                commandSummary: MCP data-agent-kit/render_chart + sample ObjectRef PDF thumbnails (PROMO-042, REG_02...)
-                durationMs: 550
-                cwd: 01_demo1_raw_aggregation
-                command: mcp call data-agent-kit render_chart --spec '{"title":{"text":"Discovered PDF Object Tables (250 + 6)"}}'
-                output:
-                  - "Rendered inline breakdown chart (95 Type A, 90 Type B, 65 Type C, 6 CFO Regulatory)"
-                  - "Sampled 4 ObjectRef signed previews: PROMO-2026-042, PROMO-2026-003, PROMO-2026-001, REG_02_CHARTE_ALM"
             filesChanged:
               - path: 01_demo1_raw_aggregation/sql/01_expose_discovered_pdf_views.sql
                 language: sql
@@ -4308,58 +4277,46 @@ workspaces:
               metaBadge: POS SI
               highlightLabel: 5 quartiers prioritaires · 8 îlots sources
               tone: blue
-              imageUrl: /assets/banque_hexagone_pos_2026.png
+              imageUrl: /assets/banque_hexagone_pos_2026.svg
             workedDurationLabel: Worked for 5s
-            workGroupSummary: Analyzed POS DSI-EA-POS-2026-v3.2, mapped 17 raw_bank schemas & prepared 3 urbanization decisions
+            workGroupSummary: Analyzed POS DSI-EA-POS-2026-v3.2, mapped 17 raw_bank schemas & prepared urbanization decision
             intermediateMessage: Lecture multimodale du POS (`DSI-EA-POS-2026-v3.2`), filtrage des quartiers hors Phase 1 et croisement structurel avec les `17` sources fédérées dans `raw_bank` (`_raw_sources.yml`).
-            taskFinishedLabel: POS mapped to raw_bank — 3 urbanization decisions required before generating catalog
-            leadConfirmation: "J'ai croisé les 5 zones du POS (`DSI-EA-POS-2026-v3.2`) avec les `17` sources cibles de `raw_bank`. Plutôt que de calquer les 8 îlots applicatifs As-Is, l'urbanisation par domaine métier mène à **5 Data Products `SILVER`** et **2 Data Products `GOLD`** — sous réserve de 3 arbitrages d'architecture."
+            taskFinishedLabel: POS mapped to raw_bank — urbanization decision required before scaffolding dbt SILVER
+            leadConfirmation: "J'ai croisé les 5 zones du POS (`DSI-EA-POS-2026-v3.2`) avec les `17` sources cibles de `raw_bank`. Plutôt que de calquer les 8 îlots applicatifs As-Is, l'urbanisation par domaine métier mène à **5 Data Products `SILVER`** et **2 Data Products `GOLD`** — confirme ce principe avant que je génère le catalogue et la structure du pipeline `dbt`."
             sectionHeading: "Diagnostic d'urbanisation du POS croisé avec `raw_bank` :"
             askQuestions:
               - id: d2-q0-urbanisation
                 question: "Le POS expose 8 îlots applicatifs sources actifs, 7 îlots en pointillés hors Phase 1 et 2 mandats Comex (Pilotage CFO & App Mobile DIG-APP). Quel principe d'urbanisation retenir ?"
                 options:
                   - "(Recommended) Découper par domaine métier & usage : 5 SILVER réutilisables + 2 GOLD (DIG-APP & CFO), en écartant les îlots pointillés et la Zone 5 technique"
-                  - Calquer le POS As-Is à raison de 1 Data Product par îlot applicatif source (8 produits silotés)
-                  - Inclure dès le lot 1 les quartiers en pointillés (Q1.2 Risques et Zone 4 Support)
-              - id: d2-q0-couplage
-                question: "Sur Q2.1, Q3.1 et Q3.2, le POS sépare CRM-AG (AWS), CRC-VOX (Call Center) et COR-CPT / PAY-RT (Mainframe & SEPA). Comment aligner les Data Products sur les grains métier et les MOA ?"
-                options:
-                  - "(Recommended) Séparer par grain & MOA : référentiel client/comptes (dp_customer_360), journal des mouvements & IBAN (dp_customer_timeline) et interactions sous CLS (dp_customer_relationship)"
-                  - Découper par technologie d'hébergement : 1 Data Product AWS et 1 Data Product Mainframe z/OS
-                  - Tout fusionner (profil client, mouvements financiers et verbatims d'appels) dans un seul méga-produit
-              - id: d2-q0-gouvernance
-                question: "Quelle convention de nommage et quel pont de fraîcheur retenir entre les batchs nuit (COR-CPT / SAP J+1), le temps réel (PAY-RT) et le chantier mobile DIG-APP ?"
-                options:
-                  - "(Recommended) Identifiants techniques anglais snake_case (titres FR dans Knowledge Catalog) + dbt dans BigQuery et synchro AlloyDB (< 15 ms) ajustée par PAY-RT"
-                  - Nommer techniquement les produits en français d'après les codes îlots du POS (dp_q21_crm_ag…)
-                  - Faire requêter directement BigQuery en temps réel par le backend mobile DIG-APP
+                  - "Calquer le POS As-Is à raison de 1 Data Product par îlot applicatif source (8 produits silotés)"
+                  - "Inclure dès le lot 1 les quartiers en pointillés (Q1.2 Risques et Zone 4 Support)"
             items:
-              - title: "1. Filtrage du POS : hors-périmètre, socle Zone 5 et mandats consommateurs"
+              - title: "Ce qu'on retient du POS (et ce qu'on laisse de côté)"
                 chips:
                   - kind: kc
                     label: DSI-EA-POS-2026-v3.2
                 bullets:
-                  - "**Écartés (pointillés Phase 1)** : `Q1.2` (`RSK-CR`, `CMP-AML`), `COR-CRD` (Crédits), `PAY-CLR` (Compensation STET) et `ZONE 4 — SUPPORT` (`SUP-RH`, `SUP-IMM`, `SUP-ACH`)."
-                  - "**Socle `ZONE 5` (`Z5-INF`)** : Pub/Sub ISO 20022, CFONB/Copybooks, interconnexion AWS↔GCP et exports Collibra/Excel sont des vecteurs techniques & sémantiques, jamais des Data Products."
-                  - "**Cibles `GOLD` vs Sources** : `DIG-APP` (*Chantier 2026*) et le mandat *Pilotage CFO* (`Q1.1`) sont les **2 consommateurs prioritaires** qui justifient 2 produits `GOLD` dédiés."
-              - title: "2. Pourquoi le calque « 1 îlot POS = 1 Data Product » casserait les usages"
+                  - "**Hors périmètre Phase 1 (en pointillés sur le schéma)** : on écarte les blocs Risques & Conformité, Crédits, Compensation interbancaire et les fonctions Support (RH, Immobilier, Achats)."
+                  - "**Socle technique (`Zone 5`)** : les bus temps réel, passerelles Mainframe et anciens glossaires sont des moyens de transport techniques, pas des produits de données."
+                  - "**2 objectifs prioritaires (`GOLD`)** : l'application mobile (`DIG-APP`) et le pilotage financier (`CFO`) sont les deux usages finaux à servir en priorité."
+              - title: "Pourquoi ne pas calquer « 1 application source = 1 Data Product »"
                 chips:
                   - kind: bq
                     label: raw_bank
                   - kind: yml
                     label: _raw_sources.yml
                 bullets:
-                  - "**Référentiel coupé entre 2 clouds (`CRM-AG` ↔ `COR-CPT`)** : la relation commerciale et l'ouverture de compte vivent sur AWS tandis que la tenue comptable J-1 vit sur z/OS — les consommateurs ont besoin d'une vue `Customer 360` unique."
-                  - "**Flux financiers éclatés (`COR-CPT` ↔ `PAY-RT`)** : séparer les écritures comptables nuit (`Q3.1`) et les paiements SEPA temps réel (`Q3.2`) empêche toute lecture continue de la vie financière du client."
-                  - "**Confidentialité & grain distincts (`CRC-VOX`)** : les verbatims d'appels et comptes-rendus de RDV relèvent d'un grain événementiel soumis au masquage `CLS (ALWAYS_NULL)` qu'il faut isoler du référentiel client."
-              - title: "3. Recommandation cible : 5 SILVER par domaine + 2 GOLD par mandat"
+                  - "**Le client est coupé en deux entre AWS et le Mainframe** : la relation commerciale vit dans le CRM (AWS) et les comptes vivent sur z/OS — les métiers ont besoin d'une fiche `Customer 360` unifiée."
+                  - "**Les paiements sont séparés en deux systèmes** : isoler les écritures comptables de la nuit et les virements SEPA temps réel empêcherait de lire la vie financière d'un client en continu."
+                  - "**Des données sensibles à isoler** : les verbatims d'appels du centre de relation client sont masqués (`CLS ALWAYS_NULL`) et doivent rester séparés du référentiel client."
+              - title: "Recommandation : 5 socles SILVER réutilisables + 2 produits GOLD"
                 chips:
                   - kind: kc
                     label: Knowledge Catalog
                 bullets:
-                  - "**5 `SILVER`** : `dp_customer_360` (`CRM-AG` + `COR-CPT` comptes), `dp_customer_timeline` (`COR-CPT` écritures + `PAY-RT`), `dp_customer_relationship` (`CRC-VOX` + RDV), `dp_finance_pnb` (`FIN-GL` + `FIN-ALM` dans `Q1.1`), `dp_commercial_commitments` (`GED-CTR` PDF + `PRD-CAT` dans `Q3.3`)."
-                  - "**2 `GOLD`** : `dp_budget_insight` (pour `DIG-APP` mobile) et `dp_certified_pnb` (pour le pilotage `CFO`)."
+                  - "**5 `SILVER` (données propres et réutilisables par domaine)** : `dp_customer_360` (clients & comptes), `dp_customer_timeline` (mouvements & paiements), `dp_customer_relationship` (appels & RDV), `dp_finance_pnb` (comptabilité & ALM) et `dp_commercial_commitments` (contrats PDF & offres)."
+                  - "**2 `GOLD` (prêts pour les usages finaux)** : `dp_budget_insight` (pour l'application mobile) et `dp_certified_pnb` (pour le pilotage CFO)."
             traces:
               - id: d2-tr0a-pos
                 action: analyzed
@@ -4394,53 +4351,70 @@ workspaces:
                 status: completed
             backgroundTasks: []
           - id: d2-t0b
-            chipLabel: 2. Générer le catalogue des Data Products (5 SILVER + 2 GOLD)
-            prompt: "Valide ces 3 arbitrages d'urbanisation et génère le catalogue de référence des Data Products."
-            workedDurationLabel: Worked for 4s
-            workGroupSummary: Formalized POS-to-Data-Product mapping & wrote kc_products/data_products_catalog.yaml
-            intermediateMessage: Écriture du contrat d'urbanisation dans `02_demo2_silver_dbt_dq/kc_products/data_products_catalog.yaml` (propriétaires MOA, tables cibles, fraîcheur et contrats attendus).
-            taskFinishedLabel: Data Products catalog generated (5 SILVER + 2 GOLD)
-            leadConfirmation: "Les 3 arbitrages d'urbanisation sont actés : le catalogue de référence `02_demo2_silver_dbt_dq/kc_products/data_products_catalog.yaml` est généré avec **5 Data Products `SILVER`** et **2 Data Products `GOLD`** en `snake_case` anglais."
-            sectionHeading: "Correspondance retenue entre le POS et le catalogue de référence :"
+            chipLabel: 2. Générer le catalogue & initialiser le projet dbt SILVER
+            prompt: "Valide ce découpage (5 SILVER + 2 GOLD), génère le catalogue de référence et prépare la structure industrielle du pipeline dbt SILVER (modèles par Data Product, seeds et tests)."
+            workedDurationLabel: Worked for 5s
+            workGroupSummary: Loaded dbt-bigquery skill, wrote data_products_catalog.yaml & scaffolded industrial dbt SILVER project
+            intermediateMessage: Chargement du skill `dbt-bigquery`, écriture du catalogue `kc_products/data_products_catalog.yaml` et initialisation de l'arborescence industrielle `dbt` (`dbt_project.yml`, `models/staging/`, `models/silver/` par Data Product, `seeds/` et `tests/`).
+            taskFinishedLabel: Data Products catalog & industrial dbt SILVER project scaffold ready (dbt debug OK)
+            leadConfirmation: "Le découpage en **5 Data Products `SILVER`** + **2 `GOLD`** est acté : le catalogue `data_products_catalog.yaml` est généré et la **structure industrielle du pipeline `dbt` `SILVER`** (`dbt_project.yml`, dossiers par Data Product, `seeds/` et `tests/`) est prête dans `02_demo2_silver_dbt_dq/`."
+            sectionHeading: "Catalogue cible & socle industriel dbt initialisés :"
             items:
-              - title: "Quartiers Q2.1, Q3.1 & Q3.2 -> 3 Data Products SILVER Client & Flux"
+              - title: "5 Data Products SILVER + 2 GOLD formalisés dans le catalogue"
                 chips:
                   - kind: yml
                     label: data_products_catalog.yaml
-                bullets:
-                  - "**`dp_customer_360`** (`CRM-AG` + `COR-CPT` comptes, MOA Réseau) : `customers`, `accounts` et `account_monthly_balances`."
-                  - "**`dp_customer_timeline`** (`COR-CPT` écritures + `PAY-RT`, MOA Paiements) : `customer_movements` et `beneficiaries`."
-                  - "**`dp_customer_relationship`** (`CRC-VOX` + RDV `CRM-AG`, MOA Relation Client) : `interactions` (verbatims sous `CLS ALWAYS_NULL`)."
-              - title: "Quartiers Q1.1 & Q3.3 -> 2 Data Products SILVER Finance & Engagements"
-                chips:
-                  - kind: bq
-                    label: silver_bank
-                bullets:
-                  - "**`dp_finance_pnb`** (`FIN-GL` SAP PCEC + `FIN-ALM` €STR, MOA `CFO`) : `gl_entries`."
-                  - "**`dp_commercial_commitments`** (`GED-CTR` PDF + `PRD-CAT` offres, MOA Marketing & Contrôle de gestion) : `promo_contracts`, `promo_contracts_pdf_tracking` et `savings_offers`."
-              - title: "Mandats Comex (`DIG-APP` & `CFO`) -> 2 Data Products GOLD & fraîcheur"
-                chips:
-                  - kind: bq
-                    label: gold_bank
                   - kind: kc
                     label: Knowledge Catalog
                 bullets:
-                  - "**`dp_budget_insight`** (`DIG-APP` mobile) : prévision `AI.FORECAST` dans BigQuery, synchronisée vers **AlloyDB (`< 15 ms`)** et ajustée à chaque événement `PAY-RT`."
-                  - "**`dp_certified_pnb`** (`Pilotage CFO`) : écart de PNB certifié croisant `dp_finance_pnb` et `dp_commercial_commitments`."
+                  - "**5 `SILVER`** (`silver_bank`) : `dp_customer_360`, `dp_customer_timeline`, `dp_customer_relationship`, `dp_finance_pnb` et `dp_commercial_commitments`."
+                  - "**2 `GOLD`** (`gold_bank`) : `dp_budget_insight` (`DIG-APP` mobile, synchro AlloyDB `< 15 ms`) et `dp_certified_pnb` (*Pilotage CFO*)."
+              - title: "Structure industrielle du pipeline `dbt` `SILVER` prête pour les modèles & tests"
+                chips:
+                  - kind: yml
+                    label: dbt_project.yml
+                  - kind: bq
+                    label: silver_bank
+                bullets:
+                  - "**Arborescence gouvernée par Data Product** : `models/staging/` (vues techniques `stg_*`), `models/silver/{customer_360, customer_timeline, customer_relationship, finance_pnb, commercial_commitments}/` (tables labellisées `data_product: dp_*`), `seeds/` (référentiels métier), `macros/` et `tests/` (contrats de qualité)."
+                  - "**Bonnes pratiques `dbt-bigquery` pré-configurées** : `+persist_docs` activé (tables + colonnes publiées automatiquement vers BigQuery et Knowledge Catalog), attribution `datacloud: antigravity` dans `query-comment` et connexion validée par `dbt debug` sur `data-days-demo` (`europe-west1`)."
             traces:
-              - id: d2-tr0b-doc
+              - id: d2-tr0b-skill1
                 action: analyzed
-                icon: md
-                fileName: DESIGN_AND_CONTEXT.md
-                lineRange: "#L96-L145"
-                durationMs: 320
+                icon: dak
+                fileName: dbt-bigquery/SKILL.md
+                lineRange: "#L1-165"
+                durationMs: 420
+              - id: d2-tr0b-skill2
+                action: analyzed
+                icon: dak
+                fileName: gcp-data-pipelines/SKILL.md
+                lineRange: "#L1-95"
+                durationMs: 360
               - id: d2-tr0b-cat
                 action: edited
                 icon: yml
                 fileName: data_products_catalog.yaml
                 added: 98
                 removed: 0
+                durationMs: 520
+              - id: d2-tr0b-dbt
+                action: edited
+                icon: yml
+                fileName: dbt_project.yml
+                added: 103
+                removed: 0
                 durationMs: 550
+              - id: d2-tr0b-debug
+                action: ran
+                commandSummary: dbt debug --profiles-dir . (verify BigQuery connection & SILVER scaffold)
+                durationMs: 750
+                cwd: 02_demo2_silver_dbt_dq
+                command: uv run dbt debug --profiles-dir .
+                output:
+                  - "Configuration: dbt_project.yml [OK found and valid]"
+                  - "Connection test: BigQuery data-days-demo (europe-west1) [OK connection ok]"
+                  - "Scaffold ready: models/staging/, models/silver/{5 Data Products}/, seeds/, macros/, tests/"
             filesChanged:
               - path: 02_demo2_silver_dbt_dq/kc_products/data_products_catalog.yaml
                 language: yaml
@@ -4546,22 +4520,131 @@ workspaces:
                       sources: [dp_finance_pnb, dp_commercial_commitments]
                       consumers: [cfo, executive_committee]
                       contract: -38 420 000,00 EUR = -24,12 M EUR ALM + -14,30 M EUR PDF
+              - path: 02_demo2_silver_dbt_dq/dbt_project.yml
+                language: yaml
+                badge: DBT
+                added: 103
+                removed: 0
+                content: |-
+                  name: 'hexagone_bank_lakehouse'
+                  version: '1.0.0'
+                  config-version: 2
+
+                  profile: 'data_days_demo_bq'
+
+                  model-paths: ["models"]
+                  macro-paths: ["macros"]
+                  test-paths: ["tests"]
+                  seed-paths: ["seeds"]
+                  target-path: "target"
+                  clean-targets: ["target", "dbt_packages"]
+
+                  # Attribution des jobs BigQuery (labels datacloud:antigravity sur chaque requête dbt)
+                  query-comment:
+                    comment: '{"datacloud": "antigravity", "app": "dbt", "project": "hexagone_bank_lakehouse"}'
+                    job-label: true
+
+                  models:
+                    hexagone_bank_lakehouse:
+                      +persist_docs:
+                        relation: true
+                        columns: true
+                      staging:
+                        # Vues de nettoyage technique, une par source RAW (préfixe stg_)
+                        +materialized: view
+                        +schema: raw_bank
+                      silver:
+                        +materialized: table
+                        +schema: silver_bank
+                        customer_360:
+                          +labels:
+                            data_product: dp_customer_360
+                        customer_timeline:
+                          +labels:
+                            data_product: dp_customer_timeline
+                        customer_relationship:
+                          +labels:
+                            data_product: dp_customer_relationship
+                        finance_pnb:
+                          +labels:
+                            data_product: dp_finance_pnb
+                        commercial_commitments:
+                          +labels:
+                            data_product: dp_commercial_commitments
+                      gold:
+                        +materialized: table
+                        +schema: gold_bank
+                        budget_insight:
+                          +labels:
+                            data_product: dp_budget_insight
+
+                  # Extraction IA des PDF (AI.GENERATE sur les Object Tables).
+                  # gemini-2.5-flash n'est plus servi au projet : seul gemini-3-flash-preview répond, sur l'endpoint global.
+                  vars:
+                    ai_connection: 'data-days-demo.europe-west1.biglake-gcs-conn'
+                    ai_endpoint: 'https://aiplatform.googleapis.com/v1/projects/data-days-demo/locations/global/publishers/google/models/gemini-3-flash-preview'
+
+                  seeds:
+                    hexagone_bank_lakehouse:
+                      +schema: silver_bank
+                      +persist_docs:
+                        relation: true
+                        columns: true
+                      movement_category_rules:
+                        +column_types:
+                          priority: int64
+                      movement_categories:
+                        +schema: gold_bank
+                        +column_types:
+                          is_income: bool
+                          is_fixed_charge: bool
+                          is_variable_card: bool
+                          is_recurring_candidate: bool
+                          is_subscription: bool
+                          is_health_refund: bool
+                          is_organic_budget_flow: bool
+                          active_months_max: int64
+                      budget_insight_rules:
+                        +schema: gold_bank
+                        +column_types:
+                          min_safety_cushion_eur: numeric
+                          savings_rounding_step_eur: numeric
+                          subscription_hike_min_delta_eur: numeric
+                          min_recurring_months: int64
+                          min_timesfm_history_months: int64
+                          neobank_lookback_months: int64
+                          recent_event_lookback_days: int64
+                          regulated_priority_rank: int64
+                      savings_offer_catalog:
+                        +column_types:
+                          base_rate_bps: int64
+                          boosted_rate_bps: int64
+                          boost_duration_months: int64
+                          deposit_cap_eur: numeric
+                          priority_rank: int64
+                      pcec_accounts:
+                        +column_types:
+                          pcec_account: string
+                      promo_types:
+                        +column_types:
+                          pcec_account: string
             terminalLogs:
               - "Urbanization rules locked: 5 SILVER domains + 2 GOLD Comex products (English snake_case)"
               - Wrote 02_demo2_silver_dbt_dq/kc_products/data_products_catalog.yaml (98 lines)
-              - Validated 100% coverage of 8 active POS source islands -> ready for DQ profiling (Step 2)
+              - Wrote 02_demo2_silver_dbt_dq/dbt_project.yml (103 lines) & scaffolded models/staging/, models/silver/{5 Data Products}/, seeds/, tests/
+              - "$ uv run dbt debug --profiles-dir . -> Connection test [OK]"
             subagents:
               - id: sa-d2-0b
-                role: Data Product Catalog Author
+                role: dbt Silver Architect
                 skill: dbt-bigquery
                 status: completed
             backgroundTasks: []
             artifact:
               id: art-d2-0
-              title: Catalogue cible des Data Products (issu du POS)
-              subtitle: Urbanisation DSI-EA-POS-2026-v3.2 · 5 SILVER + 2 GOLD
+              title: Catalogue Data Products & socle projet dbt SILVER
+              subtitle: Urbanisation DSI-EA-POS-2026-v3.2 · 5 SILVER + 2 GOLD · dbt-bigquery
               markdownSummary:
-                heading: 5 Data Products SILVER + 2 GOLD
+                heading: 5 Data Products SILVER + 2 GOLD & structure dbt initialisée
                 metrics:
                   - label: Îlots POS couverts
                     value: 8 / 8 actifs
@@ -4569,13 +4652,13 @@ workspaces:
                   - label: SILVER
                     value: 5 Data Products
                     tone: positive
-                  - label: GOLD (Mandats Comex)
-                    value: 2 Data Products
+                  - label: Socle dbt
+                    value: dbt debug OK
                     tone: positive
                 bullets:
                   - "SILVER : dp_customer_360, dp_customer_timeline, dp_customer_relationship, dp_finance_pnb, dp_commercial_commitments."
                   - "GOLD : dp_budget_insight (chantier mobile DIG-APP, AlloyDB < 15 ms) et dp_certified_pnb (pilotage CFO)."
-                  - "Prochaine étape : profiler raw_bank pour mesurer les anomalies réelles avant de coder les transformations dbt."
+                  - "Structure dbt prête : dbt_project.yml (persist_docs + labels data_product), models/staging/, models/silver/, seeds/ et tests/."
       - id: d2-step1
         demoId: demo2
         shortName: 2. Diagnostiquer & fiabiliser les données
@@ -4587,7 +4670,7 @@ workspaces:
         turns:
           - id: d2-t1a
             chipLabel: 1. Définir les règles de qualité à mettre en œuvre
-            prompt: Maintenant que les Data Products sont définis, quelles règles de Data Quality doit-on mettre en œuvre ? Et surtout, comment l'Agentic Data Cloud m'aide-t-il à les trouver sans les écrire une par une à la main ?
+            prompt: "Maintenant que les Data Products et la structure du projet dbt SILVER sont prêts, quelles règles de Data Quality doit-on mettre en œuvre ? Et surtout, comment l'Agentic Data Cloud m'aide-t-il à les trouver sans les écrire une par une à la main ?"
             workedDurationLabel: Worked for 6s
             workGroupSummary: Profiled raw_bank with Knowledge Catalog, generated rule recommendations & matched them with Data Product contracts
             intermediateMessage: Profilage Knowledge Catalog des `13,2 M` de lignes de `raw_bank`, génération des recommandations de règles Auto Data Quality et rapprochement avec les contrats des 5 Data Products.
@@ -4614,19 +4697,21 @@ workspaces:
                   - Zéro tolérance sur toutes les règles
                   - Pas de seuil, simple suivi
             items:
-              - title: "1. Le profil Knowledge Catalog révèle les anomalies de forme"
+              - title: "Le profil Knowledge Catalog révèle les anomalies de forme"
                 chips:
                   - kind: bq
                     label: raw_bank
                 bullets:
-                  - "Le scan de profilage mesure, colonne par colonne, les taux de NULL, les valeurs distinctes, les formats et les valeurs les plus fréquentes : il fait ressortir `66 000` dates de valeur à `00000000` / `99999999` et `9 773` codes agence clients mal formés (dont `475` vides)."
-              - title: "2. Knowledge Catalog recommande les règles à partir du profil"
+                  - "Le scan de profilage mesure, colonne par colonne, les taux de NULL, les valeurs distinctes, les formats et les valeurs les plus fréquentes :"
+                  - "Sur [cbk_cfonb_movements](https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2sraw_bank!3scbk_cfonb_movements) : `66 000` dates de valeur à `00000000` / `99999999` ([Voir le scan Profile raw-profile-cbk-movements](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality/profile/raw-profile-cbk-movements;location=europe-west1?project=data-days-demo))."
+                  - "Sur [cbk_customers_ref](https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2sraw_bank!3scbk_customers_ref) : `9 773` codes agence mal formés dont `475` vides ([Voir le scan Profile raw-profile-cbk-customers](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality/profile/raw-profile-cbk-customers;location=europe-west1?project=data-days-demo))."
+              - title: "Knowledge Catalog recommande les règles à partir du profil"
                 chips:
                   - kind: yml
                     label: generateDataQualityRules
                 bullets:
                   - "L'API Knowledge Catalog `generateDataQualityRules` transforme le profil en règles prêtes à l'emploi : unicité de `end_to_end_id`, format `^[0-9]{4}$` des codes agence, valeurs autorisées de `tx_status`, plages de dates. `19` règles techniques proposées sans en écrire une seule."
-              - title: "3. Knowledge Catalog apporte les règles métier"
+              - title: "Knowledge Catalog apporte les règles métier"
                 chips:
                   - kind: kc
                     label: Knowledge Catalog
@@ -4634,7 +4719,7 @@ workspaces:
                     label: data_products_catalog.yaml
                 bullets:
                   - "Les contrats des Data Products et le glossaire donnent les règles qu'aucun profil ne peut deviner : `80 000` clients et `95 000` comptes, fuite néobanques 90 j = `2 420 000 000,00 €`, `0` clôture sur le trimestre, offre d'épargne seulement si reste à vivre >= `100 €` (ACPR). `8` règles métier."
-              - title: "4. L'agent raisonne entre les silos"
+              - title: "L'agent raisonne entre les silos"
                 chips:
                   - kind: bq
                     label: cbk_accounts_master
@@ -4812,6 +4897,13 @@ workspaces:
                 bullets:
                   - "`1,2 %` de dates de valeur encodées à `00000000` ou `99999999` (`66 000` lignes), codes agences non normalisés (`'0042'` vs `'42  '`), et `650` comptes récents créés sur AWS S3 pas encore réconciliés dans le Mainframe J-1."
                   - "Scans Auto Data Quality publiés dans Knowledge Catalog : [raw-dq-cbk-customers](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality/quality/raw-dq-cbk-customers;location=europe-west1?project=data-days-demo) · [raw-dq-cbk-movements](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality/quality/raw-dq-cbk-movements;location=europe-west1?project=data-days-demo) · [raw-dq-cbk-accounts](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality/quality/raw-dq-cbk-accounts;location=europe-west1?project=data-days-demo) · [Profils RAW](https://console.cloud.google.com/dataplex/govern/data-profiling-and-quality?project=data-days-demo)."
+              - title: "Comment ces erreurs RAW vont être résolues en SILVER (sans jamais altérer la zone RAW)"
+                chips:
+                  - kind: yml
+                    label: dbt_project.yml
+                bullets:
+                  - "**Pourquoi le scan `RAW` reste rouge :** on ne corrige jamais la zone `RAW` (elle sert de preuve d'audit et d'alerte pour les équipes sources). Chaque erreur mesurée ici devient une **règle de nettoyage automatique dans `dbt`** pour produire une couche `SILVER` à `100 %` verte :"
+                  - "`210 800` doublons + `502 200` `RJCT`/`PDNG` → dédoublonnés (`ROW_NUMBER = 1`) et filtrés `ACSC` dans `stg_sepa_payments` · `66 000` dates `00000000`/`99999999` → date comptable + flag `value_date_was_invalid` · `9 773` agences → `LPAD(..., 4, '0')` · `650` comptes J0 AWS → conservés + flag `is_mainframe_orphan`."
             visualCheck:
               skillBadge: bq-visual-audit · MCP render_chart
               title: "Profil visuel des anomalies détectées · data-days-demo.raw_bank"
@@ -4942,35 +5034,35 @@ workspaces:
                 target: raw_bank
                 duration: 2.2s
           - id: d2-t2a
-            chipLabel: 3. Auditer les recouvrements inter-silos avant codage SQL
-            prompt: "Prépare les transformations dbt SILVER à partir des anomalies détectées à l'étape 2 : vérifie les recoupements exacts entre Mainframe, CRM AWS et SEPA avant d'écrire le SQL."
+            chipLabel: 3. Préparer les corrections & l'unification avant dbt SILVER
+            prompt: "Maintenant que les anomalies RAW sont mesurées, prépare les corrections automatiques et l'unification inter-silos (Mainframe, CRM AWS et SEPA) dans dbt SILVER avant d'écrire le SQL."
             workedDurationLabel: Worked for 4s
             workGroupSummary: Tested Mainframe ↔ SEPA end_to_end_id overlap, checked 650 AWS J0 accounts & prepared 3 SQL design decisions
-            intermediateMessage: Rapprochement sur `end_to_end_id` entre `cbk_cfonb_movements` (`5,5 M` lignes) et `raw_sepa_payments_unified`, analyse des `650` comptes J0 sur AWS et préparation des règles de catégorisation.
+            intermediateMessage: Rapprochement sur `end_to_end_id` entre `cbk_cfonb_movements` (`5,5 M` lignes) et `raw_sepa_payments_unified`, analyse des `650` comptes J0 sur AWS et préparation des corrections `dbt` `SILVER`.
             taskFinishedLabel: 100% SEPA-CFONB overlap verified — 3 reconciliation decisions required
-            leadConfirmation: "Avant d'écrire les modèles `dbt`, le rapprochement SQL confirme que **100 % des virements SEPA réglés (`ACSC`) des comptes Mainframe J-1 figurent déjà à l'identique dans `cbk_cfonb_movements`**. Il faut trancher **3 arbitrages de réconciliation**."
-            sectionHeading: "Trois points critiques relevés avant génération des modèles `dbt` :"
+            leadConfirmation: "Les corrections automatiques des anomalies `RAW` (doublons, `RJCT`/`PDNG`, dates `00000000`, `LPAD` agences) sont prêtes à être générées dans `stg_*`. Avant d'écrire les modèles `SILVER`, un contrôle inter-silos révèle que **100 % des virements SEPA réglés (`ACSC`) des comptes Mainframe J-1 figurent déjà à l'identique dans `cbk_cfonb_movements`** — il faut trancher **3 arbitrages métier**."
+            sectionHeading: "Points à arbitrer avant de générer le SQL de nettoyage et d'unification `dbt` :"
             askQuestions:
               - id: d2-q2-double-count
                 question: "Un même virement figure à la fois dans les mouvements Mainframe (CFONB) et dans le flux SEPA, reliés par end_to_end_id. Comment éviter de le compter deux fois dans la vie du client ?"
                 options:
                   - "(Recommended) Le Mainframe fait foi ; SEPA enrichit chaque mouvement (bénéficiaire, IBAN, schéma) et on n'ajoute que les paiements postérieurs au batch J-1 ou des comptes absents du Mainframe"
-                  - SEPA fait foi ; le Mainframe ne sert qu'au solde de la veille
-                  - Additionner les deux sources puis dédoublonner a posteriori
+                  - "SEPA fait foi ; le Mainframe ne sert qu'au solde de la veille"
+                  - "Additionner les deux sources puis dédoublonner a posteriori"
               - id: d2-q2-orphans
                 question: "Les 650 comptes ouverts en agence sur le CRM AWS détectés au scan DQ ne sont pas encore dans le batch Mainframe J-1. Que fait-on ?"
                 options:
                   - "(Recommended) Les garder dans dp_customer_360 et les signaler (is_mainframe_orphan) ; leurs paiements SEPA du jour alimentent la timeline"
-                  - Les exclure jusqu'au prochain batch Mainframe
-                  - Les isoler dans une table de quarantaine
+                  - "Les exclure jusqu'au prochain batch Mainframe"
+                  - "Les isoler dans une table de quarantaine"
               - id: d2-q2-categories
                 question: "Comment catégoriser les 5,5 M de mouvements (salaire, loyer, abonnement, carte, néobanque...) ?"
                 options:
                   - "(Recommended) Règles versionnées dans un référentiel dbt (seed movement_category_rules), modifiables par le métier sans toucher au SQL"
-                  - Appel IA (AI.GENERATE) sur chaque libellé
-                  - Catégories codées en dur dans le SQL
+                  - "Appel IA (AI.GENERATE) sur chaque libellé"
+                  - "Catégories codées en dur dans le SQL"
             items:
-              - title: "1. Recouvrement Mainframe CFONB ↔ Flux SEPA (`end_to_end_id`)"
+              - title: "Recouvrement Mainframe CFONB ↔ Flux SEPA (`end_to_end_id`)"
                 chips:
                   - kind: bq
                     label: cbk_cfonb_movements
@@ -4979,7 +5071,7 @@ workspaces:
                 bullets:
                   - "Chaque virement réglé (`ACSC`) antérieur au cut-off nuit est présent **dans les deux silos** avec le même `end_to_end_id` et le même montant : un `UNION ALL` naïf doublerait la fuite de dépôts (`4,84 Md€` au lieu de `2,42 Md€`)."
                   - "En revanche, SEPA apporte le nom, l'IBAN complet et les opérations intraday post-batch ainsi que celles des `650` comptes créés en J0."
-              - title: "2. Référentiels métier externalisés en seeds `dbt` (zéro règle en dur)"
+              - title: "Référentiels métier externalisés en seeds `dbt` (zéro règle en dur)"
                 chips:
                   - kind: yml
                     label: movement_category_rules.csv
@@ -5014,12 +5106,12 @@ workspaces:
             backgroundTasks: []
           - id: d2-t2
             chipLabel: 4. Générer les modèles dbt SILVER & les contrats schema.yml
-            prompt: "Valide ces 3 choix et génère les modèles dbt SILVER structurés, les référentiels seeds et leurs contrats de qualité dans schema.yml."
+            prompt: "Valide ces 3 choix et génère les modèles dbt SILVER structurés (nettoyage des anomalies RAW + unification), les référentiels seeds et leurs contrats de qualité dans schema.yml."
             workedDurationLabel: Worked for 6s
-            workGroupSummary: Generated structured SILVER dbt models, category seeds & 82 schema.yml data tests
-            intermediateMessage: Écriture des vues `stg_*`, des modèles `dbt` structurés (`dp_customer_360`, `dp_customer_timeline`, `dp_customer_relationship`, `dp_finance_pnb`), des seeds métier et validation `dbt parse` (`82` tests).
-            taskFinishedLabel: Structured SILVER dbt models, seeds & 82 data quality tests generated
-            leadConfirmation: "Les 3 arbitrages sont appliqués : les modèles `dbt` structurés de `silver_bank` et leurs référentiels `seeds/` sont générés avec **`82` tests de qualité `schema.yml`** (avant les `22` tests dédiés aux PDF à l'étape 4)."
+            workGroupSummary: Generated 8 structured SILVER dbt models, category seeds & 84 schema.yml data tests
+            intermediateMessage: Écriture des vues `stg_*` (correction des 4 anomalies rouges du scan `RAW`), des `8` modèles `dbt` structurés (`dp_customer_360`, `dp_customer_timeline`, `dp_customer_relationship`, `dp_finance_pnb` + `savings_offers`), des seeds métier et validation `dbt parse` (`84` tests).
+            taskFinishedLabel: 8 structured SILVER dbt models, RAW anomaly fixes & 84 dbt tests generated
+            leadConfirmation: "Les **4 anomalies rouges des scans `RAW`** sont désormais corrigées automatiquement dans le SQL `dbt` (`stg_*` → `silver_bank`) et **verrouillées par `84` tests bloquants `schema.yml`** (`8` modèles structurés prêts — il ne reste plus qu'à brancher les PDF non structurés dans ce même projet `dbt`)."
             sectionHeading: "Ce qui a été généré dans le projet `dbt` :"
             items:
               - title: Vie du client sans double comptage (`dp_customer_timeline`)
@@ -5039,14 +5131,14 @@ workspaces:
                     label: accounts.sql
                 bullets:
                   - "Fusion Mainframe + CRM AWS (`80 000` clients, `95 000` comptes, `1 437 531` soldes mensuels), normalisation `LPAD` des `9 773` codes agence mal formés et indicateur `is_mainframe_orphan` sur les `650` comptes récents."
-              - title: Catégorisation versionnée, `interactions`, `gl_entries` & `82` contrats `dbt`
+              - title: Catégorisation versionnée, `interactions`, `gl_entries` & `84` contrats `dbt`
                 chips:
                   - kind: yml
                     label: movement_category_rules.csv
                   - kind: yml
                     label: _customer_timeline.yml
                 bullets:
-                  - "`18` règles de catégorisation dans `movement_category_rules.csv`, modèles `interactions` (`320k`, `CLS` préservé) et `gl_entries` (`1,2 M` écritures SAP/ALM), et `82` tests `dbt` dont l'invariant fuite néobanques 90 j = `2 420 000 000,00 €`."
+                  - "`18` règles de catégorisation dans `movement_category_rules.csv`, modèles `interactions` (`320k`, `CLS` préservé), `gl_entries` (`1,2 M` écritures SAP/ALM) et `savings_offers`, plus `84` tests `dbt` dont l'invariant fuite néobanques 90 j = `2 420 000 000,00 €`."
             traces:
               - id: d2-tr6
                 action: edited
@@ -5098,7 +5190,7 @@ workspaces:
                 command: uv run dbt parse --profiles-dir .
                 output:
                   - "Running with dbt=1.10.23 (bigquery=1.10.3)"
-                  - "Validated structured SILVER models (dp_customer_360, dp_customer_timeline, dp_customer_relationship, dp_finance_pnb) -> 82 data tests ready"
+                  - "Validated 8 structured SILVER models (dp_customer_360, dp_customer_timeline, dp_customer_relationship, dp_finance_pnb + savings_offers) -> 84 data tests ready"
             filesChanged:
               - path: 02_demo2_silver_dbt_dq/models/silver/customer_timeline/customer_movements.sql
                 language: sql
@@ -5279,7 +5371,7 @@ workspaces:
                   99,.*,OTHER,OTHER
             terminalLogs:
               - $ uv run dbt parse --profiles-dir .
-              - Validated structured SILVER models + seeds -> 82 data tests registered
+              - Validated 8 structured SILVER models + seeds -> 84 data tests registered
               - "Next step: extract the 250 promotional PDF contracts (dp_commercial_commitments)"
             subagents:
               - id: sa-d2-2
@@ -5380,42 +5472,44 @@ workspaces:
                 status: completed
             backgroundTasks: []
           - id: d2-t2p
-            chipLabel: 2. Déployer l'extraction sur les 250 PDF (14,30 M€)
-            prompt: "Parfait, déploie cette extraction dans dbt sur l'ensemble des 250 avenants PDF avec le référentiel promo_types et vérifie le résultat."
+            chipLabel: 2. Intégrer les 250 PDF au pipeline dbt SILVER (14,30 M€)
+            prompt: "Parfait, ajoute cette extraction dans notre pipeline dbt SILVER sur les 250 avenants PDF avec le référentiel promo_types et vérifie le résultat."
             workedDurationLabel: Worked for 8m 12s
-            workGroupSummary: Deployed promo_contracts dbt model on all 250 PDFs & passed 22/22 dbt quality tests
-            intermediateMessage: "Déploiement du modèle incrémental `promo_contracts` (`AI.GENERATE` sur GCS), jointure avec le référentiel `promo_types` et exécution des `22` tests `dbt`."
-            taskFinishedLabel: 250 / 250 PDF extracted & certified · 14 300 000,00 € · 22 / 22 dbt tests PASS
-            leadConfirmation: "Les **`250` avenants PDF** sont extraits et certifiés dans `silver_bank.promo_contracts` : **`14 300 000,00 €` au centime près** (`22 / 22` tests `dbt` PASS), avec le lien `source_pdf` / `source_uri` conservé sur chaque ligne sur"
+            workGroupSummary: Added incremental promo_contracts & tracking models to SILVER dbt DAG (21/21 PASS · 105 tests total)
+            intermediateMessage: "Ajout du modèle incrémental `promo_contracts` (`AI.GENERATE` sur GCS) et de `promo_contracts_pdf_tracking` dans le projet `dbt` `02_demo2_silver_dbt_dq`, jointure avec `{{ ref('promo_types') }}` et exécution des `21` tests `dbt` PDF."
+            taskFinishedLabel: 250 / 250 PDF integrated into SILVER dbt DAG · 14 300 000,00 € · 105 dbt tests ready
+            leadConfirmation: "Les **`250` avenants PDF** rejoignent directement le **même pipeline `dbt` `SILVER`** (`silver_bank.promo_contracts`) : **`14 300 000,00 €` extraits au centime près** (`21 / 21` tests `dbt` PASS), portant le DAG complet à **`10` modèles `SILVER` et `105` tests `dbt`** (`84` structurés + `21` PDF) sur"
             leadLink:
               text: BigQuery · silver_bank.promo_contracts
               url: https://console.cloud.google.com/bigquery?project=data-days-demo&ws=!1m5!1m4!4m3!1sdata-days-demo!2ssilver_bank!3spromo_contracts
-            sectionHeading: "Ce qui a été déployé sur les 250 contrats PDF :"
+            sectionHeading: "Un seul pipeline dbt SILVER pour le structuré et les PDF :"
             items:
-              - title: "Table structurée promo_contracts + lien conservé vers chaque PDF original"
+              - title: "Modèle dbt incrémental (`md5_hash`) + lien conservé vers chaque PDF source"
                 chips:
                   - kind: sql
                     label: promo_contracts.sql
                   - kind: sql
                     label: ai_extract_promo_contract.sql
                 bullets:
-                  - "Les `250` PDF de `raw_promo_contracts_pdf` sont transformés en lignes typées dans `silver_bank.promo_contracts` pour un total exact de **`14 300 000,00 €`**, tout en conservant `source_pdf` et `source_uri` pour rouvrir ou interroger n'importe quel contrat à la demande."
-              - title: "Typage métier par référentiel & 22 / 22 tests dbt PASS"
+                  - "Sans quitter `dbt`, `promo_contracts.sql` (`materialized='incremental'`, `unique_key='promo_contract_id'`) lit `{{ source('raw_bank', 'raw_promo_contracts_pdf') }}` et ne relance `AI.GENERATE` que sur les PDF nouveaux ou modifiés (`source_md5_hash`)."
+                  - "Total certifié : **`14 300 000,00 €`**, avec `source_pdf` (`ObjectRef`) et `source_uri` conservés sur chaque ligne pour rouvrir un contrat à la demande."
+              - title: "DAG dbt complet : 10 modèles SILVER & 105 tests prêts pour la publication"
                 chips:
                   - kind: sql
                     label: promo_contracts_pdf_tracking.sql
                   - kind: yml
                     label: promo_types.csv
                 bullets:
-                  - "Chaque contrat est rattaché à sa famille d'offre via `promo_types.csv` (`602910` Taux boosté Livret Maison, `602920` Prime de bienvenue, `708590` Gratuité de rétention) et contrôlé par `promo_contracts_pdf_tracking` (`250 / 250` complets, `22 / 22` tests `dbt` PASS)."
+                  - "Jointure gouvernée sur `{{ ref('promo_types') }}` (`602910` Taux boosté, `602920` Prime de bienvenue, `708590` Gratuité de rétention) et suivi PDF par PDF dans `promo_contracts_pdf_tracking` (`250 / 250` complets, `21 / 21` tests `dbt` PASS)."
+                  - "**Bilan cumulé du pipeline `dbt` `SILVER`** : `8` modèles structurés (`84` tests) + `2` modèles PDF (`21` tests) = **`10` modèles `SILVER` & `105` tests** prêts pour le `dbt build` global."
             visualCheck:
               skillBadge: bq-visual-audit · MCP render_chart
               title: "Contrôle visuel post-déploiement · 250 avenants PDF (silver_bank.promo_contracts)"
-              subtitle: "Extraction AI.GENERATE sur GCS (temperature = 0) et validation dbt au centime près"
+              subtitle: "Modèle dbt incrémental AI.GENERATE sur GCS (temperature = 0) intégré au DAG SILVER (105 tests dbt)"
               kpis:
                 - label: PDF extraits
                   value: "250 / 250"
-                  sublabel: "100 % complets & vérifiés"
+                  sublabel: "incrémental md5_hash OK"
                   tone: positive
                 - label: Engagements extraits
                   value: "14 300 000,00 €"
@@ -5425,9 +5519,9 @@ workspaces:
                   value: "3 comptes"
                   sublabel: "602910 · 602920 · 708590"
                   tone: blue
-                - label: Tests dbt PDF
-                  value: "22 / 22 PASS"
-                  sublabel: "total au centime & 0 échec"
+                - label: Pipeline dbt SILVER
+                  value: "105 tests"
+                  sublabel: "84 structurés + 21 PDF PASS"
                   tone: positive
               chartTitle: "Répartition des 14,30 M€ extraits par famille de promotion (compte PCEC)"
               bars:
@@ -5475,7 +5569,7 @@ workspaces:
                   highlightLabel: "59 193,96 €"
                   tone: neutral
                   imageUrl: "./assets/pdf_previews/promo_001_retention.png"
-              footerNote: "250 / 250 documents extraits dans silver_bank.promo_contracts avec lien direct vers le PDF original sur GCS."
+              footerNote: "250 / 250 documents extraits dans silver_bank.promo_contracts (incrémental dbt) — DAG SILVER complet : 10 modèles, 105 tests."
             traces:
               - id: d2-trp4
                 action: edited
@@ -5507,15 +5601,15 @@ workspaces:
                 durationMs: 300
               - id: d2-trp8
                 action: ran
-                commandSummary: dbt build promo_contracts & promo_contracts_pdf_tracking (250 PDFs · 22/22 PASS)
+                commandSummary: dbt build promo_types promo_contracts promo_contracts_pdf_tracking (250 PDFs · 21/21 PASS)
                 durationMs: 950
                 cwd: 02_demo2_silver_dbt_dq
-                command: dbt build --select promo_types pcec_accounts promo_contracts promo_contracts_pdf_tracking
+                command: dbt build --select promo_types promo_contracts promo_contracts_pdf_tracking
                 output:
                   - "OK created sql incremental model silver_bank.promo_contracts ............ [MERGE (250.0 rows)]"
                   - "OK created sql view model silver_bank.promo_contracts_pdf_tracking ...... [CREATE VIEW]"
                   - "PASS expression_equals_promo_contracts_14300000__SUM_committed_promo_cost_eur_"
-                  - "Done. PASS=22 WARN=0 ERROR=0 SKIP=0 TOTAL=22"
+                  - "Done. PASS=21 WARN=0 ERROR=0 SKIP=0 TOTAL=21"
             filesChanged:
               - path: 02_demo2_silver_dbt_dq/models/silver/commercial_commitments/promo_contracts.sql
                 language: sql
@@ -5746,11 +5840,11 @@ workspaces:
                   602920,PRIME_BIENVENUE_CONQUETE,Primes de bienvenue et de mobilité (campagne de conquête 18-32 ans),CHARGE
                   708590,AVENANT_GRATUITE_RETENTION,Gratuités et remises commerciales de rétention patrimoniale,MINORATION_PRODUIT
             terminalLogs:
-              - $ dbt seed --select promo_types pcec_accounts
+              - $ dbt seed --select promo_types
               - $ dbt run --select promo_contracts promo_contracts_pdf_tracking
               - "[OK] MERGE (250.0 rows) -> silver_bank.promo_contracts · Total = 14 300 000,00 €"
-              - $ dbt test --select promo_contracts promo_contracts_pdf_tracking promo_types pcec_accounts
-              - "[OK] Done. PASS=22 WARN=0 ERROR=0"
+              - $ dbt test --select promo_contracts promo_contracts_pdf_tracking promo_types
+              - "[OK] Done. PASS=21 WARN=0 ERROR=0 · DAG SILVER total = 10 models / 105 tests"
             subagents:
               - id: sa-d2-p1
                 role: Document AI Extraction Engineer
@@ -5768,7 +5862,7 @@ workspaces:
       - id: d2-step3
         demoId: demo2
         shortName: 4. Publier les 5 produits de données
-        conversationTitle: Exécution dbt build (104/104 PASS) & Publication dans la Data Marketplace Knowledge Catalog
+        conversationTitle: Exécution dbt build (105/105 PASS) & Publication dans la Data Marketplace Knowledge Catalog
         projectFolder: 02_demo2_silver_dbt_dq
         gitBranch: feat/silver-data-products
         greetingName: Clément
@@ -5778,16 +5872,16 @@ workspaces:
             chipLabel: 1. Exécuter dbt build & publier les 5 Data Products
             prompt: Lance dbt build sur data-days-demo et publie les 5 Data Products SILVER certifiés dans Knowledge Catalog.
             workedDurationLabel: Worked for 6s
-            workGroupSummary: Executed dbt build (104/104 PASS) & published 5 Data Products (Overview, Contracts, Insights)
-            intermediateMessage: Exécution de `dbt build --select path:models/silver` sur `data-days-demo` (`europe-west1`), validation des `104` tests (`82` structurés + `22` PDF) et publication dans Knowledge Catalog.
-            taskFinishedLabel: dbt build (104/104 PASS) & KC Marketplace publication finished
-            leadConfirmation: Les 5 Data Products `SILVER` sont matérialisés à `100 %` de Data Quality (`104 / 104` tests `dbt` PASS) et consultables immédiatement dans
+            workGroupSummary: Executed dbt build (105/105 PASS) & published 5 Data Products (Overview, Contracts, Insights)
+            intermediateMessage: Exécution de `dbt build --select +path:models/silver` sur `data-days-demo` (`europe-west1`), validation des `10` modèles `SILVER` et des `105` tests (`84` structurés + `21` PDF) puis publication dans Knowledge Catalog.
+            taskFinishedLabel: dbt build (105/105 PASS) & KC Marketplace publication finished
+            leadConfirmation: Les 5 Data Products `SILVER` (`10` modèles `dbt`) sont matérialisés à `100 %` de Data Quality (`105 / 105` tests `dbt` PASS) et consultables immédiatement dans
             leadLink:
               text: Knowledge Catalog Data Marketplace · Data Products (localhost:5174)
               url: http://localhost:5174/data-products
             sectionHeading: "Ce qui a été certifié et publié dans Knowledge Catalog :"
             items:
-              - title: 5 Data Products SILVER certifiés à `100 %` (`104 / 104` tests PASS)
+              - title: 5 Data Products SILVER certifiés à `100 %` (`105 / 105` tests PASS)
                 chips:
                   - kind: yml
                     label: data_products_catalog.yaml
@@ -5804,13 +5898,13 @@ workspaces:
             traces:
               - id: d2-tr11
                 action: ran
-                commandSummary: dbt build --select path:models/silver on data-days-demo.silver_bank (104/104 PASS)
+                commandSummary: dbt build --select +path:models/silver on data-days-demo.silver_bank (105/105 PASS)
                 durationMs: 850
                 cwd: 02_demo2_silver_dbt_dq
                 command: uv run dbt build --profiles-dir . --select +path:models/silver
                 output:
-                  - "OK created 9 SILVER models in silver_bank (customers, accounts, account_monthly_balances, customer_movements, beneficiaries, interactions, gl_entries, promo_contracts, savings_offers)"
-                  - "Done. PASS=104 WARN=0 ERROR=0 SKIP=0 TOTAL=104"
+                  - "OK created 10 SILVER models in silver_bank (customers, accounts, account_monthly_balances, customer_movements, beneficiaries, interactions, gl_entries, promo_contracts, promo_contracts_pdf_tracking, savings_offers)"
+                  - "Done. PASS=105 WARN=0 ERROR=0 SKIP=0 TOTAL=105"
               - id: d2-tr13
                 action: ran
                 commandSummary: publish 5 certified SILVER Data Products + Overview, Contracts & Gemini Insights to Knowledge Catalog
@@ -5818,7 +5912,7 @@ workspaces:
                 cwd: 02_demo2_silver_dbt_dq
                 command: uv run python ../scripts/run_dataplex_documentation_scans.py
                 output:
-                  - "Validated 5 SILVER Data Products against kc_products/data_products_catalog.yaml (104/104 dbt tests PASS)"
+                  - "Validated 5 SILVER Data Products against kc_products/data_products_catalog.yaml (105/105 dbt tests PASS)"
                   - "Published Overview, Contracts (refresh-cadence) & Gemini SQL Insights -> live on http://localhost:5174/data-products"
             filesChanged:
               - path: 02_demo2_silver_dbt_dq/kc_products/data_products_catalog.yaml
@@ -5927,8 +6021,7 @@ workspaces:
                       contract: -38 420 000,00 EUR = -24,12 M EUR ALM + -14,30 M EUR PDF
             terminalLogs:
               - $ uv run dbt build --profiles-dir . --select +path:models/silver
-              - "PASS=104 WARN=0 ERROR=0 SKIP=0 TOTAL=104 (82 structured + 22 PDF)"
-              - $ mcp call data-agent-kit render_chart [bq-visual-audit PASS]
+              - "PASS=105 WARN=0 ERROR=0 SKIP=0 TOTAL=105 (84 structured + 21 PDF)"
               - $ uv run python ../scripts/run_dataplex_documentation_scans.py
               - "Published 5 SILVER Data Products to Knowledge Catalog -> http://localhost:5174/data-products"
             subagents:
@@ -5944,12 +6037,12 @@ workspaces:
             artifact:
               id: art-d2
               title: Catalogue des 5 Data Products SILVER publiés
-              subtitle: Certifiés 104 / 104 tests dbt · Knowledge Catalog Data Marketplace
+              subtitle: Certifiés 105 / 105 tests dbt · Knowledge Catalog Data Marketplace
               markdownSummary:
                 heading: 5 Data Products opérationnels dans silver_bank & Knowledge Catalog
                 metrics:
                   - label: Tests dbt SILVER
-                    value: 104 / 104 PASS
+                    value: 105 / 105 PASS
                     tone: positive
                   - label: dp_customer_timeline
                     value: 5,50 M mouvements
