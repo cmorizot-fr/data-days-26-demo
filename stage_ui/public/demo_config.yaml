@@ -1585,7 +1585,6 @@ workspaces:
                 options:
                   - "(Recommended) Filtrer uniquement sur crm_callcenter_db et conserver tous les dossiers J0 intacts en zone RAW"
                   - "Exposer l'intégralité du catalogue AWS Glue et écarter les comptes hors Mainframe dès la couche RAW"
-            continueTargetTurnId: d1-s3-t4
             traces:
               - id: d1-s3-tr5
                 action: analyzed
@@ -1610,83 +1609,8 @@ workspaces:
                 skill: federate-lakehouse-catalog
                 status: completed
             backgroundTasks: []
-          - id: d1-s3-t3
-            chipLabel: 3. Expliquer ce qu'est OIDC dans la console (AWS & GCP)
-            prompt: "Avant que je valide tes questions : qu'est-ce que c'est OIDC concrètement dans la console AWS et GCP ?"
-            triggerKeywords:
-              - oidc
-            workedDurationLabel: Worked for 2s
-            workGroupSummary: Summarized OIDC Web Identity views in AWS IAM & GCP BigLake consoles
-            intermediateMessage: "Voici comment la fédération **OIDC Web Identity** se matérialise concrètement dans les deux consoles (zéro clé `AKIA...` stockée), avant de reprendre tes 2 arbitrages ci-dessous."
-            taskFinishedLabel: OIDC console walkthrough ready — resuming arbitrage questions
-            leadConfirmation: "**OIDC (OpenID Connect Web Identity)** remplace les clés d'accès AWS statiques par un **échange de jetons JWT éphémères signés par Google (`accounts.google.com`)**, visible directement dans l'onglet *Trust relationships* d'AWS IAM sur"
-            leadLink:
-              text: console.aws.amazon.com/iam/roles/biglake-aws-crm-federated-role
-              url: https://us-east-1.console.aws.amazon.com/iam/home#/roles/details/biglake-aws-crm-federated-role
-            sectionHeading: "Ce que tu vois concrètement dans chaque console :"
-            items:
-              - title: "Dans la console Google Cloud (BigQuery -> BigLake Catalogs -> aws_crm_catalog)"
-                chips:
-                  - kind: bq
-                    label: BigLake Service Agent
-                bullets:
-                  - "**Aucun champ Secret / Access Key** : la fiche du catalogue affiche uniquement l'identité Google dédiée (`blirc-...-@gcp-sa-biglakerestcatalog.iam.gserviceaccount.com`), son **Subject ID numérique unique** (ex. `111243748688109286426`) et l'ARN du rôle AWS cible."
-                  - "À chaque lecture SQL, Google signe à la volée un jeton JWT OIDC prouvant cette identité, sans qu'aucun secret AWS n'existe dans Secret Manager ou dans le code."
-              - title: "Dans la console AWS (IAM -> Roles -> biglake-aws-crm-federated-role)"
-                bullets:
-                  - "**Onglet *Trust relationships* (Relation d'approbation)** : déclare `accounts.google.com` comme fournisseur d'identité fédéré (`sts:AssumeRoleWithWebIdentity`) et verrouille `aud` et `sub` sur ce seul Subject ID BigLake."
-                  - "**Onglet *Permissions*** : attache la policy `crm_glue_s3_readonly_policy` qui limite les jetons temporaires délivrés par AWS STS à la seule lecture de `crm_callcenter_db` et du bucket `data-days-demo-aws-crm-835872720625`."
-            inlineImage:
-              src: ./assets/oidc_gcp_aws_federation.svg
-              alt: "Schéma du principe OIDC sans clé entre Google Cloud BigQuery et AWS Glue / S3"
-              caption: "Principe OIDC sans clé : échange de passeport JWT signé par Google contre un accès temporaire Read-Only côté AWS STS (cliquer pour agrandir)"
-            codeBlock:
-              label: "Console AWS IAM · Onglet Trust relationships de biglake-aws-crm-federated-role"
-              language: json
-              code: |-
-                {
-                  "Version": "2012-10-17",
-                  "Statement": [
-                    {
-                      "Effect": "Allow",
-                      "Principal": { "Federated": "accounts.google.com" },
-                      "Action": "sts:AssumeRoleWithWebIdentity",
-                      "Condition": {
-                        "StringEquals": {
-                          "accounts.google.com:aud": ["111243748688109286426"],
-                          "accounts.google.com:sub": ["111243748688109286426"]
-                        }
-                      }
-                    }
-                  ]
-                }
-              actionLink:
-                label: Ouvrir le rôle dans la console AWS IAM
-                url: https://us-east-1.console.aws.amazon.com/iam/home#/roles/details/biglake-aws-crm-federated-role
-            askQuestions:
-              - id: d1-s3-q1b-oidc
-                question: "Maintenant que le mécanisme OIDC est clair, quel mode d'authentification et de cache valides-tu ?"
-                options:
-                  - "(Recommended) Fédération OIDC Web Identity sans clé (sts:AssumeRoleWithWebIdentity) + Cross-Cloud Caching activé"
-                  - "Stocker des clés statiques AWS IAM dans Secret Manager sans cache inter-cloud"
-              - id: d1-s3-q2b-scope
-                question: "Quel périmètre AWS Glue exposer et comment gérer les ouvertures J0 absentes du Mainframe J-1 ?"
-                options:
-                  - "(Recommended) Filtrer uniquement sur crm_callcenter_db et conserver tous les dossiers J0 intacts en zone RAW"
-                  - "Exposer l'intégralité du catalogue AWS Glue et écarter les comptes hors Mainframe dès la couche RAW"
-            traces:
-              - id: d1-s3-tr6b
-                action: analyzed
-                icon: dak
-                fileName: federate-lakehouse-catalog/SKILL.md
-                lineRange: "#L131-247"
-                durationMs: 280
-            filesChanged: []
-            terminalLogs: []
-            subagents: []
-            backgroundTasks: []
           - id: d1-s3-t4
-            chipLabel: 4. Déployer le handshake OIDC & auditer le catalogue fédéré
+            chipLabel: 3. Déployer le lien Borderless Lakehouse & auditer le catalogue
             prompt: "C'est très clair, déploie la fédération OIDC sans clé avec Cross-Cloud Caching sur aws_crm_catalog (europe-west1), filtre sur crm_callcenter_db et conserve les dossiers J0 intacts en RAW."
             workedDurationLabel: Worked for 7s
             workGroupSummary: Provisioned AWS IAM OIDC role, created aws_crm_catalog, enabled Cross-Cloud Cache & ran cross-cloud SQL audit
@@ -2054,6 +1978,40 @@ workspaces:
                   - "Cross-Cloud Caching activé (`cross-cloud-cache-options.enabled = true`) et rafraîchissement Glue toutes les `300s`."
                   - "Jointure directe en `europe-west1` avec `raw_bank.cbk_*` en `< 1 s` : `650` ouvertures J0 identifiées et conservées sans filtrage en zone `RAW`."
                   - "Replay complet : `./scripts/run_demo1_aws_borderless_glue.sh`."
+          - id: d1-s3-t3
+            chipLabel: 4. Comment est sécurisé Borderless Lakehouse ?
+            prompt: "Comment est sécurisé Borderless Lakehouse ?"
+            triggerKeywords:
+              - sécurisé
+              - securise
+              - sécurité
+              - oidc
+            workedDurationLabel: Worked for 2s
+            workGroupSummary: Loaded Borderless Lakehouse 4-layer security & governance architecture
+            intermediateMessage: "Vérification des 4 couches de sécurité et de gouvernance **Borderless Lakehouse** actives sur `aws_crm_catalog`."
+            taskFinishedLabel: Borderless Lakehouse security architecture verified (0 static AWS key)
+            leadConfirmation: "Voici l'architecture de sécurité et de gouvernance **Borderless Lakehouse** intégrée sur 4 couches (jetons temporaires sans clé secrète OIDC, propagation d'identité, contrôle d'accès centralisé et isolation réseau), active sur ce catalogue via"
+            leadLink:
+              text: console.aws.amazon.com/iam/roles/biglake-aws-crm-federated-role
+              url: https://us-east-1.console.aws.amazon.com/iam/home#/roles/details/biglake-aws-crm-federated-role
+            sectionHeading: ""
+            items: []
+            inlineImage:
+              src: ./assets/seculake.jpg
+              alt: "Sécurité et gouvernance intégrées à chaque couche — Borderless Lakehouse"
+              caption: "Cliquer sur l'image pour l'afficher en plein écran (Échap pour fermer)"
+              fullscreen: true
+            traces:
+              - id: d1-s3-tr6b
+                action: analyzed
+                icon: dak
+                fileName: federate-lakehouse-catalog/SKILL.md
+                lineRange: "#L131-247"
+                durationMs: 280
+            filesChanged: []
+            terminalLogs: []
+            subagents: []
+            backgroundTasks: []
           - id: d1-s3-t5
             chipLabel: 5. Synchroniser la sémantique AWS Glue dans Knowledge Catalog
             prompt: "Et côté gouvernance : peux-tu récupérer les descriptions métier d'AWS Glue dans Knowledge Catalog pour que nos équipes Data et nos agents comprennent immédiatement ces tables ?"

@@ -109,6 +109,7 @@ export interface VisualCheckDocPreview {
   highlightLabel: string;
   tone?: VisualTone;
   imageUrl: string;
+  fullscreen?: boolean;
 }
 
 export interface VisualCheckBlock {
@@ -190,6 +191,7 @@ export interface InlineImageBlock {
   src: string;
   alt: string;
   caption?: string;
+  fullscreen?: boolean;
 }
 
 export interface PromptTurn {

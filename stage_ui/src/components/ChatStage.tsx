@@ -705,6 +705,15 @@ export const ChatStage: React.FC<ChatStageProps> = ({
   const [slashMenuOpen, setSlashMenuOpen] = useState<boolean>(false);
   const [previewDoc, setPreviewDoc] = useState<VisualCheckDocPreview | null>(null);
 
+  useEffect(() => {
+    if (!previewDoc) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPreviewDoc(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [previewDoc]);
+
   // Interactive `ask_question` tray state (keyed per completed turn)
   const [questionStepIdx, setQuestionStepIdx] = useState<number>(0);
   const [questionChoices, setQuestionChoices] = useState<Record<string, number>>({});
@@ -1214,7 +1223,7 @@ export const ChatStage: React.FC<ChatStageProps> = ({
                         </p>
 
                         {/* Bold Section Heading: "Ce qui a été mis en place :" */}
-                        {showHeading && (
+                        {showHeading && turn.sectionHeading && (
                           <h3 className="text-[16px] font-semibold text-[#111318] pt-1 animate-fade-slide-up">
                             {turn.sectionHeading}
                           </h3>
@@ -1270,11 +1279,12 @@ export const ChatStage: React.FC<ChatStageProps> = ({
                                   id: `${turn.id}-img`,
                                   title: turn.inlineImage!.alt,
                                   subtitle: turn.inlineImage!.caption || '',
-                                  uri: 'OIDC Web Identity · accounts.google.com <-> AWS STS',
-                                  metaBadge: 'SCHÉMA 16:9',
-                                  highlightLabel: '0 CLÉ SECRÈTE STOCKÉE',
+                                  uri: turn.inlineImage!.caption || turn.inlineImage!.src,
+                                  metaBadge: 'APERÇU',
+                                  highlightLabel: 'PLEIN ÉCRAN',
                                   tone: 'positive',
                                   imageUrl: turn.inlineImage!.src,
+                                  fullscreen: turn.inlineImage!.fullscreen,
                                 })
                               }
                               title="Cliquer pour afficher en plein écran"
@@ -1582,13 +1592,19 @@ export const ChatStage: React.FC<ChatStageProps> = ({
       {previewDoc && (
         <div
           onClick={() => setPreviewDoc(null)}
-          className="fixed inset-0 z-50 bg-black/50 backdrop-blur-[2px] flex items-center justify-center p-6 animate-fade-slide-up"
+          className={`fixed inset-0 z-50 bg-black/65 backdrop-blur-[2px] flex items-center justify-center animate-fade-slide-up ${
+            previewDoc.fullscreen ? 'p-3' : 'p-6'
+          }`}
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="max-w-5xl w-full max-h-[92vh] rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col"
+            className={
+              previewDoc.fullscreen
+                ? 'w-[97vw] max-w-[1800px] h-[95vh] rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col'
+                : 'max-w-5xl w-full max-h-[92vh] rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col'
+            }
           >
-            <div className="flex items-center justify-between gap-4 px-5 py-3.5 border-b border-[#ECEEF2]">
+            <div className="flex items-center justify-between gap-4 px-5 py-3 border-b border-[#ECEEF2]">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span
@@ -1614,17 +1630,28 @@ export const ChatStage: React.FC<ChatStageProps> = ({
                 type="button"
                 onClick={() => setPreviewDoc(null)}
                 className="w-8 h-8 rounded-full bg-[#F1F3F5] hover:bg-[#E4E7EB] flex items-center justify-center text-[#3C4043] cursor-pointer shrink-0"
-                title="Fermer l'aperçu"
+                title="Fermer l'aperçu (Échap)"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto bg-[#ECEFF3] p-5 flex justify-center">
+            <div
+              className={
+                previewDoc.fullscreen
+                  ? 'flex-1 overflow-hidden bg-[#F8FAFC] p-3 flex items-center justify-center cursor-zoom-out'
+                  : 'flex-1 overflow-y-auto bg-[#ECEFF3] p-5 flex justify-center'
+              }
+              onClick={previewDoc.fullscreen ? () => setPreviewDoc(null) : undefined}
+            >
               <img
                 src={previewDoc.imageUrl}
                 alt={previewDoc.title}
-                className="max-w-full h-auto rounded-xl shadow-[0_8px_30px_rgba(15,23,42,0.14)] bg-white"
+                className={
+                  previewDoc.fullscreen
+                    ? 'max-w-full max-h-full w-auto h-auto object-contain rounded-xl bg-white'
+                    : 'max-w-full h-auto rounded-xl shadow-[0_8px_30px_rgba(15,23,42,0.14)] bg-white'
+                }
               />
             </div>
           </div>
