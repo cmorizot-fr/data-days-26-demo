@@ -7,6 +7,8 @@ import {
   ChevronRight,
   FileText,
   MoreVertical,
+  PanelRightClose,
+  PanelRightOpen,
   X,
   CheckCircle2,
 } from 'lucide-react';
@@ -32,6 +34,8 @@ interface OverviewPanelProps {
   backgroundTasks: BackgroundTaskItem[];
   artifacts: ArtifactItem[];
   isStreaming: boolean;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
   onOpenInspector: (modal: InspectorModalState) => void;
   onOpenCustomizations: () => void;
 }
@@ -43,21 +47,101 @@ export const OverviewPanel: React.FC<OverviewPanelProps> = ({
   backgroundTasks,
   artifacts,
   isStreaming,
+  collapsed,
+  onToggleCollapse,
   onOpenInspector,
   onOpenCustomizations,
 }) => {
   const subagentCount = isStreaming ? Math.max(1, subagents.length) : subagents.length;
   const bgTaskCount = isStreaming ? Math.max(1, backgroundTasks.length) : backgroundTasks.length;
 
+  if (collapsed) {
+    return (
+      <aside className="w-[56px] shrink-0 pt-2 pr-3 pb-4 select-none transition-all duration-200 ease-out">
+        <div className="rounded-2xl bg-white shadow-[0_2px_18px_rgba(15,23,42,0.06)] overflow-hidden divide-y divide-[#F1F3F5] flex flex-col items-center">
+          <div className="p-1.5 flex flex-col items-center gap-1 w-full">
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              className="w-8 h-8 rounded-xl hover:bg-[#F1F3F5] flex items-center justify-center text-[#5F6368] hover:text-[#202124] transition-colors cursor-pointer"
+              title="Déplier le panneau Overview"
+            >
+              <PanelRightOpen className="w-4 h-4" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onOpenInspector({ kind: 'review', files })}
+              className="w-8 h-8 rounded-xl hover:bg-[#F8F9FA] flex items-center justify-center text-[#5F6368] hover:text-[#202124] transition-colors cursor-pointer"
+              title={`Review (${files.length})`}
+            >
+              <FilePlus2 className="w-4 h-4" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onOpenInspector({ kind: 'files', files })}
+              className="w-8 h-8 rounded-xl hover:bg-[#F8F9FA] flex items-center justify-center text-[#5F6368] hover:text-[#202124] transition-colors cursor-pointer"
+              title={`Files (${files.length})`}
+            >
+              <File className="w-4 h-4" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onOpenInspector({ kind: 'terminal', logs: terminalLogs })}
+              className="w-8 h-8 rounded-xl hover:bg-[#F8F9FA] flex items-center justify-center text-[#5F6368] hover:text-[#202124] transition-colors cursor-pointer"
+              title="Terminal"
+            >
+              <SquareTerminal className="w-4 h-4" />
+            </button>
+
+            <button
+              type="button"
+              onClick={onOpenCustomizations}
+              className="w-8 h-8 rounded-xl hover:bg-[#F8F9FA] flex items-center justify-center text-[#5F6368] hover:text-[#202124] transition-colors cursor-pointer"
+              title="Extensions"
+            >
+              <Puzzle className="w-4 h-4" />
+            </button>
+          </div>
+
+          {artifacts.length > 0 && (
+            <div className="p-1.5 flex flex-col items-center w-full">
+              <button
+                type="button"
+                onClick={() => onOpenInspector({ kind: 'artifact', artifact: artifacts[0] })}
+                className="w-8 h-8 rounded-xl hover:bg-[#F8F9FA] flex items-center justify-center text-[#5F6368] hover:text-[#202124] transition-colors cursor-pointer"
+                title={`Artifacts (${artifacts.length})`}
+              >
+                <FileText className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+        </div>
+      </aside>
+    );
+  }
+
   return (
-    <aside className="w-[300px] shrink-0 pt-2 pr-5 pb-4 select-none">
+    <aside className="w-[300px] shrink-0 pt-2 pr-5 pb-4 select-none transition-all duration-200 ease-out">
       {/* Pixel-faithful floating Overview card matching media_1794580218010.png */}
       <div className="rounded-2xl bg-white shadow-[0_2px_18px_rgba(15,23,42,0.06)] overflow-hidden divide-y divide-[#F1F3F5]">
-        {/* Section 1: Overview + 4 navigation rows */}
+        {/* Section 1: Overview + collapse toggle + 4 navigation rows */}
         <div className="p-3.5">
-          <div className="flex items-center justify-between px-2 mb-2">
+          <div className="flex items-center justify-between pl-2 pr-1 mb-2">
             <span className="text-[13px] font-medium text-[#70757A]">Overview</span>
-            <MoreVertical className="w-3.5 h-3.5 text-[#70757A]" />
+            <div className="flex items-center gap-0.5">
+              <MoreVertical className="w-3.5 h-3.5 text-[#70757A]" />
+              <button
+                type="button"
+                onClick={onToggleCollapse}
+                className="p-1.5 rounded-lg hover:bg-[#F1F3F5] text-[#5F6368] hover:text-[#202124] transition-colors cursor-pointer"
+                title="Rabattre le panneau Overview à droite"
+              >
+                <PanelRightClose className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           <div className="space-y-0.5">

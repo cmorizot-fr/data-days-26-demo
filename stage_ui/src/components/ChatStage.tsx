@@ -128,6 +128,7 @@ interface ChatStageProps {
   executedTurns: ExecutedTurn[];
   dakInstalled: boolean;
   isStreaming: boolean;
+  overviewCollapsed?: boolean;
   onSendTurn: (turn: PromptTurn, customText?: string) => void;
   onOpenCustomizations: () => void;
   onOpenVisualSkill: () => void;
@@ -690,6 +691,7 @@ export const ChatStage: React.FC<ChatStageProps> = ({
   executedTurns,
   dakInstalled,
   isStreaming,
+  overviewCollapsed = false,
   onSendTurn,
   onOpenCustomizations,
   onOpenVisualSkill,
@@ -1017,7 +1019,11 @@ export const ChatStage: React.FC<ChatStageProps> = ({
           </div>
         ) : (
           /* Active Conversation Stream matching media_1794580203737.png + media_1794577724122.png */
-          <div className="max-w-[760px] mx-auto pt-8 space-y-10">
+          <div
+            className={`${
+              overviewCollapsed ? 'max-w-[920px]' : 'max-w-[760px]'
+            } mx-auto pt-8 space-y-10 transition-[max-width] duration-200 ease-out`}
+          >
             {executedTurns.map((item, turnIdx) => {
               const { turn, userPromptText, status, visibleTraceCount } = item;
               // Open while working so audience sees every Analyzed/Ran/Edited step live;
@@ -1375,7 +1381,11 @@ export const ChatStage: React.FC<ChatStageProps> = ({
 
       {/* Bottom Floating Scroll Button + Double-Layered Antigravity Composer */}
       <div className="absolute bottom-0 inset-x-0 px-6 pb-5 pt-4 bg-gradient-to-t from-white via-white/95 to-transparent pointer-events-none">
-        <div className="max-w-[760px] mx-auto pointer-events-auto relative">
+        <div
+          className={`${
+            overviewCollapsed ? 'max-w-[920px]' : 'max-w-[760px]'
+          } mx-auto pointer-events-auto relative transition-[max-width] duration-200 ease-out`}
+        >
           {/* Centered circular ↓ button above composer when conversation has turns */}
           {!isEmpty && (
             <div className="flex justify-center mb-3">

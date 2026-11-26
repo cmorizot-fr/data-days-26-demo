@@ -583,6 +583,7 @@ export const App: React.FC = () => {
                 executedTurns={currentTurns}
                 dakInstalled={dakInstalled}
                 isStreaming={isStreaming}
+                overviewCollapsed={!overviewOpen && currentTurns.length > 0}
                 onSendTurn={handleSendTurn}
                 onOpenCustomizations={() => {
                   setSelectedPlugin('dak');
@@ -595,7 +596,7 @@ export const App: React.FC = () => {
                 onOpenInspector={setInspectorModal}
               />
 
-              {overviewOpen && currentTurns.length > 0 && (
+              {currentTurns.length > 0 && (
                 <OverviewPanel
                   files={allFiles}
                   terminalLogs={allLogs}
@@ -603,6 +604,8 @@ export const App: React.FC = () => {
                   backgroundTasks={allBgTasks}
                   artifacts={allArtifacts}
                   isStreaming={isStreaming}
+                  collapsed={!overviewOpen}
+                  onToggleCollapse={() => setOverviewOpen((prev) => !prev)}
                   onOpenInspector={setInspectorModal}
                   onOpenCustomizations={() => {
                     setSelectedPlugin('dak');
